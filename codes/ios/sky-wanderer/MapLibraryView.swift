@@ -62,6 +62,7 @@ enum RouteMeasure {
 struct MapLibraryView: View {
     @EnvironmentObject private var app: PhoneAppState
     @EnvironmentObject private var draft: WorkoutDraft
+    @Environment(\.dismiss) private var dismiss
     @State private var position: MapCameraPosition = .automatic
     @State private var visibleRegion: MKCoordinateRegion?
     @State private var minKm = 0.0
@@ -184,6 +185,17 @@ struct MapLibraryView: View {
 
     private var topBar: some View {
         HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.omniInk)
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("返回")
             Spacer(minLength: 0)
             HStack(spacing: 8) {
                 barLink("筛选") { showFilters = true }

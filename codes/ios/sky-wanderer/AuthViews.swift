@@ -28,6 +28,7 @@ struct AuthFlow: View {
 
 struct LoginView: View {
     @EnvironmentObject private var app: PhoneAppState
+    @Environment(\.dismiss) private var dismiss
     @Binding var path: NavigationPath
     @State private var name = ""
     @State private var password = ""
@@ -37,6 +38,14 @@ struct LoginView: View {
         ZStack {
             CanvasBackground()
             VStack {
+                HStack {
+                    Spacer()
+                    Button("关闭") { dismiss() }
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.omniMuted)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
                 Spacer()
                 VStack(spacing: 0) {
                     SkyWandererWordmark()
@@ -94,6 +103,7 @@ struct LoginView: View {
         do {
             try app.login(name: name, password: password)
             error = ""
+            dismiss()
         } catch let failure as AuthFailure {
             error = failure.message
         } catch {

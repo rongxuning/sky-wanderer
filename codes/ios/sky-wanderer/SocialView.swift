@@ -22,10 +22,13 @@ struct SocialFeedView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
-            .padding(.bottom, 120)
+            .padding(.bottom, 32)
         }
         .background(CanvasBackground())
-        .navigationBarHidden(true)
+        .navigationTitle("社交")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .navigationBarHidden(false)
     }
 }
 

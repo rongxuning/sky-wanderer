@@ -272,7 +272,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "sky-wanderer/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "sky-wanderer";
+				INFOPLIST_KEY_CFBundleDisplayName = Sky;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -306,7 +306,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "sky-wanderer/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "sky-wanderer";
+				INFOPLIST_KEY_CFBundleDisplayName = Sky;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -340,7 +340,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "sky-wanderer-watch/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "sky-wanderer";
+				INFOPLIST_KEY_CFBundleDisplayName = Sky;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "com.rongxuning.sky-wanderer";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -373,7 +373,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "sky-wanderer-watch/Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "sky-wanderer";
+				INFOPLIST_KEY_CFBundleDisplayName = Sky;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "com.rongxuning.sky-wanderer";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

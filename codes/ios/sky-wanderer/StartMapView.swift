@@ -11,7 +11,6 @@ struct StartMapView: View {
     @EnvironmentObject private var app: PhoneAppState
     @EnvironmentObject private var draft: WorkoutDraft
     @Binding var path: NavigationPath
-    @Binding var tab: RootTab
     @StateObject private var location = LocationPermission()
     @State private var sheet: StartSheet?
     @State private var counting = false
@@ -90,7 +89,7 @@ struct StartMapView: View {
             barButton("square.grid.2x2", "类型") { sheet = .type }
             barButton("point.topleft.down.curvedto.point.bottomright.up", "路线") {
                 cancelCountdown()
-                tab = .map
+                path.append(HomeRoute.routes)
             }
             barButton("play.fill", "开始", active: true, action: start)
             barButton("person.2", "组队", badge: draft.memberIDs.count) {

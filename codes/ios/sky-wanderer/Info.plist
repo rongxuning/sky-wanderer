@@ -7,7 +7,7 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>sky-wanderer 把徒步和跑步写入健康 App。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>sky-wanderer 在开始和进行运动时显示当前位置和路线。</string>
+	<string>Sky 用当前位置判断当地日出和日落，并在开始和进行运动时显示位置和路线。</string>
 	<key>NSMotionUsageDescription</key>
 	<string>sky-wanderer 用步数估算运动中的步频。</string>
 </dict>
