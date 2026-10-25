@@ -38,14 +38,17 @@ struct RecordsView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 6)
-                .padding(.bottom, 120)
+                .padding(.bottom, 32)
             }
             .refreshable {
                 await app.importFromApple()
             }
         }
         .background(CanvasBackground())
-        .navigationBarHidden(true)
+        .navigationTitle("记录")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .navigationBarHidden(false)
         .task {
             await app.importFromApple()
         }

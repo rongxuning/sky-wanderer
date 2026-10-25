@@ -9,15 +9,17 @@ struct MeView: View {
             VStack(alignment: .leading, spacing: 18) {
                 sectionTitle("账号")
                 HStack {
-                    Text(app.account?.name ?? "")
+                    Text(app.account?.name ?? "未登录")
                         .font(.system(size: 17, weight: .semibold, design: .rounded))
                     Spacer()
-                    Text("已登录")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.omniCobalt)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color.omniIce.opacity(0.35), in: Capsule())
+                    if app.isLoggedIn {
+                        Text("已登录")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.omniCobalt)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.omniIce.opacity(0.35), in: Capsule())
+                    }
                 }
                 .padding(16)
                 .glass()
@@ -67,23 +69,28 @@ struct MeView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    app.logout()
-                } label: {
-                    Text("退出登录")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.omniCobalt)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                if app.isLoggedIn {
+                    Button {
+                        app.logout()
+                    } label: {
+                        Text("退出登录")
+                            .font(.system(size: 17, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.omniCobalt)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
-            .padding(.bottom, 120)
+            .padding(.bottom, 32)
         }
         .background(CanvasBackground())
-        .navigationBarHidden(true)
+        .navigationTitle("我")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
+        .navigationBarHidden(false)
         .task {
             await health.refresh()
         }
