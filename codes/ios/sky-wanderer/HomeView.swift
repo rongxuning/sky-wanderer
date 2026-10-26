@@ -9,6 +9,16 @@ enum HomeRoute: Hashable {
     case me
 }
 
+enum SkyPage: String, Identifiable {
+    case train
+    case records
+    case routes
+    case social
+    case me
+
+    var id: String { rawValue }
+}
+
 struct SkyHome: View {
     @EnvironmentObject private var app: PhoneAppState
     @StateObject private var solar = SolarLocation()
@@ -16,6 +26,8 @@ struct SkyHome: View {
     @State private var agentText = ""
     @State private var showAgentNote = false
     @State private var showLogin = false
+    @State private var showWheel = false
+    @FocusState private var composerFocused: Bool
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -28,6 +40,7 @@ struct SkyHome: View {
         }
         .onChange(of: app.finishedToken) { _, token in
             guard token > 0 else { return }
+            showWheel = false
             var next = NavigationPath()
             next.append(HomeRoute.records)
             path = next
@@ -36,20 +49,32 @@ struct SkyHome: View {
 
     private var home: some View {
         VStack(spacing: 0) {
-            topBar
-            ScrollView {
+            ZStack {
                 VStack(spacing: 0) {
+                    topBar
+                    Spacer(minLength: 0)
                     hero
-                    threadList
+                    Spacer(minLength: 0)
                 }
-                .padding(.bottom, 12)
+                if showWheel {
+                    Color.black.opacity(0.16)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showWheel = false }
+                        .accessibilityHidden(true)
+                    PageWheel(entries: pageEntries, onSelect: openPage, onCancel: { showWheel = false })
+                        .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
+                }
             }
-            .scrollDismissesKeyboard(.interactively)
-            composer
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: showWheel)
+            bottomBar
         }
         .background(SkyHomeColor.page.ignoresSafeArea())
         .navigationBarHidden(true)
         .onAppear { solar.start() }
+        .onChange(of: composerFocused) { _, focused in
+            if focused { showWheel = false }
+        }
         .alert("Sky", isPresented: $showAgentNote) {
             Button("好", role: .cancel) {}
         } message: {
@@ -59,11 +84,12 @@ struct SkyHome: View {
     }
 
     private var topBar: some View {
-        HStack {
+        HStack(spacing: 10) {
             roundButton(systemName: "gearshape", label: "设置") {
                 path.append(HomeRoute.settings)
             }
-            Spacer()
+            accountButton
+            Spacer(minLength: 0)
             roundButton(systemName: "qrcode.viewfinder", label: "扫一扫") {
                 path.append(HomeRoute.scan)
             }
@@ -71,6 +97,26 @@ struct SkyHome: View {
         .padding(.horizontal, 16)
         .padding(.top, 6)
         .padding(.bottom, 4)
+    }
+
+    private var accountButton: some View {
+        Button(action: openAccount) {
+            Text(accountMark)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(SkyHomeColor.ink)
+                .frame(width: 42, height: 42)
+                .background {
+                    if app.isLoggedIn {
+                        Circle().fill(SkyHomeColor.chip)
+                    } else {
+                        Circle()
+                            .stroke(SkyHomeColor.secondary, lineWidth: 1.5)
+                            .padding(1)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(app.isLoggedIn ? "账号" : "未登录")
     }
 
     private var hero: some View {
@@ -92,43 +138,48 @@ struct SkyHome: View {
                     .foregroundStyle(SkyHomeColor.secondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 4)
-            .padding(.bottom, 22)
+            .padding(.vertical, 8)
         }
     }
 
-    private var threadList: some View {
-        VStack(spacing: 2) {
-            threadRow(
+    private var pageEntries: [PageWheelEntry] {
+        [
+            PageWheelEntry(
+                id: SkyPage.train.rawValue,
                 title: "训练",
                 subtitle: trainingSubtitle,
-                face: .circle,
-                color: SkyHomeColor.train
-            ) {
-                if app.activeSession?.phase == .running {
-                    path.append(TrainRoute.live)
-                } else {
-                    path.append(TrainRoute.start)
-                }
-            }
-            threadRow(
+                symbol: "figure.run",
+                tint: SkyHomeColor.train
+            ),
+            PageWheelEntry(
+                id: SkyPage.records.rawValue,
                 title: "记录",
                 subtitle: recordsSubtitle,
-                face: .blob,
-                color: SkyHomeColor.record
-            ) {
-                path.append(HomeRoute.records)
-            }
-            threadRow(
+                symbol: "list.bullet",
+                tint: SkyHomeColor.record
+            ),
+            PageWheelEntry(
+                id: SkyPage.routes.rawValue,
                 title: "路线",
                 subtitle: routesSubtitle,
-                face: .tile,
-                color: SkyHomeColor.route
-            ) {
-                path.append(HomeRoute.routes)
-            }
-        }
-        .padding(.horizontal, 16)
+                symbol: "map",
+                tint: SkyHomeColor.route
+            ),
+            PageWheelEntry(
+                id: SkyPage.social.rawValue,
+                title: "社交",
+                subtitle: "分享和示例动态",
+                symbol: "person.2",
+                tint: SkyHomeColor.social
+            ),
+            PageWheelEntry(
+                id: SkyPage.me.rawValue,
+                title: "我",
+                subtitle: app.isLoggedIn ? "健康与训练" : "登录后查看健康与训练",
+                symbol: "person",
+                tint: SkyHomeColor.me
+            ),
+        ]
     }
 
     private var trainingSubtitle: String {
@@ -143,21 +194,25 @@ struct SkyHome: View {
         app.savedRoutes.isEmpty ? "地图上的路线" : "\(app.savedRoutes.count) 条已保存路线"
     }
 
-    private var composer: some View {
+    private var bottomBar: some View {
         HStack(spacing: 10) {
-            Button(action: openAccount) {
-                Text(accountMark)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(SkyHomeColor.ink)
-                    .frame(width: 44, height: 44)
-                    .background(SkyHomeColor.chip, in: Circle())
+            roundButton(
+                systemName: showWheel ? "xmark" : "circle.grid.2x2",
+                label: showWheel ? "关闭页面" : "页面",
+                size: 44
+            ) {
+                if showWheel {
+                    showWheel = false
+                } else {
+                    composerFocused = false
+                    showWheel = true
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(app.isLoggedIn ? "账号" : "未登录")
 
             TextField("发消息", text: $agentText)
                 .font(.system(size: 16))
                 .foregroundStyle(SkyHomeColor.ink)
+                .focused($composerFocused)
                 .submitLabel(.send)
                 .onSubmit(noteAgent)
                 .padding(.horizontal, 16)
@@ -194,48 +249,47 @@ struct SkyHome: View {
         }
     }
 
+    private func openPage(_ entry: PageWheelEntry) {
+        guard let page = SkyPage(rawValue: entry.id) else { return }
+        showWheel = false
+        switch page {
+        case .train:
+            if app.activeSession?.phase == .running {
+                path.append(TrainRoute.live)
+            } else {
+                path.append(TrainRoute.start)
+            }
+        case .records:
+            path.append(HomeRoute.records)
+        case .routes:
+            path.append(HomeRoute.routes)
+        case .social:
+            path.append(HomeRoute.social)
+        case .me:
+            if app.isLoggedIn {
+                path.append(HomeRoute.me)
+            } else {
+                showLogin = true
+            }
+        }
+    }
+
     private func noteAgent() {
+        showWheel = false
         agentText = ""
         showAgentNote = true
     }
 
-    private func roundButton(systemName: String, label: String, action: @escaping () -> Void) -> some View {
+    private func roundButton(systemName: String, label: String, size: CGFloat = 42, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(SkyHomeColor.ink)
-                .frame(width: 42, height: 42)
+                .frame(width: size, height: size)
                 .background(SkyHomeColor.chip, in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-    }
-
-    private func threadRow(
-        title: String,
-        subtitle: String,
-        face: ThreadFace.Kind,
-        color: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(alignment: .center, spacing: 12) {
-                ThreadFace(kind: face, color: color)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(SkyHomeColor.ink)
-                    Text(subtitle)
-                        .font(.system(size: 14))
-                        .foregroundStyle(SkyHomeColor.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-            }
-            .contentShape(Rectangle())
-            .padding(.vertical, 10)
-        }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -292,7 +346,7 @@ struct SkyHome: View {
     }
 }
 
-private enum SkyHomeColor {
+enum SkyHomeColor {
     static let page = Color.white
     static let chip = Color(red: 241 / 255, green: 241 / 255, blue: 244 / 255)
     static let ink = Color(red: 28 / 255, green: 28 / 255, blue: 30 / 255)
@@ -300,53 +354,8 @@ private enum SkyHomeColor {
     static let train = Color(red: 47 / 255, green: 124 / 255, blue: 246 / 255)
     static let record = Color(red: 140 / 255, green: 90 / 255, blue: 60 / 255)
     static let route = Color(red: 94 / 255, green: 92 / 255, blue: 230 / 255)
-}
-
-private struct ThreadFace: View {
-    enum Kind {
-        case circle
-        case blob
-        case tile
-    }
-
-    var kind: Kind
-    var color: Color
-
-    var body: some View {
-        ZStack {
-            shape
-            HStack(spacing: 5) {
-                Capsule()
-                    .frame(width: 5.5, height: 11)
-                Capsule()
-                    .frame(width: 5.5, height: 13)
-                    .offset(y: -1)
-            }
-            .foregroundStyle(.white)
-        }
-        .frame(width: 48, height: 48)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var shape: some View {
-        switch kind {
-        case .circle:
-            Circle()
-                .fill(color)
-                .frame(width: 44, height: 44)
-        case .blob:
-            Ellipse()
-                .fill(color)
-                .frame(width: 46, height: 38)
-                .rotationEffect(.degrees(-8))
-        case .tile:
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(color)
-                .frame(width: 40, height: 40)
-                .rotationEffect(.degrees(-10))
-        }
-    }
+    static let social = Color(red: 15 / 255, green: 143 / 255, blue: 122 / 255)
+    static let me = Color(red: 90 / 255, green: 98 / 255, blue: 112 / 255)
 }
 
 private struct LoginCover: ViewModifier {
