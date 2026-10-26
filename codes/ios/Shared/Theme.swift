@@ -13,16 +13,36 @@ extension Color {
 }
 
 struct CanvasBackground: View {
+    var breathes = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var deepened = false
+
+    private var ice: Double {
+        guard breathes, !reduceMotion else { return 0.55 }
+        return deepened ? 1 : 0.52
+    }
+
+    private var wash: Double {
+        guard breathes, !reduceMotion else { return 0.16 }
+        return deepened ? 0.62 : 0.22
+    }
+
     var body: some View {
         ZStack {
             Color.omniCanvas
             LinearGradient(
-                colors: [Color.omniIce.opacity(0.55), Color.omniIce.opacity(0.16), Color.omniCanvas.opacity(0)],
+                colors: [Color.omniIce.opacity(ice), Color.omniIce.opacity(wash), Color.omniCanvas.opacity(0)],
                 startPoint: .top,
                 endPoint: .center
             )
         }
         .ignoresSafeArea()
+        .onAppear {
+            guard breathes, !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 3.2).repeatForever(autoreverses: true)) {
+                deepened = true
+            }
+        }
     }
 }
 
@@ -50,11 +70,9 @@ struct SkyWandererWordmark: View {
     var size: CGFloat = 36
 
     var body: some View {
-        HStack(spacing: 0) {
-            Text("sky-")
-            Text("wanderer").foregroundStyle(Color.omniCobalt)
-        }
-        .font(.system(size: size, weight: .heavy, design: .rounded))
-        .foregroundStyle(Color.omniInk)
+        (Text("sky-").foregroundStyle(Color.omniInk) + Text("wanderer").foregroundStyle(Color.omniCobalt))
+            .font(.system(size: size, weight: .heavy, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
     }
 }
