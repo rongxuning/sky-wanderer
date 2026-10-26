@@ -36,7 +36,7 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            CanvasBackground()
+            CanvasBackground(breathes: true)
             VStack {
                 HStack {
                     Spacer()
@@ -48,11 +48,7 @@ struct LoginView: View {
                 .padding(.top, 8)
                 Spacer()
                 VStack(spacing: 0) {
-                    SkyWandererWordmark()
-                    Text("徒步与跑步")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                        .padding(.top, 10)
+                    SkyWandererWordmark(size: 26)
                     field("账号", text: $name, secure: false)
                         .padding(.top, 26)
                     field("密码", text: $password, secure: true)
@@ -67,8 +63,9 @@ struct LoginView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 20)
-                    VStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         Button("注册") { path.append(AuthRoute.register) }
+                        Text("|")
                         Button("忘记密码") { path.append(AuthRoute.forgot) }
                     }
                     .font(.system(size: 14, weight: .medium, design: .rounded))
@@ -93,6 +90,10 @@ struct LoginView: View {
                 .padding(.vertical, 28)
                 .frame(width: 276)
                 .glass()
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(Color.black, lineWidth: 3.5)
+                )
                 Spacer()
             }
         }
@@ -121,7 +122,7 @@ struct LoginView: View {
                     .autocorrectionDisabled()
             }
         }
-        .multilineTextAlignment(.center)
+        .multilineTextAlignment(.leading)
         .font(.system(size: 16, design: .rounded))
         .foregroundStyle(Color.omniInk)
         .frame(height: 48)
