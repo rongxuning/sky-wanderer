@@ -32,18 +32,17 @@ struct LoginView: View {
     @Binding var path: NavigationPath
     @State private var error = ""
     @State private var showNote = false
+    @State private var busy = false
 
     var body: some View {
         ZStack {
             LoginSkyBackground()
             VStack(spacing: 0) {
                 topBar
+                Spacer(minLength: 24)
                 titleBlock
-                    .padding(.top, 48)
-                LoginAvatars()
-                    .padding(.top, 8)
-                Spacer(minLength: 16)
                 providerButtons
+                    .padding(.top, 36)
                 if !error.isEmpty {
                     LoginErrorText(message: error)
                         .padding(.top, 14)
@@ -56,7 +55,7 @@ struct LoginView: View {
                         .padding(.top, 14)
                         .padding(.horizontal, 28)
                 }
-                Spacer(minLength: 12)
+                Spacer(minLength: 24)
                 Text("登录即表示同意用户协议与隐私政策")
                     .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(LoginColor.footer)
@@ -69,7 +68,7 @@ struct LoginView: View {
         .alert("登录说明", isPresented: $showNote) {
             Button("好", role: .cancel) {}
         } message: {
-            Text("手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。")
+            Text(loginNote)
         }
     }
 
@@ -137,23 +136,34 @@ struct LoginView: View {
         path.append(AuthRoute.phone)
     }
 
-    /// TODO: Replace `demo-wechat-openid` with the openid from WeChat OAuth. Nothing calls the WeChat SDK.
+    private var loginNote: String {
+        if SkyAuthConfig.usesLocalDirectory {
+            return "手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。"
+        }
+        return "手机号会发送短信验证码。微信和 Google 会打开授权页，由 \(SkyAuthConfig.hostLabel) 核对身份。短信或开放平台密钥还没配好时，登录会提示还没有配置。"
+    }
+
     private func signInWeChat() {
-        signIn {
-            try app.signInWeChat(openId: "demo-wechat-openid")
+        guard !busy else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            await finish { try await app.signInWeChat() }
         }
     }
 
-    /// TODO: Replace `demo-google-sub` with the Google ID-token `sub`. Nothing checks a Google ID token.
     private func signInGoogle() {
-        signIn {
-            try app.signInGoogle(subject: "demo-google-sub")
+        guard !busy else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            await finish { try await app.signInGoogle() }
         }
     }
 
-    private func signIn(_ body: @MainActor () throws -> Void) {
+    private func finish(_ body: @MainActor () async throws -> Void) async {
         do {
-            try body()
+            try await body()
             error = ""
         } catch let failure as AuthFailure {
             error = failure.message
@@ -169,7 +179,9 @@ struct PhoneVerifyView: View {
     @State private var phone = ""
     @State private var code = ""
     @State private var preparedPhone: String?
+    @State private var codeHint: String?
     @State private var error = ""
+    @State private var busy = false
 
     var body: some View {
         ZStack {
@@ -179,7 +191,9 @@ struct PhoneVerifyView: View {
                     Text("验证手机号")
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(LoginColor.sky)
-                    Text("输入本机号码。下一步只在这台手机上显示演示验证码，不会发短信。")
+                    Text(SkyAuthConfig.usesLocalDirectory
+                        ? "输入本机号码。下一步只在这台手机上显示演示验证码，不会发短信。"
+                        : "输入手机号。验证码会发到这个号码。")
                         .font(.system(size: 14, weight: .regular))
                         .foregroundStyle(LoginColor.footer)
                         .fixedSize(horizontal: false, vertical: true)
@@ -190,26 +204,37 @@ struct PhoneVerifyView: View {
                         .padding(.top, 22)
                         .onChange(of: phone) { _, _ in
                             preparedPhone = nil
+                            codeHint = nil
                             code = ""
                         }
                     if preparedPhone == nil {
-                        LoginPrimaryButton("获取验证码", action: requestCode)
+                        LoginPrimaryButton(busy ? "发送中" : "获取验证码", action: requestCode)
                             .padding(.top, 18)
                     } else {
-                        Text("本地演示。验证码不会发到手机，也没有位数或有效期。请原样输入下面的演示验证码。")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(LoginColor.footer)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 18)
-                        Text(IdentityDemoCode.token)
-                            .font(.system(size: 28, weight: .heavy))
-                            .foregroundStyle(LoginColor.sky)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 10)
+                        if let codeHint {
+                            Text(SkyAuthConfig.usesLocalDirectory
+                                ? "本地演示。验证码不会发到手机，也没有位数或有效期。请原样输入下面的演示验证码。"
+                                : "服务器开了演示模式。验证码不会发到手机。请原样输入下面的演示验证码。")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(LoginColor.footer)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 18)
+                            Text(codeHint)
+                                .font(.system(size: 28, weight: .heavy))
+                                .foregroundStyle(LoginColor.sky)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 10)
+                        } else {
+                            Text("验证码已发送，5 分钟内有效。")
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundStyle(LoginColor.footer)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 18)
+                        }
                         loginField("验证码", text: $code, capitalization: .characters)
                             .textContentType(.oneTimeCode)
                             .padding(.top, 12)
-                        LoginPrimaryButton("登录", action: submit)
+                        LoginPrimaryButton(busy ? "登录中" : "登录", action: submit)
                             .padding(.top, 18)
                     }
                     if !error.isEmpty {
@@ -247,29 +272,52 @@ struct PhoneVerifyView: View {
     }
 
     private func requestCode() {
+        guard !busy else { return }
         let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             preparedPhone = nil
+            codeHint = nil
             error = "请填写手机号"
             return
         }
-        preparedPhone = trimmed
+        busy = true
         error = ""
+        Task {
+            defer { busy = false }
+            do {
+                let ticket = try await app.requestPhoneCode(phone: trimmed)
+                preparedPhone = ticket.phone
+                codeHint = ticket.demoCode
+                error = ""
+            } catch let failure as AuthFailure {
+                preparedPhone = nil
+                codeHint = nil
+                error = failure.message
+            } catch {
+                preparedPhone = nil
+                codeHint = nil
+                self.error = "登录没有完成"
+            }
+        }
     }
 
-    /// `signInPhone` checks `IdentityDemoCode` and stores the number as E.164.
     private func submit() {
+        guard !busy else { return }
         guard let preparedPhone else {
             error = "请先获取验证码"
             return
         }
-        do {
-            try app.signInPhone(phone: preparedPhone, demoCode: code)
-            error = ""
-        } catch let failure as AuthFailure {
-            error = failure.message
-        } catch {
-            self.error = "登录没有完成"
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await app.signInPhone(phone: preparedPhone, demoCode: code)
+                error = ""
+            } catch let failure as AuthFailure {
+                error = failure.message
+            } catch {
+                self.error = "登录没有完成"
+            }
         }
     }
 }
@@ -397,32 +445,6 @@ private struct LoginSkyWashes: View {
                 drifted = true
             }
         }
-    }
-}
-
-// MARK: - Avatars
-
-/// Day and night marks from the asset catalog. Each PNG is mostly transparent padding,
-/// so the frames overlap and the visible faces sit a short gap apart. Night is already upright.
-private struct LoginAvatars: View {
-    var body: some View {
-        HStack(spacing: -44) {
-            avatar("SkyAvatarDay", label: "Sky，日间")
-            avatar("SkyAvatarNight", label: "Sky，夜间")
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Sky，日间与夜间")
-    }
-
-    private func avatar(_ name: String, label: String) -> some View {
-        Image(name)
-            .resizable()
-            .interpolation(.high)
-            .scaledToFit()
-            .frame(width: 158, height: 158)
-            .padding(.vertical, -18)
-            .shadow(color: Color(red: 0.15, green: 0.35, blue: 0.58).opacity(0.18), radius: 10, y: 6)
-            .accessibilityLabel(label)
     }
 }
 

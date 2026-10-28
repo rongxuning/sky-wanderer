@@ -5,11 +5,8 @@
  * an identity that already exists returns that user. Binding an identity that
  * belongs to a different user merges into the earlier-created account.
  *
- * TODO: phone verification must call a real SMS provider.
- * TODO: WeChat verification must exchange the OAuth code and trust the openid
- *       from WeChat, not from the client.
- * TODO: Google verification must validate the ID token and use its `sub`.
- * The checks in `verifyStub` accept a local demo proof only.
+ * Production checks live in the SMS, WeChat, and Google adapters. `DEMO_CODE`
+ * is accepted only when the process is started with AUTH_DEMO=1.
  */
 
 export const DEMO_CODE = "SKY-LOCAL";
@@ -79,6 +76,10 @@ export function isIdentityType(value: unknown): value is IdentityType {
   return typeof value === "string" && (IDENTITY_TYPES as readonly string[]).includes(value);
 }
 
+export function isConflict(error: unknown): boolean {
+  return error instanceof AuthError && error.code === "identity_conflict";
+}
+
 export function canonicalSubject(type: IdentityType, raw: string): string {
   const trimmed = raw.trim();
   if (type !== "phone") {
@@ -100,14 +101,6 @@ export function canonicalSubject(type: IdentityType, raw: string): string {
   if (digits.startsWith("86") && digits.length === 13) return `+${digits}`;
   if (digits.length >= 8 && digits.length <= 15) return `+${digits}`;
   throw new AuthError("invalid_phone", "phone must be an E.164 number");
-}
-
-/** Local stand-in. Replace this with the provider that matches `type`. */
-export function verifyStub(type: IdentityType, demoCode: string | undefined): void {
-  if (type !== "phone") return;
-  if (demoCode?.trim() !== DEMO_CODE) {
-    throw new AuthError("invalid_demo_code", "phone demo code must be SKY-LOCAL");
-  }
 }
 
 export function normalizeEmail(email: string | undefined): string {

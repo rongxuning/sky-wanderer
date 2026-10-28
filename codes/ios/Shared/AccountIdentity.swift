@@ -69,12 +69,13 @@ enum IdentityAuthError: Error, Equatable {
     }
 }
 
-/// Same rules as `codes/server/src/auth-service.ts`.
+/// Same merge rules as `codes/server/src/auth-service.ts`.
 /// The executable tests live in `codes/server/test`. Keep the two copies aligned.
 ///
-/// TODO: phone — verify an SMS code with a provider instead of `IdentityDemoCode`.
-/// TODO: WeChat — exchange the OAuth code and trust the openid WeChat returns.
-/// TODO: Google — validate the ID token and use its `sub`.
+/// This directory is the on-device demo. Phone still checks `IdentityDemoCode`.
+/// When `SkyAuthConfig` has an API base URL and `SKY_AUTH_DEMO` is off, `PhoneAppState`
+/// does not use these checks: the server verifies the SMS code, exchanges the WeChat
+/// authorization code, and checks the Google ID token.
 /// The phone app mirrors `currentToken` and the account id into the Keychain
 /// (`SessionKeychain`). This directory stays free of Security framework calls.
 struct IdentityDirectory {
