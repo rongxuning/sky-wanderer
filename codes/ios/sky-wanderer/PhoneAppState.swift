@@ -26,22 +26,25 @@ final class PhoneAppState: ObservableObject {
     private var verifiedResetEmail: String?
 
     init() {
-        if var loaded = AppFiles.load(filename), loaded.seeded {
-            if loaded.metricOrder.isEmpty {
-                loaded.metricOrder = LiveBlock.standard
+        var loaded: Database
+        if var existing = AppFiles.load(filename), existing.seeded {
+            if existing.metricOrder.isEmpty {
+                existing.metricOrder = LiveBlock.standard
             }
-            Self.ensurePreset(&loaded)
-            database = loaded
-            AppFiles.save(loaded, name: filename)
+            Self.ensurePreset(&existing)
+            loaded = existing
         } else {
             var fresh = Database()
             fresh.workouts = SampleLibrary.workouts()
             fresh.posts = SampleLibrary.posts()
             fresh.seeded = true
             Self.ensurePreset(&fresh)
-            database = fresh
-            AppFiles.save(fresh, name: filename)
+            loaded = fresh
         }
+        SessionContinuity.reconcile(&loaded, keychain: SessionKeychain.read())
+        database = loaded
+        AppFiles.save(loaded, name: filename)
+        SessionKeychain.store(SessionContinuity.credential(in: loaded))
     }
 
     private static func ensurePreset(_ database: inout Database) {
@@ -364,13 +367,7 @@ final class PhoneAppState: ObservableObject {
     }
 
     private func activeAccount(id: UUID) -> Account? {
-        var seen = Set<UUID>()
-        var current = database.accounts.first { $0.id == id }
-        while let found = current, found.retiredAt != nil, let next = found.mergedIntoUserID, seen.insert(found.id).inserted {
-            current = database.accounts.first { $0.id == next }
-        }
-        guard let current, current.retiredAt == nil else { return nil }
-        return current
+        SessionContinuity.liveAccount(in: database, id: id)
     }
 
     private func ensureSessionToken() throws {
@@ -410,7 +407,7 @@ final class PhoneAppState: ObservableObject {
         return result
     }
 
-    /// Local demo session. A production token should live in the Keychain.
+    /// Local demo session. `mutate` also writes the token and account id to the Keychain.
     private static func issueSession(on database: inout Database, accountID: UUID) {
         if let existing = database.sessionToken {
             database.authSessions.removeAll { $0.token == existing }
@@ -424,8 +421,16 @@ final class PhoneAppState: ObservableObject {
     private func mutate(_ body: (inout Database) -> Void) {
         var copy = database
         body(&copy)
+        let signingOut = SessionContinuity.credential(in: database) != nil
+            && SessionContinuity.credential(in: copy) == nil
+        if signingOut {
+            SessionKeychain.store(nil)
+        }
         database = copy
         AppFiles.save(copy, name: filename)
+        if let credential = SessionContinuity.credential(in: copy) {
+            SessionKeychain.store(credential)
+        }
     }
 
     /// Local demo hash only. This is not a production password store.

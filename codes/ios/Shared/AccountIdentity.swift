@@ -75,7 +75,8 @@ enum IdentityAuthError: Error, Equatable {
 /// TODO: phone — verify an SMS code with a provider instead of `IdentityDemoCode`.
 /// TODO: WeChat — exchange the OAuth code and trust the openid WeChat returns.
 /// TODO: Google — validate the ID token and use its `sub`.
-/// TODO: session tokens should move to the Keychain before this leaves the demo.
+/// The phone app mirrors `currentToken` and the account id into the Keychain
+/// (`SessionKeychain`). This directory stays free of Security framework calls.
 struct IdentityDirectory {
     var accounts: [Account] = []
     var identities: [AuthIdentity] = []

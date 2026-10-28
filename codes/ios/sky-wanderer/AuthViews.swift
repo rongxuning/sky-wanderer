@@ -22,13 +22,13 @@ struct AuthFlow: View {
         .presentationBackground {
             LoginSkyBackground()
         }
+        .interactiveDismissDisabled(true)
         .preferredColorScheme(.light)
     }
 }
 
 struct LoginView: View {
     @EnvironmentObject private var app: PhoneAppState
-    @Environment(\.dismiss) private var dismiss
     @Binding var path: NavigationPath
     @State private var error = ""
     @State private var showNote = false
@@ -75,9 +75,6 @@ struct LoginView: View {
 
     private var topBar: some View {
         HStack {
-            Button("关闭") { dismiss() }
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(LoginColor.ink.opacity(0.82))
             Spacer()
             Button {
                 showNote = true
