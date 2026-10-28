@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">sky-wanderer</string>
+    <string name="tab_home">首页</string>
+    <string name="tab_records">记录</string>
+    <string name="tab_training">训练</string>
+    <string name="tab_routes">路线</string>
+    <string name="tab_me">我</string>
+    <string name="home_title">首页</string>
+    <string name="records_title">记录</string>
+    <string name="training_title">训练</string>
+    <string name="routes_title">路线</string>
+    <string name="me_title">我</string>
+    <string name="auth_title">登录</string>
+    <string name="placeholder_body">占位页。功能稍后接通。</string>
+    <string name="auth_body">账号仍在本机。登录流程稍后接通。</string>
+    <string name="action_sign_in">登录</string>
+    <string name="action_back">返回</string>
+</resources>
