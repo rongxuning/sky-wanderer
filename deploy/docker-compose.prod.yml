@@ -1,0 +1,74 @@
+# Sky Wanderer API. Own compose project, network, and Postgres volume.
+# Do not attach this file to Timia's compose project or edit Timia's nginx site.
+# Run from a checkout at /opt/sky-wanderer. See docs/deploy-sky.md.
+
+name: sky-wanderer
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sky-wanderer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sky
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: sky
+    volumes:
+      - sky_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sky -d sky"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - sky
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: ../codes/server
+      dockerfile: Dockerfile
+    container_name: sky-wanderer-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "8787"
+      AUTH_DEMO: ${AUTH_DEMO:-0}
+      SKY_API_HOST: ${SKY_API_HOST:-api.sky-wanderer.online}
+      DATABASE_URL: postgres://sky:${POSTGRES_PASSWORD}@postgres:5432/sky
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${SKY_BIND_PORT:-8788}:8787"
+    networks:
+      - sky
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  sky_postgres:
+    name: sky_wanderer_postgres
+
+networks:
+  sky:
+    name: sky-wanderer

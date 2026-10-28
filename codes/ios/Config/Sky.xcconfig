@@ -1,0 +1,12 @@
+// Sky 账号服务。
+// 把 SKY_API_BASE_URL 留空，或把 SKY_AUTH_DEMO 设为 1，登录回到本机演示（SKY-LOCAL / 占位身份）。
+// xcconfig 里 // 会开始一段注释，所以网址用 SKY_URL_SLASH 拼出来。
+// 目标上的同名 Build Setting 会盖过这里的值。
+
+SKY_URL_SLASH = /
+SKY_API_BASE_URL = https:$(SKY_URL_SLASH)$(SKY_URL_SLASH)api.sky-wanderer.online
+SKY_AUTH_DEMO =
+SKY_WECHAT_APP_ID =
+SKY_GOOGLE_CLIENT_ID =
+SKY_WECHAT_REDIRECT_URI = $(SKY_API_BASE_URL)/v1/auth/wechat/callback
+SKY_GOOGLE_REDIRECT_URI = $(SKY_API_BASE_URL)/v1/auth/google/callback

@@ -37,6 +37,7 @@
 /* Begin PBXFileReference section */
 		A10000000000000000000004 /* sky-wanderer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "sky-wanderer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000005 /* sky-wanderer-watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "sky-wanderer-watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000020 /* Sky.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Sky.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -83,6 +84,7 @@
 		A10000000000000000000009 = {
 			isa = PBXGroup;
 			children = (
+				A10000000000000000000020 /* Sky.xcconfig */,
 				A10000000000000000000006 /* sky-wanderer */,
 				A10000000000000000000007 /* sky-wanderer-watch */,
 				A10000000000000000000008 /* Shared */,
@@ -262,6 +264,7 @@
 		};
 		A1000000000000000000001C /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000020 /* Sky.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -296,6 +299,7 @@
 		};
 		A1000000000000000000001D /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000020 /* Sky.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

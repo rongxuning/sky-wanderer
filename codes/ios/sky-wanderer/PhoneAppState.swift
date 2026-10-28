@@ -45,6 +45,7 @@ final class PhoneAppState: ObservableObject {
         database = loaded
         AppFiles.save(loaded, name: filename)
         SessionKeychain.store(SessionContinuity.credential(in: loaded))
+        Task { await self.confirmRemoteSession() }
     }
 
     private static func ensurePreset(_ database: inout Database) {
@@ -158,79 +159,150 @@ final class PhoneAppState: ObservableObject {
         banner = ""
     }
 
-    /// Phone identity. `demoCode` must be `IdentityDemoCode.token` until SMS exists.
-    @discardableResult
-    func signInPhone(phone: String, demoCode: String, displayName: String? = nil) throws -> IdentityAuthResult {
-        try performIdentity { directory in
-            try directory.loginOrRegister(
-                type: .phone,
-                providerSubject: phone,
-                demoCode: demoCode,
-                displayName: displayName
-            )
+    /// Ask the account service for an SMS code. The on-device demo returns `IdentityDemoCode` and does not send one.
+    func requestPhoneCode(phone: String) async throws -> PhoneCodeTicket {
+        if SkyAuthConfig.usesLocalDirectory {
+            let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { throw AuthFailure(message: "请填写手机号") }
+            return PhoneCodeTicket(phone: trimmed, expiresInSeconds: 0, demoCode: IdentityDemoCode.token)
+        }
+        return try await catching {
+            try await SkyAuthClient.sendPhoneCode(phone: phone)
         }
     }
 
-    /// WeChat stub. `openId` is the future openid; nothing calls the WeChat SDK.
+    /// Phone identity. `demoCode` is the SMS code. The on-device demo still expects `IdentityDemoCode.token`.
     @discardableResult
-    func signInWeChat(openId: String, displayName: String? = nil) throws -> IdentityAuthResult {
-        try performIdentity { directory in
-            try directory.loginOrRegister(type: .wechat, providerSubject: openId, displayName: displayName)
+    func signInPhone(phone: String, demoCode: String, displayName: String? = nil) async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            return try performIdentity { directory in
+                try directory.loginOrRegister(
+                    type: .phone,
+                    providerSubject: phone,
+                    demoCode: demoCode,
+                    displayName: displayName
+                )
+            }
         }
+        var body = ["type": "phone", "providerSubject": phone, "smsCode": demoCode]
+        if let displayName, !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            body["displayName"] = displayName
+        }
+        return try await loginRemote(body)
     }
 
-    /// Google stub. `subject` is the future ID-token `sub`.
+    /// WeChat. The on-device demo uses a placeholder openid. A configured API opens WeChat's QR page and sends only the authorization code.
     @discardableResult
-    func signInGoogle(subject: String, email: String? = nil, displayName: String? = nil) throws -> IdentityAuthResult {
-        try performIdentity { directory in
-            try directory.loginOrRegister(
-                type: .google,
-                providerSubject: subject,
-                displayName: displayName,
-                email: email
-            )
+    func signInWeChat() async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            return try performIdentity { directory in
+                try directory.loginOrRegister(type: .wechat, providerSubject: "demo-wechat-openid")
+            }
         }
+        let code = try await wechatAuthorizationCode()
+        return try await loginRemote(["type": "wechat", "authorizationCode": code])
+    }
+
+    /// Google. The on-device demo uses a placeholder subject. A configured API completes the browser code flow; the server checks the ID token.
+    @discardableResult
+    func signInGoogle() async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            return try performIdentity { directory in
+                try directory.loginOrRegister(type: .google, providerSubject: "demo-google-sub")
+            }
+        }
+        return try await loginRemote(try await googleAuthorizationBody())
     }
 
     @discardableResult
-    func bindPhone(phone: String, demoCode: String) throws -> IdentityAuthResult {
-        try ensureSessionToken()
-        return try performIdentity { directory in
-            try directory.bind(type: .phone, providerSubject: phone, demoCode: demoCode)
+    func bindPhone(phone: String, demoCode: String) async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            try ensureSessionToken()
+            return try performIdentity { directory in
+                try directory.bind(type: .phone, providerSubject: phone, demoCode: demoCode)
+            }
         }
+        return try await bindRemote(["type": "phone", "providerSubject": phone, "smsCode": demoCode])
+    }
+
+    /// Local demo binds `openId`. A configured API does not trust a client openid; use `bindWeChatCode`.
+    @discardableResult
+    func bindWeChat(openId: String) async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            try ensureSessionToken()
+            return try performIdentity { directory in
+                try directory.bind(type: .wechat, providerSubject: openId)
+            }
+        }
+        throw AuthFailure(message: "绑定微信需要授权码")
     }
 
     @discardableResult
-    func bindWeChat(openId: String) throws -> IdentityAuthResult {
-        try ensureSessionToken()
-        return try performIdentity { directory in
-            try directory.bind(type: .wechat, providerSubject: openId)
+    func bindWeChatCode(_ authorizationCode: String) async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            throw AuthFailure(message: "本机演示请直接绑定 openid")
         }
+        return try await bindRemote(["type": "wechat", "authorizationCode": authorizationCode])
+    }
+
+    /// Local demo binds `subject`. A configured API does not trust a client subject; use `bindGoogleCode` or `bindGoogleToken`.
+    @discardableResult
+    func bindGoogle(subject: String, email: String? = nil) async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            try ensureSessionToken()
+            return try performIdentity { directory in
+                try directory.bind(type: .google, providerSubject: subject, email: email)
+            }
+        }
+        throw AuthFailure(message: "绑定 Google 需要授权码或 ID token")
     }
 
     @discardableResult
-    func bindGoogle(subject: String, email: String? = nil) throws -> IdentityAuthResult {
-        try ensureSessionToken()
-        return try performIdentity { directory in
-            try directory.bind(type: .google, providerSubject: subject, email: email)
+    func bindGoogleToken(_ idToken: String) async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            throw AuthFailure(message: "本机演示请直接绑定 subject")
         }
+        return try await bindRemote(["type": "google", "idToken": idToken])
     }
 
-    func unbindIdentity(_ type: IdentityType, providerSubject: String) throws {
-        try ensureSessionToken()
-        _ = try performIdentity { directory in
-            try directory.unbind(type: type, providerSubject: providerSubject)
+    @discardableResult
+    func bindGoogleCode(
+        authorizationCode: String,
+        codeVerifier: String,
+        redirectUri: String,
+        clientId: String,
+        nonce: String
+    ) async throws -> IdentityAuthResult {
+        if SkyAuthConfig.usesLocalDirectory {
+            throw AuthFailure(message: "本机演示请直接绑定 subject")
         }
+        return try await bindRemote([
+            "type": "google",
+            "authorizationCode": authorizationCode,
+            "codeVerifier": codeVerifier,
+            "redirectUri": redirectUri,
+            "clientId": clientId,
+            "nonce": nonce,
+        ])
+    }
+
+    func unbindIdentity(_ type: IdentityType, providerSubject: String) async throws {
+        if SkyAuthConfig.usesLocalDirectory {
+            try ensureSessionToken()
+            _ = try performIdentity { directory in
+                try directory.unbind(type: type, providerSubject: providerSubject)
+            }
+            return
+        }
+        let token = try requireToken()
+        let identities = try await catching {
+            try await SkyAuthClient.unbind(type: type.rawValue, providerSubject: providerSubject, token: token)
+        }
+        try replaceIdentities(identities)
     }
 
     func logout() {
-        mutate { database in
-            if let token = database.sessionToken {
-                database.authSessions.removeAll { $0.token == token }
-            }
-            database.sessionToken = nil
-            database.sessionAccountID = nil
-        }
+        logout(revokeRemote: true)
     }
 
     func prepareReset(email: String) throws {
@@ -350,6 +422,189 @@ final class PhoneAppState: ObservableObject {
 
     func stats(for window: StatsWindow, now: Date = Date()) -> TrainingStats {
         RecordStats.make(workouts: workouts, window: window, now: now)
+    }
+
+    private func logout(revokeRemote: Bool) {
+        let token = database.sessionToken
+        let remote = revokeRemote && !SkyAuthConfig.usesLocalDirectory
+        mutate { database in
+            if let token = database.sessionToken {
+                database.authSessions.removeAll { $0.token == token }
+            }
+            database.sessionToken = nil
+            database.sessionAccountID = nil
+        }
+        if remote, let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Task { await SkyAuthClient.logout(token: token) }
+        }
+    }
+
+    private func confirmRemoteSession() async {
+        guard !SkyAuthConfig.usesLocalDirectory,
+              let token = database.sessionToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else { return }
+        do {
+            _ = try await SkyAuthClient.listIdentities(token: token)
+        } catch let error as SkyAPIError where error.code == "not_authenticated" || error.status == 401 {
+            logout(revokeRemote: false)
+        } catch {
+            return
+        }
+    }
+
+    private func loginRemote(_ body: [String: String]) async throws -> IdentityAuthResult {
+        try await catching {
+            let payload = try await SkyAuthClient.login(body)
+            return try self.applyRemote(payload)
+        }
+    }
+
+    private func bindRemote(_ body: [String: String]) async throws -> IdentityAuthResult {
+        let token = try requireToken()
+        return try await catching {
+            let payload = try await SkyAuthClient.bind(body, token: token)
+            return try self.applyRemote(payload)
+        }
+    }
+
+    private func wechatAuthorizationCode() async throws -> String {
+        guard let appId = SkyAuthConfig.wechatAppId else {
+            throw AuthFailure(message: "微信登录还没有配置 AppID")
+        }
+        let redirect = SkyAuthConfig.wechatRedirectURI
+        let state = UUID().uuidString
+        guard !redirect.isEmpty, let url = SkyBrowserAuth.wechatURL(appId: appId, redirect: redirect, state: state) else {
+            throw AuthFailure(message: "微信登录还没有配置回调地址")
+        }
+        let callback = try await SkyBrowserAuth.start(url: url, callbackScheme: "skywanderer")
+        guard callback.error == nil, let code = callback.code, callback.state == state else {
+            throw AuthFailure(message: "微信授权没有完成")
+        }
+        return code
+    }
+
+    private func googleAuthorizationBody() async throws -> [String: String] {
+        guard let clientId = SkyAuthConfig.googleClientId else {
+            throw AuthFailure(message: "Google 登录还没有配置客户端 ID")
+        }
+        let redirect = SkyAuthConfig.googleRedirectURI
+        let pkce = Pkce.pair()
+        let state = UUID().uuidString
+        let nonce = UUID().uuidString
+        guard !redirect.isEmpty,
+              let url = SkyBrowserAuth.googleURL(
+                clientId: clientId,
+                redirect: redirect,
+                state: state,
+                nonce: nonce,
+                challenge: pkce.challenge
+              ) else {
+            throw AuthFailure(message: "Google 登录还没有配置回调地址")
+        }
+        let callback = try await SkyBrowserAuth.start(url: url, callbackScheme: "skywanderer")
+        guard callback.error == nil, let code = callback.code, callback.state == state else {
+            throw AuthFailure(message: "Google 授权没有完成")
+        }
+        return [
+            "type": "google",
+            "authorizationCode": code,
+            "codeVerifier": pkce.verifier,
+            "redirectUri": redirect,
+            "clientId": clientId,
+            "nonce": nonce,
+        ]
+    }
+
+    private func catching<T>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch let error as SkyAPIError {
+            throw AuthFailure(message: SkyAPIError.localMessage(for: error.code))
+        } catch let error as AuthFailure {
+            throw error
+        } catch {
+            throw AuthFailure(message: "暂时连不上账号服务")
+        }
+    }
+
+    private func requireToken() throws -> String {
+        guard let token = database.sessionToken?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty else {
+            throw AuthFailure(message: "请先登录")
+        }
+        return token
+    }
+
+    private func applyRemote(_ payload: RemoteAuthPayload) throws -> IdentityAuthResult {
+        guard let userId = UUID(uuidString: payload.user.id),
+              let created = SkyTime.parse(payload.user.createdAt),
+              let sessionUser = UUID(uuidString: payload.session.userId),
+              sessionUser == userId,
+              let sessionCreated = SkyTime.parse(payload.session.createdAt),
+              !payload.session.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AuthFailure(message: "登录没有完成")
+        }
+        let identities = try payload.identities.map { try makeIdentity($0) }
+        var account = Account(
+            id: userId,
+            name: payload.user.displayName,
+            email: payload.user.email,
+            passwordHash: database.accounts.first { $0.id == userId }?.passwordHash ?? "",
+            createdAt: created
+        )
+        if let retired = payload.user.retiredAt {
+            account.retiredAt = SkyTime.parse(retired)
+        }
+        if let merged = payload.user.mergedIntoUserId {
+            account.mergedIntoUserID = UUID(uuidString: merged)
+        }
+        account.mergedFromUserIDs = payload.user.mergedFromUserIds.compactMap(UUID.init(uuidString:))
+        let session = AuthSession(token: payload.session.token, userId: userId, createdAt: sessionCreated)
+        mutate { database in
+            if let index = database.accounts.firstIndex(where: { $0.id == userId }) {
+                account.passwordHash = database.accounts[index].passwordHash
+                database.accounts[index] = account
+            } else {
+                database.accounts.append(account)
+            }
+            database.identities.removeAll { $0.userId == userId }
+            database.identities.append(contentsOf: identities)
+            if let previous = database.sessionToken {
+                database.authSessions.removeAll { $0.token == previous }
+            }
+            database.authSessions.removeAll { $0.token == session.token }
+            database.authSessions.append(session)
+            database.sessionToken = session.token
+            database.sessionAccountID = userId
+        }
+        banner = ""
+        return IdentityAuthResult(account: account, session: session, created: payload.created ?? false, merged: payload.merged ?? false)
+    }
+
+    private func replaceIdentities(_ remotes: [RemoteIdentity]) throws {
+        let identities = try remotes.map { try makeIdentity($0) }
+        mutate { database in
+            guard let userId = database.sessionAccountID else { return }
+            database.identities.removeAll { $0.userId == userId }
+            database.identities.append(contentsOf: identities)
+        }
+    }
+
+    private func makeIdentity(_ remote: RemoteIdentity) throws -> AuthIdentity {
+        guard let id = UUID(uuidString: remote.id),
+              let userId = UUID(uuidString: remote.userId),
+              let created = SkyTime.parse(remote.createdAt),
+              let type = IdentityType(rawValue: remote.type) else {
+            throw AuthFailure(message: "登录没有完成")
+        }
+        return AuthIdentity(
+            id: id,
+            type: type,
+            providerSubject: remote.providerSubject,
+            email: remote.email,
+            phone: remote.phone,
+            userId: userId,
+            createdAt: created
+        )
     }
 
     private func storeImage(_ data: Data?) -> String? {
