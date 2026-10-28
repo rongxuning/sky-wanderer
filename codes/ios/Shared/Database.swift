@@ -2,7 +2,11 @@ import Foundation
 
 struct Database {
     var accounts: [Account] = []
+    var identities: [AuthIdentity] = []
+    var authSessions: [AuthSession] = []
+    var authRecords: [AuthOwnedRecord] = []
     var sessionAccountID: UUID?
+    var sessionToken: String?
     var workouts: [WorkoutRecord] = []
     var posts: [SocialPost] = []
     var metricOrder: [LiveBlock] = LiveBlock.standard
@@ -14,13 +18,18 @@ struct Database {
 
 extension Database: Codable {
     private enum CodingKeys: String, CodingKey {
-        case accounts, sessionAccountID, workouts, posts, metricOrder, selectedTeammateIDs, seeded, routes
+        case accounts, identities, authSessions, authRecords, sessionAccountID, sessionToken
+        case workouts, posts, metricOrder, selectedTeammateIDs, seeded, routes
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         accounts = try container.decodeIfPresent([Account].self, forKey: .accounts) ?? []
+        identities = try container.decodeIfPresent([AuthIdentity].self, forKey: .identities) ?? []
+        authSessions = try container.decodeIfPresent([AuthSession].self, forKey: .authSessions) ?? []
+        authRecords = try container.decodeIfPresent([AuthOwnedRecord].self, forKey: .authRecords) ?? []
         sessionAccountID = try container.decodeIfPresent(UUID.self, forKey: .sessionAccountID)
+        sessionToken = try container.decodeIfPresent(String.self, forKey: .sessionToken)
         workouts = try container.decodeIfPresent([WorkoutRecord].self, forKey: .workouts) ?? []
         posts = try container.decodeIfPresent([SocialPost].self, forKey: .posts) ?? []
         metricOrder = try container.decodeIfPresent([LiveBlock].self, forKey: .metricOrder) ?? LiveBlock.standard
@@ -32,7 +41,11 @@ extension Database: Codable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(accounts, forKey: .accounts)
+        try container.encode(identities, forKey: .identities)
+        try container.encode(authSessions, forKey: .authSessions)
+        try container.encode(authRecords, forKey: .authRecords)
         try container.encodeIfPresent(sessionAccountID, forKey: .sessionAccountID)
+        try container.encodeIfPresent(sessionToken, forKey: .sessionToken)
         try container.encode(workouts, forKey: .workouts)
         try container.encode(posts, forKey: .posts)
         try container.encode(metricOrder, forKey: .metricOrder)
