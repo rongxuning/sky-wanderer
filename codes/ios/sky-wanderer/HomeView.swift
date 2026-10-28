@@ -25,7 +25,6 @@ struct SkyHome: View {
     @State private var path = NavigationPath()
     @State private var agentText = ""
     @State private var showAgentNote = false
-    @State private var showLogin = false
     @State private var showWheel = false
     @FocusState private var composerFocused: Bool
 
@@ -80,7 +79,6 @@ struct SkyHome: View {
         } message: {
             Text("agent 入口稍后接通")
         }
-        .modifier(LoginCover(isPresented: $showLogin))
     }
 
     private var topBar: some View {
@@ -175,7 +173,7 @@ struct SkyHome: View {
             PageWheelEntry(
                 id: SkyPage.me.rawValue,
                 title: "我",
-                subtitle: app.isLoggedIn ? "健康与训练" : "登录后查看健康与训练",
+                subtitle: "健康与训练",
                 symbol: "person",
                 tint: SkyHomeColor.me
             ),
@@ -242,11 +240,8 @@ struct SkyHome: View {
     }
 
     private func openAccount() {
-        if app.isLoggedIn {
-            path.append(HomeRoute.me)
-        } else {
-            showLogin = true
-        }
+        guard app.isLoggedIn else { return }
+        path.append(HomeRoute.me)
     }
 
     private func openPage(_ entry: PageWheelEntry) {
@@ -266,11 +261,8 @@ struct SkyHome: View {
         case .social:
             path.append(HomeRoute.social)
         case .me:
-            if app.isLoggedIn {
-                path.append(HomeRoute.me)
-            } else {
-                showLogin = true
-            }
+            guard app.isLoggedIn else { return }
+            path.append(HomeRoute.me)
         }
     }
 
@@ -358,23 +350,8 @@ enum SkyHomeColor {
     static let me = Color(red: 90 / 255, green: 98 / 255, blue: 112 / 255)
 }
 
-private struct LoginCover: ViewModifier {
-    @EnvironmentObject private var app: PhoneAppState
-    @Binding var isPresented: Bool
-
-    func body(content: Content) -> some View {
-        content.sheet(isPresented: $isPresented) {
-            AuthFlow()
-                .onChange(of: app.isLoggedIn) { _, loggedIn in
-                    if loggedIn { isPresented = false }
-                }
-        }
-    }
-}
-
 struct SkySettingsView: View {
     @EnvironmentObject private var app: PhoneAppState
-    @State private var showLogin = false
 
     var body: some View {
         List {
@@ -384,8 +361,6 @@ struct SkySettingsView: View {
                     Button("退出登录", role: .destructive) {
                         app.logout()
                     }
-                } else {
-                    Button("登录") { showLogin = true }
                 }
             }
             Section {
@@ -408,7 +383,6 @@ struct SkySettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .navigationBarHidden(false)
-        .modifier(LoginCover(isPresented: $showLogin))
     }
 }
 
