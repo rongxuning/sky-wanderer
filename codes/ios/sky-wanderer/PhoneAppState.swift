@@ -51,7 +51,13 @@ final class PhoneAppState: ObservableObject {
 
     var account: Account? {
         guard let id = database.sessionAccountID else { return nil }
-        return database.accounts.first { $0.id == id }
+        return activeAccount(id: id)
+    }
+
+    /// Identities linked to the signed-in account. Empty when logged out.
+    var identities: [AuthIdentity] {
+        guard let id = account?.id else { return [] }
+        return database.identities.filter { $0.userId == id }
     }
 
     var isLoggedIn: Bool { account != nil }
@@ -114,16 +120,18 @@ final class PhoneAppState: ObservableObject {
         guard mail.contains("@") else {
             throw AuthFailure(message: "请填写邮箱")
         }
-        if database.accounts.contains(where: { $0.name.compare(accountName, options: .caseInsensitive) == .orderedSame }) {
+        if database.accounts.contains(where: {
+            $0.retiredAt == nil && $0.name.compare(accountName, options: .caseInsensitive) == .orderedSame
+        }) {
             throw AuthFailure(message: "这个账号已经注册")
         }
-        if database.accounts.contains(where: { $0.email.lowercased() == mail }) {
+        if database.accounts.contains(where: { $0.retiredAt == nil && $0.email.lowercased() == mail }) {
             throw AuthFailure(message: "这个邮箱已经绑定")
         }
-        let created = Account(id: UUID(), name: accountName, email: mail, passwordHash: Self.hash(password))
+        let created = Account(id: UUID(), name: accountName, email: mail, passwordHash: Self.hash(password), createdAt: Date())
         mutate { database in
             database.accounts.append(created)
-            database.sessionAccountID = created.id
+            Self.issueSession(on: &database, accountID: created.id)
         }
     }
 
@@ -134,21 +142,97 @@ final class PhoneAppState: ObservableObject {
         }
         let digest = Self.hash(password)
         guard let match = database.accounts.first(where: {
-            $0.name.compare(accountName, options: .caseInsensitive) == .orderedSame && $0.passwordHash == digest
+            $0.retiredAt == nil
+                && !$0.passwordHash.isEmpty
+                && $0.name.compare(accountName, options: .caseInsensitive) == .orderedSame
+                && $0.passwordHash == digest
         }) else {
             throw AuthFailure(message: "账号或密码不正确")
         }
-        mutate { $0.sessionAccountID = match.id }
+        mutate { database in
+            Self.issueSession(on: &database, accountID: match.id)
+        }
         banner = ""
     }
 
+    /// Phone identity. `demoCode` must be `IdentityDemoCode.token` until SMS exists.
+    @discardableResult
+    func signInPhone(phone: String, demoCode: String, displayName: String? = nil) throws -> IdentityAuthResult {
+        try performIdentity { directory in
+            try directory.loginOrRegister(
+                type: .phone,
+                providerSubject: phone,
+                demoCode: demoCode,
+                displayName: displayName
+            )
+        }
+    }
+
+    /// WeChat stub. `openId` is the future openid; nothing calls the WeChat SDK.
+    @discardableResult
+    func signInWeChat(openId: String, displayName: String? = nil) throws -> IdentityAuthResult {
+        try performIdentity { directory in
+            try directory.loginOrRegister(type: .wechat, providerSubject: openId, displayName: displayName)
+        }
+    }
+
+    /// Google stub. `subject` is the future ID-token `sub`.
+    @discardableResult
+    func signInGoogle(subject: String, email: String? = nil, displayName: String? = nil) throws -> IdentityAuthResult {
+        try performIdentity { directory in
+            try directory.loginOrRegister(
+                type: .google,
+                providerSubject: subject,
+                displayName: displayName,
+                email: email
+            )
+        }
+    }
+
+    @discardableResult
+    func bindPhone(phone: String, demoCode: String) throws -> IdentityAuthResult {
+        try ensureSessionToken()
+        return try performIdentity { directory in
+            try directory.bind(type: .phone, providerSubject: phone, demoCode: demoCode)
+        }
+    }
+
+    @discardableResult
+    func bindWeChat(openId: String) throws -> IdentityAuthResult {
+        try ensureSessionToken()
+        return try performIdentity { directory in
+            try directory.bind(type: .wechat, providerSubject: openId)
+        }
+    }
+
+    @discardableResult
+    func bindGoogle(subject: String, email: String? = nil) throws -> IdentityAuthResult {
+        try ensureSessionToken()
+        return try performIdentity { directory in
+            try directory.bind(type: .google, providerSubject: subject, email: email)
+        }
+    }
+
+    func unbindIdentity(_ type: IdentityType, providerSubject: String) throws {
+        try ensureSessionToken()
+        _ = try performIdentity { directory in
+            try directory.unbind(type: type, providerSubject: providerSubject)
+        }
+    }
+
     func logout() {
-        mutate { $0.sessionAccountID = nil }
+        mutate { database in
+            if let token = database.sessionToken {
+                database.authSessions.removeAll { $0.token == token }
+            }
+            database.sessionToken = nil
+            database.sessionAccountID = nil
+        }
     }
 
     func prepareReset(email: String) throws {
         let mail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard database.accounts.contains(where: { $0.email.lowercased() == mail }) else {
+        guard database.accounts.contains(where: { $0.retiredAt == nil && $0.email.lowercased() == mail }) else {
             throw AuthFailure(message: "这个邮箱还没有绑定账号")
         }
         pendingResetEmail = mail
@@ -177,7 +261,7 @@ final class PhoneAppState: ObservableObject {
         guard password == confirm else {
             throw AuthFailure(message: "两次输入的密码不一致")
         }
-        guard let index = database.accounts.firstIndex(where: { $0.email.lowercased() == mail }) else {
+        guard let index = database.accounts.firstIndex(where: { $0.retiredAt == nil && $0.email.lowercased() == mail }) else {
             throw AuthFailure(message: "这个邮箱还没有绑定账号")
         }
         mutate { database in
@@ -277,6 +361,64 @@ final class PhoneAppState: ObservableObject {
         } catch {
             return nil
         }
+    }
+
+    private func activeAccount(id: UUID) -> Account? {
+        var seen = Set<UUID>()
+        var current = database.accounts.first { $0.id == id }
+        while let found = current, found.retiredAt != nil, let next = found.mergedIntoUserID, seen.insert(found.id).inserted {
+            current = database.accounts.first { $0.id == next }
+        }
+        guard let current, current.retiredAt == nil else { return nil }
+        return current
+    }
+
+    private func ensureSessionToken() throws {
+        if database.sessionToken != nil { return }
+        guard let id = account?.id else { throw AuthFailure(message: "请先登录") }
+        mutate { database in
+            Self.issueSession(on: &database, accountID: id)
+        }
+    }
+
+    private func performIdentity(
+        _ work: (inout IdentityDirectory) throws -> IdentityAuthResult
+    ) throws -> IdentityAuthResult {
+        var directory = IdentityDirectory(
+            accounts: database.accounts,
+            identities: database.identities,
+            sessions: database.authSessions,
+            records: database.authRecords,
+            currentAccountID: database.sessionAccountID,
+            currentToken: database.sessionToken
+        )
+        let result: IdentityAuthResult
+        do {
+            result = try work(&directory)
+        } catch let error as IdentityAuthError {
+            throw AuthFailure(message: error.message)
+        }
+        mutate { database in
+            database.accounts = directory.accounts
+            database.identities = directory.identities
+            database.authSessions = directory.sessions
+            database.authRecords = directory.records
+            database.sessionAccountID = directory.currentAccountID
+            database.sessionToken = directory.currentToken
+        }
+        banner = ""
+        return result
+    }
+
+    /// Local demo session. A production token should live in the Keychain.
+    private static func issueSession(on database: inout Database, accountID: UUID) {
+        if let existing = database.sessionToken {
+            database.authSessions.removeAll { $0.token == existing }
+        }
+        let token = UUID().uuidString
+        database.sessionToken = token
+        database.sessionAccountID = accountID
+        database.authSessions.append(AuthSession(token: token, userId: accountID, createdAt: Date()))
     }
 
     private func mutate(_ body: (inout Database) -> Void) {

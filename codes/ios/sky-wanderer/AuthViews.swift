@@ -5,12 +5,6 @@ enum AuthRoute: Hashable {
     case phone
 }
 
-/// Same token the unified identity directory checks (`IdentityDemoCode` on that branch).
-/// Local demo only: it is not sent by SMS and it does not expire.
-enum PhoneDemoCode {
-    static let token = "SKY-LOCAL"
-}
-
 struct AuthFlow: View {
     @State private var path = NavigationPath()
 
@@ -75,7 +69,7 @@ struct LoginView: View {
         .alert("登录说明", isPresented: $showNote) {
             Button("好", role: .cancel) {}
         } message: {
-            Text("手机号使用本机演示验证码 \(PhoneDemoCode.token)，不会发送短信。微信和 Google 仍是本机占位，还没有接上对应的登录服务。")
+            Text("手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。")
         }
     }
 
@@ -146,21 +140,23 @@ struct LoginView: View {
         path.append(AuthRoute.phone)
     }
 
-    /// TODO: Call `PhoneAppState.signInWeChat(openId:)` once unified identity is on main.
-    /// `demo-wechat-openid` is a placeholder. Nothing calls the WeChat SDK.
+    /// TODO: Replace `demo-wechat-openid` with the openid from WeChat OAuth. Nothing calls the WeChat SDK.
     private func signInWeChat() {
-        signInStub(name: "微信用户", email: "wechat@identity.skywanderer.local")
+        signIn {
+            try app.signInWeChat(openId: "demo-wechat-openid")
+        }
     }
 
-    /// TODO: Call `PhoneAppState.signInGoogle(subject:)` once unified identity is on main.
-    /// `demo-google-sub` is a placeholder. Nothing checks a Google ID token.
+    /// TODO: Replace `demo-google-sub` with the Google ID-token `sub`. Nothing checks a Google ID token.
     private func signInGoogle() {
-        signInStub(name: "Google 用户", email: "google@identity.skywanderer.local")
+        signIn {
+            try app.signInGoogle(subject: "demo-google-sub")
+        }
     }
 
-    private func signInStub(name: String, email: String) {
+    private func signIn(_ body: @MainActor () throws -> Void) {
         do {
-            try completeLocalSignIn(app, name: name, email: email)
+            try body()
             error = ""
         } catch let failure as AuthFailure {
             error = failure.message
@@ -208,7 +204,7 @@ struct PhoneVerifyView: View {
                             .foregroundStyle(LoginColor.footer)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 18)
-                        Text(PhoneDemoCode.token)
+                        Text(IdentityDemoCode.token)
                             .font(.system(size: 28, weight: .heavy))
                             .foregroundStyle(LoginColor.sky)
                             .frame(maxWidth: .infinity)
@@ -254,35 +250,24 @@ struct PhoneVerifyView: View {
     }
 
     private func requestCode() {
-        guard let canonical = canonicalPhone(phone) else {
+        let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
             preparedPhone = nil
-            error = phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? "请填写手机号"
-                : "请填写有效的手机号"
+            error = "请填写手机号"
             return
         }
-        preparedPhone = canonical
+        preparedPhone = trimmed
         error = ""
     }
 
-    /// TODO: Replace the local account with `app.signInPhone(phone:demoCode:)`.
-    /// That method is part of the unified identity work and is not on this branch.
+    /// `signInPhone` checks `IdentityDemoCode` and stores the number as E.164.
     private func submit() {
         guard let preparedPhone else {
             error = "请先获取验证码"
             return
         }
-        guard code.trimmingCharacters(in: .whitespacesAndNewlines) == PhoneDemoCode.token else {
-            error = "验证码不正确"
-            return
-        }
-        let digits = preparedPhone.filter(\.isNumber)
         do {
-            try completeLocalSignIn(
-                app,
-                name: preparedPhone,
-                email: "p\(digits)@phone.skywanderer.local"
-            )
+            try app.signInPhone(phone: preparedPhone, demoCode: code)
             error = ""
         } catch let failure as AuthFailure {
             error = failure.message
@@ -290,42 +275,6 @@ struct PhoneVerifyView: View {
             self.error = "登录没有完成"
         }
     }
-}
-
-/// Temporary session through the name/password API already on `PhoneAppState`.
-/// Swap call sites to `signInPhone` / `signInWeChat` / `signInGoogle` when that directory lands.
-/// This does not merge identities.
-@MainActor
-private func completeLocalSignIn(_ app: PhoneAppState, name: String, email: String) throws {
-    let password = "local-demo"
-    let exists = app.database.accounts.contains {
-        $0.name.compare(name, options: .caseInsensitive) == .orderedSame
-    }
-    if exists {
-        try app.login(name: name, password: password)
-    } else {
-        try app.register(name: name, password: password, email: email)
-    }
-    app.banner = ""
-}
-
-private func canonicalPhone(_ raw: String) -> String? {
-    let compact = raw
-        .replacingOccurrences(of: " ", with: "")
-        .replacingOccurrences(of: "-", with: "")
-    guard !compact.isEmpty else { return nil }
-    let digits = compact.filter(\.isNumber)
-    if compact.hasPrefix("+") {
-        guard (8...15).contains(digits.count) else { return nil }
-        return "+" + digits
-    }
-    if digits.count == 11, digits.hasPrefix("1") {
-        return "+86" + digits
-    }
-    if digits.count == 13, digits.hasPrefix("86") {
-        return "+" + digits
-    }
-    return nil
 }
 
 // MARK: - Sky background

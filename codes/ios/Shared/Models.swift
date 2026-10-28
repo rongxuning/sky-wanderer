@@ -169,11 +169,62 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     }
 }
 
-struct Account: Codable, Hashable, Identifiable {
+struct Account: Hashable, Identifiable {
     var id: UUID
+    /// Display name. Kept as `name` so existing screens stay valid.
     var name: String
     var email: String
     var passwordHash: String
+    var createdAt: Date = Date()
+    /// Set when this account was merged into an earlier one and must not be used.
+    var retiredAt: Date?
+    var mergedIntoUserID: UUID?
+    var mergedFromUserIDs: [UUID] = []
+
+    var displayName: String { name }
+}
+
+extension Account: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, email, passwordHash, createdAt, retiredAt, mergedIntoUserID, mergedFromUserIDs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        email = try container.decodeIfPresent(String.self, forKey: .email) ?? ""
+        passwordHash = try container.decodeIfPresent(String.self, forKey: .passwordHash) ?? ""
+        // Stored as a numeric timestamp so two accounts created in the same second
+        // still merge toward the earlier one after the JSON file is reloaded.
+        // Accounts saved before identities existed have no timestamp and sort first.
+        if let seconds = try container.decodeIfPresent(Double.self, forKey: .createdAt) {
+            createdAt = Date(timeIntervalSince1970: seconds)
+        } else {
+            createdAt = Date(timeIntervalSince1970: 0)
+        }
+        if let seconds = try container.decodeIfPresent(Double.self, forKey: .retiredAt) {
+            retiredAt = Date(timeIntervalSince1970: seconds)
+        } else {
+            retiredAt = nil
+        }
+        mergedIntoUserID = try container.decodeIfPresent(UUID.self, forKey: .mergedIntoUserID)
+        mergedFromUserIDs = try container.decodeIfPresent([UUID].self, forKey: .mergedFromUserIDs) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(email, forKey: .email)
+        try container.encode(passwordHash, forKey: .passwordHash)
+        try container.encode(createdAt.timeIntervalSince1970, forKey: .createdAt)
+        if let retiredAt {
+            try container.encode(retiredAt.timeIntervalSince1970, forKey: .retiredAt)
+        }
+        try container.encodeIfPresent(mergedIntoUserID, forKey: .mergedIntoUserID)
+        try container.encode(mergedFromUserIDs, forKey: .mergedFromUserIDs)
+    }
 }
 
 struct SocialPost: Codable, Hashable, Identifiable {
