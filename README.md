@@ -20,6 +20,6 @@ Bundle ID：`com.rongxuning.sky-wanderer`，手表是 `com.rongxuning.sky-wander
 
 真实路径：HealthKit 授权后读取心率、睡眠、步数，并记录徒步和跑步；地图用 MapKit 和系统定位；账号存在本机。
 
-模拟路径：没有 HealthKit 或锻炼启动失败时，运动数据在本机生成，界面会写「本地模拟」。组队没有服务器，`LocalTeammateSimulator` 按 `TeammateSync` 在本机移动示例队友。忘记密码不发邮件，页面上会给出演示验证码 `OMNI-LOCAL`，没有位数和有效期。社交示例帖和示例训练记录是本地种子数据。手表和手机的记录各自存在本机，没有同步。手表上的社交、组队、我、周/月/年统计是更短的一版，没有手机上的密图表。
+模拟路径：没有 HealthKit 或锻炼启动失败时，运动数据在本机生成，界面会写「本地模拟」。组队没有服务器，`LocalTeammateSimulator` 按 `TeammateSync` 在本机移动示例队友。手机号登录不发短信，验证页给出演示验证码 `SKY-LOCAL`，没有位数和有效期。微信和 Google 是本机占位。登录页不再进入注册、忘记密码或重置密码。社交示例帖和示例训练记录是本地种子数据。手表和手机的记录各自存在本机，没有同步。手表上的社交、组队、我、周/月/年统计是更短的一版，没有手机上的密图表。
 
 训练负荷、体能储备、休息建议的公式在 `Shared/TrainingEstimate.swift`。图表 Z1–Z5 的分界在 `Shared/ZoneScale.swift`，只用于着色，不是医疗标准。
