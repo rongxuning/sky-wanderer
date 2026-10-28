@@ -1,9 +1,8 @@
 import SwiftUI
 
+/// Login routes. Register, forgot-password, and reset are not entry points.
 enum AuthRoute: Hashable {
-    case register
-    case forgot
-    case reset(String)
+    case phone
 }
 
 struct AuthFlow: View {
@@ -14,15 +13,16 @@ struct AuthFlow: View {
             LoginView(path: $path)
                 .navigationDestination(for: AuthRoute.self) { route in
                     switch route {
-                    case .register:
-                        RegisterView()
-                    case .forgot:
-                        ForgotPasswordView(path: $path)
-                    case .reset(let email):
-                        ResetPasswordView(path: $path, email: email)
+                    case .phone:
+                        PhoneVerifyView()
                     }
                 }
         }
+        .background(LoginSkyBackground())
+        .presentationBackground {
+            LoginSkyBackground()
+        }
+        .preferredColorScheme(.light)
     }
 }
 
@@ -30,335 +30,592 @@ struct LoginView: View {
     @EnvironmentObject private var app: PhoneAppState
     @Environment(\.dismiss) private var dismiss
     @Binding var path: NavigationPath
-    @State private var name = ""
-    @State private var password = ""
     @State private var error = ""
+    @State private var showNote = false
 
     var body: some View {
         ZStack {
-            CanvasBackground(breathes: true)
-            VStack {
-                HStack {
-                    Spacer()
-                    Button("关闭") { dismiss() }
-                        .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
-                Spacer()
-                VStack(spacing: 0) {
-                    SkyWandererWordmark(size: 26)
-                    field("账号", text: $name, secure: false)
-                        .padding(.top, 26)
-                    field("密码", text: $password, secure: true)
+            LoginSkyBackground()
+            VStack(spacing: 0) {
+                topBar
+                titleBlock
+                    .padding(.top, 48)
+                LoginAvatars()
+                    .padding(.top, 8)
+                Spacer(minLength: 16)
+                providerButtons
+                if !error.isEmpty {
+                    LoginErrorText(message: error)
                         .padding(.top, 14)
-                    Button(action: submit) {
-                        Text("登录")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 22)
-                            .frame(height: 44)
-                            .background(Color.omniCobalt, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 20)
-                    HStack(spacing: 8) {
-                        Button("注册") { path.append(AuthRoute.register) }
-                        Text("|")
-                        Button("忘记密码") { path.append(AuthRoute.forgot) }
-                    }
-                    .font(.system(size: 14, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color.omniCobalt)
-                    .buttonStyle(.plain)
-                    .padding(.top, 16)
-                    if !error.isEmpty {
-                        Text(error)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.omniInk)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 12)
-                    } else if !app.banner.isEmpty {
-                        Text(app.banner)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.omniCobalt)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 12)
-                    }
+                        .padding(.horizontal, 28)
+                } else if !app.banner.isEmpty {
+                    Text(app.banner)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(LoginColor.sky)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 14)
+                        .padding(.horizontal, 28)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 28)
-                .frame(width: 276)
-                .glass()
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(Color.black, lineWidth: 3.5)
-                )
-                Spacer()
+                Spacer(minLength: 12)
+                Text("登录即表示同意用户协议与隐私政策")
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundStyle(LoginColor.footer)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 12)
             }
         }
         .navigationBarHidden(true)
+        .alert("登录说明", isPresented: $showNote) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text("手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。")
+        }
     }
 
-    private func submit() {
+    private var topBar: some View {
+        HStack {
+            Button("关闭") { dismiss() }
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(LoginColor.ink.opacity(0.82))
+            Spacer()
+            Button {
+                showNote = true
+            } label: {
+                Image(systemName: "info")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LoginColor.ink.opacity(0.82))
+                    .frame(width: 26, height: 26)
+                    .overlay {
+                        Circle().strokeBorder(LoginColor.ink.opacity(0.82), lineWidth: 1.35)
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("登录说明")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
+    }
+
+    private var titleBlock: some View {
+        HStack {
+            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: -2) {
+                Text("Sky")
+                    .font(.system(size: 54, weight: .bold))
+                    .foregroundStyle(LoginColor.sky)
+                    .tracking(-0.8)
+                Text("Wanderer")
+                    .font(.system(size: 34, weight: .bold))
+                    .foregroundStyle(LoginColor.ink)
+                    .tracking(-0.4)
+            }
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var providerButtons: some View {
+        VStack(spacing: 12) {
+            LoginProviderButton("本机手机号登录", action: openPhone) {
+                CarrierPhoneMark()
+            }
+            LoginProviderButton("微信登录", action: signInWeChat) {
+                WeChatMark()
+            }
+            LoginProviderButton("Google 登录", action: signInGoogle) {
+                GoogleMark()
+            }
+        }
+        .frame(maxWidth: 312)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 28)
+    }
+
+    private func openPhone() {
+        error = ""
+        path.append(AuthRoute.phone)
+    }
+
+    /// TODO: Replace `demo-wechat-openid` with the openid from WeChat OAuth. Nothing calls the WeChat SDK.
+    private func signInWeChat() {
+        signIn {
+            try app.signInWeChat(openId: "demo-wechat-openid")
+        }
+    }
+
+    /// TODO: Replace `demo-google-sub` with the Google ID-token `sub`. Nothing checks a Google ID token.
+    private func signInGoogle() {
+        signIn {
+            try app.signInGoogle(subject: "demo-google-sub")
+        }
+    }
+
+    private func signIn(_ body: @MainActor () throws -> Void) {
         do {
-            try app.login(name: name, password: password)
+            try body()
             error = ""
-            dismiss()
         } catch let failure as AuthFailure {
             error = failure.message
         } catch {
             self.error = "登录没有完成"
         }
     }
-
-    private func field(_ placeholder: String, text: Binding<String>, secure: Bool) -> some View {
-        Group {
-            if secure {
-                SecureField(placeholder, text: text)
-            } else {
-                TextField(placeholder, text: text)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-        }
-        .multilineTextAlignment(.leading)
-        .font(.system(size: 16, design: .rounded))
-        .foregroundStyle(Color.omniInk)
-        .frame(height: 48)
-        .padding(.horizontal, 12)
-        .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.omniIce.opacity(0.9), lineWidth: 1)
-        )
-    }
 }
 
-struct RegisterView: View {
+struct PhoneVerifyView: View {
     @EnvironmentObject private var app: PhoneAppState
-    @State private var name = ""
-    @State private var password = ""
-    @State private var email = ""
+    @Environment(\.dismiss) private var dismiss
+    @State private var phone = ""
+    @State private var code = ""
+    @State private var preparedPhone: String?
     @State private var error = ""
 
     var body: some View {
         ZStack {
-            CanvasBackground()
+            LoginSkyBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    AuthCard {
-                        field("账号", text: $name)
-                        field("密码", text: $password, secure: true)
-                        Text("邮箱（必填，用于接收重置验证码）")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.omniMuted)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 18)
-                        field("邮箱", text: $email)
-                            .textContentType(.emailAddress)
-                            .keyboardType(.emailAddress)
-                        primaryButton("注册", action: submit)
-                        if !error.isEmpty {
-                            Text(error)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.omniInk)
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 12)
+                    Text("验证手机号")
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(LoginColor.sky)
+                    Text("输入本机号码。下一步只在这台手机上显示演示验证码，不会发短信。")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(LoginColor.footer)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 8)
+                    loginField("手机号", text: $phone)
+                        .keyboardType(.phonePad)
+                        .textContentType(.telephoneNumber)
+                        .padding(.top, 22)
+                        .onChange(of: phone) { _, _ in
+                            preparedPhone = nil
+                            code = ""
                         }
-                    }
-                }
-                .padding(.horizontal, 28)
-                .padding(.top, 12)
-            }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .tint(Color.omniInk)
-    }
-
-    private func submit() {
-        do {
-            try app.register(name: name, password: password, email: email)
-        } catch let failure as AuthFailure {
-            error = failure.message
-        } catch {
-            self.error = "注册没有完成"
-        }
-    }
-}
-
-struct ForgotPasswordView: View {
-    @EnvironmentObject private var app: PhoneAppState
-    @Binding var path: NavigationPath
-    @State private var email = ""
-    @State private var code = ""
-    @State private var prepared = false
-    @State private var error = ""
-
-    var body: some View {
-        ZStack {
-            CanvasBackground()
-            ScrollView {
-                AuthCard {
-                    field("邮箱", text: $email)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                    primaryButton("获取验证码", action: requestCode)
-                    if prepared {
-                        Text("本地演示。验证码不会发到邮箱，也没有位数或有效期。请原样输入下面的演示验证码。")
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.omniMuted)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 16)
-                        Text(LocalDemoCode.token)
-                            .font(.system(size: 28, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Color.omniCobalt)
+                    if preparedPhone == nil {
+                        LoginPrimaryButton("获取验证码", action: requestCode)
+                            .padding(.top, 18)
+                    } else {
+                        Text("本地演示。验证码不会发到手机，也没有位数或有效期。请原样输入下面的演示验证码。")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(LoginColor.footer)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 18)
+                        Text(IdentityDemoCode.token)
+                            .font(.system(size: 28, weight: .heavy))
+                            .foregroundStyle(LoginColor.sky)
                             .frame(maxWidth: .infinity)
-                            .padding(.top, 8)
-                        field("验证码", text: $code)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        primaryButton("验证", action: verify)
+                            .padding(.top, 10)
+                        loginField("验证码", text: $code, capitalization: .characters)
+                            .textContentType(.oneTimeCode)
+                            .padding(.top, 12)
+                        LoginPrimaryButton("登录", action: submit)
+                            .padding(.top, 18)
                     }
                     if !error.isEmpty {
-                        Text(error)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.omniInk)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 12)
+                        LoginErrorText(message: error)
+                            .padding(.top, 14)
                     }
                 }
+                .frame(maxWidth: 312)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 28)
                 .padding(.top, 12)
+                .padding(.bottom, 28)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .scrollContentBackground(.hidden)
+        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text("返回")
+                            .font(.system(size: 17, weight: .regular))
+                    }
+                    .foregroundStyle(LoginColor.ink.opacity(0.86))
+                }
+                .buttonStyle(.plain)
             }
         }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .tint(Color.omniInk)
     }
 
     private func requestCode() {
-        do {
-            try app.prepareReset(email: email)
-            prepared = true
-            error = ""
-        } catch let failure as AuthFailure {
-            prepared = false
-            error = failure.message
-        } catch {
-            self.error = "没有完成"
+        let trimmed = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            preparedPhone = nil
+            error = "请填写手机号"
+            return
         }
+        preparedPhone = trimmed
+        error = ""
     }
 
-    private func verify() {
+    /// `signInPhone` checks `IdentityDemoCode` and stores the number as E.164.
+    private func submit() {
+        guard let preparedPhone else {
+            error = "请先获取验证码"
+            return
+        }
         do {
-            try app.verifyReset(email: email, code: code)
-            path.append(AuthRoute.reset(email.trimmingCharacters(in: .whitespacesAndNewlines)))
+            try app.signInPhone(phone: preparedPhone, demoCode: code)
+            error = ""
         } catch let failure as AuthFailure {
             error = failure.message
         } catch {
-            self.error = "没有完成"
+            self.error = "登录没有完成"
         }
     }
 }
 
-struct ResetPasswordView: View {
-    @EnvironmentObject private var app: PhoneAppState
-    @Binding var path: NavigationPath
-    var email: String
-    @State private var password = ""
-    @State private var confirm = ""
-    @State private var error = ""
+// MARK: - Sky background
+
+private enum LoginColor {
+    static let sky = Color(red: 22 / 255, green: 72 / 255, blue: 184 / 255)
+    static let ink = Color(red: 17 / 255, green: 17 / 255, blue: 17 / 255)
+    static let footer = Color(red: 78 / 255, green: 93 / 255, blue: 110 / 255)
+    static let buttonText = Color(red: 28 / 255, green: 32 / 255, blue: 38 / 255)
+    static let chevron = Color(red: 142 / 255, green: 152 / 255, blue: 164 / 255)
+}
+
+private enum LoginWash {
+    case deep
+    case light
+    case pale
+
+    var stops: [Color] {
+        switch self {
+        case .deep:
+            return [
+                Color(red: 56 / 255, green: 132 / 255, blue: 214 / 255),
+                Color(red: 126 / 255, green: 186 / 255, blue: 238 / 255),
+                Color(red: 198 / 255, green: 228 / 255, blue: 250 / 255),
+                Color(red: 232 / 255, green: 245 / 255, blue: 253 / 255),
+            ]
+        case .light:
+            return [
+                Color(red: 96 / 255, green: 170 / 255, blue: 236 / 255),
+                Color(red: 168 / 255, green: 214 / 255, blue: 248 / 255),
+                Color(red: 214 / 255, green: 236 / 255, blue: 252 / 255),
+                Color(red: 242 / 255, green: 249 / 255, blue: 254 / 255),
+            ]
+        case .pale:
+            return [
+                Color(red: 140 / 255, green: 198 / 255, blue: 244 / 255),
+                Color(red: 196 / 255, green: 226 / 255, blue: 250 / 255),
+                Color(red: 228 / 255, green: 242 / 255, blue: 253 / 255),
+                Color(red: 247 / 255, green: 251 / 255, blue: 255 / 255),
+            ]
+        }
+    }
+}
+
+/// Full-screen sky. Three blue gradients cross-fade; soft washes stay in front.
+/// `CanvasBackground` only breathes a pale ice tint on white, so the login screen keeps its own sky.
+private struct LoginSkyBackground: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            CanvasBackground()
-            ScrollView {
-                AuthCard {
-                    field("新密码", text: $password, secure: true)
-                    field("确认密码", text: $confirm, secure: true)
-                    primaryButton("重置密码", action: submit)
-                    if !error.isEmpty {
-                        Text(error)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color.omniInk)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 12)
-                    }
+            if reduceMotion {
+                washStack(phase: 1.0 / 3.0)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 15.0)) { timeline in
+                    let time = timeline.date.timeIntervalSinceReferenceDate
+                    let phase = time.truncatingRemainder(dividingBy: 9) / 9
+                    washStack(phase: phase)
                 }
-                .padding(.horizontal, 28)
-                .padding(.top, 24)
             }
+            LoginSkyWashes()
         }
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .tint(Color.omniInk)
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
     }
 
-    private func submit() {
-        do {
-            try app.resetPassword(email: email, password: password, confirm: confirm)
-            path = NavigationPath()
-        } catch let failure as AuthFailure {
-            error = failure.message
-        } catch {
-            self.error = "没有完成"
+    private func washStack(phase: Double) -> some View {
+        let weight = breathWeights(phase)
+        return ZStack {
+            gradient(.deep).opacity(weight.deep)
+            gradient(.light).opacity(weight.light)
+            gradient(.pale).opacity(weight.pale)
+        }
+    }
+
+    private func gradient(_ wash: LoginWash) -> some View {
+        LinearGradient(colors: wash.stops, startPoint: .top, endPoint: .bottom)
+    }
+
+    /// One turn visits deep, then light, then pale, then deep again.
+    private func breathWeights(_ phase: Double) -> (deep: Double, light: Double, pale: Double) {
+        let wrapped = phase - floor(phase)
+        let scaled = wrapped * 3
+        let index = Int(scaled) % 3
+        let fraction = scaled - Double(Int(scaled))
+        var weights = [0.0, 0.0, 0.0]
+        weights[index] = 1 - fraction
+        weights[(index + 1) % 3] = fraction
+        return (weights[0], weights[1], weights[2])
+    }
+}
+
+private struct LoginSkyWashes: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var drifted = false
+
+    var body: some View {
+        ZStack {
+            Ellipse()
+                .fill(Color(red: 36 / 255, green: 112 / 255, blue: 196 / 255).opacity(0.55))
+                .frame(width: 640, height: 240)
+                .blur(radius: 36)
+                .offset(x: drifted ? -24 : 10, y: -300)
+            Ellipse()
+                .fill(Color(red: 92 / 255, green: 168 / 255, blue: 230 / 255).opacity(0.5))
+                .frame(width: 520, height: 200)
+                .blur(radius: 32)
+                .offset(x: drifted ? 36 : -20, y: -150)
+            Ellipse()
+                .fill(Color.white.opacity(0.38))
+                .frame(width: 460, height: 180)
+                .blur(radius: 28)
+                .offset(x: drifted ? -12 : 28, y: -20)
+            Ellipse()
+                .fill(Color(red: 186 / 255, green: 220 / 255, blue: 246 / 255).opacity(0.55))
+                .frame(width: 680, height: 260)
+                .blur(radius: 30)
+                .offset(y: 220)
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 7).repeatForever(autoreverses: true)) {
+                drifted = true
+            }
         }
     }
 }
 
-private struct AuthCard<Content: View>: View {
-    @ViewBuilder private var content: () -> Content
+// MARK: - Avatars
 
-    init(@ViewBuilder content: @escaping () -> Content) {
-        self.content = content
+/// Day and night marks from the asset catalog. Each PNG is mostly transparent padding,
+/// so the frames overlap and the visible faces sit a short gap apart. Night is already upright.
+private struct LoginAvatars: View {
+    var body: some View {
+        HStack(spacing: -44) {
+            avatar("SkyAvatarDay", label: "Sky，日间")
+            avatar("SkyAvatarNight", label: "Sky，夜间")
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Sky，日间与夜间")
+    }
+
+    private func avatar(_ name: String, label: String) -> some View {
+        Image(name)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: 158, height: 158)
+            .padding(.vertical, -18)
+            .shadow(color: Color(red: 0.15, green: 0.35, blue: 0.58).opacity(0.18), radius: 10, y: 6)
+            .accessibilityLabel(label)
+    }
+}
+
+// MARK: - Controls
+
+private struct LoginProviderButton<Icon: View>: View {
+    var title: String
+    var action: () -> Void
+    var icon: Icon
+
+    init(_ title: String, action: @escaping () -> Void, @ViewBuilder icon: () -> Icon) {
+        self.title = title
+        self.action = action
+        self.icon = icon()
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            content()
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 28)
-        .glass()
-    }
-}
-
-@ViewBuilder
-private func field(_ placeholder: String, text: Binding<String>, secure: Bool = false) -> some View {
-    Group {
-        if secure {
-            SecureField(placeholder, text: text)
-        } else {
-            TextField(placeholder, text: text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-        }
-    }
-    .multilineTextAlignment(.center)
-    .font(.system(size: 16, design: .rounded))
-    .foregroundStyle(Color.omniInk)
-    .frame(maxWidth: .infinity)
-    .frame(height: 48)
-    .padding(.horizontal, 12)
-    .background(Color.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    .overlay(
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(Color.omniIce.opacity(0.9), lineWidth: 1)
-    )
-    .padding(.top, 14)
-}
-
-private func primaryButton(_ title: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-        Text(title)
-            .font(.system(size: 17, weight: .bold, design: .rounded))
-            .foregroundStyle(.white)
+        Button(action: action) {
+            HStack(spacing: 0) {
+                icon
+                    .frame(width: 32, height: 24, alignment: .leading)
+                Text(title)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(LoginColor.buttonText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LoginColor.chevron)
+                    .frame(width: 18, alignment: .trailing)
+            }
+            .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(Color.omniCobalt, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .frame(height: 50)
+            .background {
+                ZStack {
+                    Capsule().fill(.ultraThinMaterial)
+                    Capsule().fill(Color.white.opacity(0.74))
+                }
+            }
+            .overlay {
+                Capsule().strokeBorder(Color.white.opacity(0.92), lineWidth: 0.8)
+            }
+            .shadow(color: Color(red: 0.25, green: 0.45, blue: 0.72).opacity(0.12), radius: 10, y: 5)
+        }
+        .buttonStyle(LoginPillPressStyle())
     }
-    .buttonStyle(.plain)
-    .padding(.top, 20)
+}
+
+private struct LoginPrimaryButton: View {
+    var title: String
+    var action: () -> Void
+
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(LoginColor.sky, in: Capsule())
+        }
+        .buttonStyle(LoginPillPressStyle())
+    }
+}
+
+private struct LoginPillPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.74 : 1)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+private struct LoginErrorText: View {
+    var message: String
+
+    var body: some View {
+        Text(message)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color(red: 0.62, green: 0.13, blue: 0.16))
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+private func loginField(
+    _ placeholder: String,
+    text: Binding<String>,
+    capitalization: TextInputAutocapitalization = .never
+) -> some View {
+    TextField(placeholder, text: text)
+        .textInputAutocapitalization(capitalization)
+        .autocorrectionDisabled()
+        .font(.system(size: 16, weight: .regular))
+        .foregroundStyle(LoginColor.ink)
+        .padding(.horizontal, 16)
+        .frame(height: 50)
+        .background(Color.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.9), lineWidth: 0.8)
+        }
+}
+
+private struct CarrierPhoneMark: View {
+    private let green = Color(red: 0.13, green: 0.68, blue: 0.42)
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 1) {
+            Image(systemName: "person.fill")
+                .font(.system(size: 14, weight: .semibold))
+            Image(systemName: "iphone")
+                .font(.system(size: 10, weight: .medium))
+                .offset(y: -1)
+        }
+        .foregroundStyle(green)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct WeChatMark: View {
+    private let green = Color(red: 0.07, green: 0.75, blue: 0.35)
+
+    var body: some View {
+        ZStack {
+            bubble
+                .scaleEffect(1)
+                .offset(x: -3.5, y: 2.5)
+            bubble
+                .scaleEffect(0.72)
+                .offset(x: 5, y: -4)
+        }
+        .frame(width: 22, height: 20)
+        .accessibilityHidden(true)
+    }
+
+    private var bubble: some View {
+        ZStack {
+            Circle()
+                .fill(green)
+                .frame(width: 13, height: 13)
+            HStack(spacing: 2.2) {
+                Circle().fill(.white).frame(width: 2, height: 2)
+                Circle().fill(.white).frame(width: 2, height: 2)
+            }
+            .offset(y: -0.4)
+        }
+    }
+}
+
+private struct GoogleMark: View {
+    private let blue = Color(red: 66 / 255, green: 133 / 255, blue: 244 / 255)
+    private let red = Color(red: 234 / 255, green: 67 / 255, blue: 53 / 255)
+    private let yellow = Color(red: 251 / 255, green: 188 / 255, blue: 5 / 255)
+    private let green = Color(red: 52 / 255, green: 168 / 255, blue: 83 / 255)
+
+    var body: some View {
+        ZStack {
+            arc(red, from: 0.74, to: 1)
+            arc(red, from: 0, to: 0.10)
+            arc(blue, from: 0.10, to: 0.22)
+            arc(green, from: 0.30, to: 0.55)
+            arc(yellow, from: 0.55, to: 0.74)
+            Capsule()
+                .fill(blue)
+                .frame(width: 8, height: 2.5)
+                .offset(x: 3.2)
+        }
+        .frame(width: 18, height: 18)
+        .accessibilityHidden(true)
+    }
+
+    private func arc(_ color: Color, from start: CGFloat, to end: CGFloat) -> some View {
+        Circle()
+            .trim(from: start, to: end)
+            .stroke(color, style: StrokeStyle(lineWidth: 2.6, lineCap: .butt))
+            .rotationEffect(.degrees(-90))
+            .padding(1.2)
+    }
+}
+
+#Preview {
+    AuthFlow()
+        .environmentObject(PhoneAppState())
 }
