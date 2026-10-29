@@ -12,7 +12,7 @@
 | `codes/user` | 手机号、微信、Google 登录和账号合并。Postgres 迁移在 `codes/user/migrations`。 |
 | `codes/analytics` | 数据分析和 AI。由 core 以后在进程内调用。本阶段只有说明，没有实现。 |
 
-模块根在仓库根的 `go.mod`（Vercel 的 Go preset 从这里读版本）。入口是 `codes/core/cmd/api`，`vercel.json` 把它编成监听 `PORT` 的服务。
+模块根在仓库根的 `go.mod`（Vercel 的 Go preset 从这里读版本）。Preset 找入口时不看 `buildCommand`，只认仓库根的 `main.go`、`cmd/api/main.go`、`cmd/server/main.go` 之一。根上的 `cmd/api/main.go` 是薄封装，只调用 `gateway.ListenAndServe()`。服务实现仍在 `codes/core`，本地继续 `go run ./codes/core/cmd/api`。找到入口之后，`vercel.json` 的 `buildCommand` 把 `./cmd/api` 编到 `$VERCEL_OUTPUT_FILE`（本地没有这个变量时落到被 gitignore 的 `./server`）。
 
 ## Neon
 
@@ -30,7 +30,7 @@
 ## Vercel
 
 1. 新建项目，Root Directory 用仓库根（不要改成 `codes/server`，那个目录已经删除）。
-2. Framework Preset 选 Go。仓库里的 `vercel.json` 已经写了 `"framework": "go"`，并把 `./codes/core/cmd/api` 编成监听 `PORT` 的二进制。
+2. Framework Preset 选 Go，Root Directory 保持仓库根。Preset 先确认根上有 `go.mod` 和 `cmd/api/main.go`（另外两个合法路径是 `main.go`、`cmd/server/main.go`），通过之后才跑 `vercel.json` 里的 `buildCommand`：`go build -o "$VERCEL_OUTPUT_FILE" ./cmd/api`。编出来的二进制监听 `PORT`。不要把 Root Directory 改成 `codes/core`，那里没有 `go.mod`。
 3. 把 `deploy/env.sample` 里的变量填进项目的 Environment Variables。生产把 `AUTH_DEMO` 设为 `0`。
 4. 部署完成后，用项目域名检查：`curl -sS https://<project>.vercel.app/health`，数据库通的时候是 `{"ok":true}`。
 

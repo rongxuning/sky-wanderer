@@ -29,7 +29,7 @@ curl -sS localhost:8787/health
 3. `AUTH_DEMO=0`。
 4. 短信、微信、Google 的变量见 `codes/env.sample`。
 
-Vercel 项目根就是本仓库。`vercel.json` 把 `./codes/core/cmd/api` 编成监听 `PORT` 的 Go 服务。环境变量与 `deploy/env.sample` 相同。部署本身不在这个改动里做。
+Vercel 项目根就是本仓库。Go preset 从根上的 `cmd/api/main.go` 找到入口，再按 `vercel.json` 编译，步骤见 [deploy-sky.md](deploy-sky.md)。环境变量与 `deploy/env.sample` 相同。部署本身不在这个改动里做。
 
 iPhone 的 `SKY_API_BASE_URL` 默认仍是 `https://api.sky-wanderer.online`。改指向 Vercel 域名的步骤写在 [deploy-sky.md](deploy-sky.md)。登录界面不改。
 
