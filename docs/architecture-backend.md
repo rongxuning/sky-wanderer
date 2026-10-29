@@ -31,7 +31,7 @@ curl -sS localhost:8787/health
 
 Vercel 项目根就是本仓库。Go preset 从根上的 `cmd/api/main.go` 找到入口，再按 `vercel.json` 编译，步骤见 [deploy-sky.md](deploy-sky.md)。环境变量与 `deploy/env.sample` 相同。部署本身不在这个改动里做。
 
-iPhone 的 `SKY_API_BASE_URL` 默认仍是 `https://api.sky-wanderer.online`。改指向 Vercel 域名的步骤写在 [deploy-sky.md](deploy-sky.md)。登录界面不改。
+iPhone 的 `SKY_API_BASE_URL` 临时指向 `https://sky-wanderer.vercel.app`。`https://api.sky-wanderer.online` 仍是以后的自定义域名，见 [deploy-sky.md](deploy-sky.md)。登录界面不改。
 
 ## 登录接口
 
