@@ -2,12 +2,13 @@
 // 把 SKY_API_BASE_URL 留空，或把 SKY_AUTH_DEMO 设为 1，登录回到本机演示（SKY-LOCAL / 占位身份）。
 // xcconfig 里 // 会开始一段注释，所以网址用 SKY_URL_SLASH 拼出来。
 // 目标上的同名 Build Setting 会盖过这里的值。
-// 默认仍是 https://api.sky-wanderer.online。临时改到 Vercel 时只改下面的主机名，
-// 例如 https:$(SKY_URL_SLASH)$(SKY_URL_SLASH)your-project.vercel.app
+// 临时目标是 https://sky-wanderer.vercel.app（GET /health 已是 {"ok":true}）。
+// https://api.sky-wanderer.online 仍是以后的自定义域名，Nginx 先不发布。
+// 客户端 SKY_AUTH_DEMO 留空才会打到服务器；服务端 AUTH_DEMO=1 时演示码是 SKY-LOCAL。
 // 微信和 Google 回调会跟着变，后台白名单要一起改。登录页不用改。
 
 SKY_URL_SLASH = /
-SKY_API_BASE_URL = https:$(SKY_URL_SLASH)$(SKY_URL_SLASH)api.sky-wanderer.online
+SKY_API_BASE_URL = https:$(SKY_URL_SLASH)$(SKY_URL_SLASH)sky-wanderer.vercel.app
 SKY_AUTH_DEMO =
 SKY_WECHAT_APP_ID =
 SKY_GOOGLE_CLIENT_ID =

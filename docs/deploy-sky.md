@@ -34,13 +34,13 @@
 3. 把 `deploy/env.sample` 里的变量填进项目的 Environment Variables。生产把 `AUTH_DEMO` 设为 `0`。
 4. 部署完成后，用项目域名检查：`curl -sS https://<project>.vercel.app/health`，数据库通的时候是 `{"ok":true}`。
 
-iPhone 默认仍请求 `https://api.sky-wanderer.online`（`codes/ios/Config/Sky.xcconfig` 的 `SKY_API_BASE_URL`）。要改打到 Vercel，只改这一行的主机名，继续用 `SKY_URL_SLASH` 拼接，例如：
+iPhone 的 `SKY_API_BASE_URL`（`codes/ios/Config/Sky.xcconfig`）临时指向已确认可用的 `https://sky-wanderer.vercel.app`（`GET /health` 为 `{"ok":true}`，服务端 `AUTH_DEMO=1`，演示码 `SKY-LOCAL`）。`https://api.sky-wanderer.online` 仍是以后的自定义域名，对应的 Nginx 先不发布。主机名继续用 `SKY_URL_SLASH` 拼接：
 
 ```
-SKY_API_BASE_URL = https:$(SKY_URL_SLASH)$(SKY_URL_SLASH)your-project.vercel.app
+SKY_API_BASE_URL = https:$(SKY_URL_SLASH)$(SKY_URL_SLASH)sky-wanderer.vercel.app
 ```
 
-微信、Google 的回调会跟着变成 `https://<project>.vercel.app/v1/auth/wechat/callback` 和 `.../google/callback`。微信开放平台和 Google Cloud 里的回调白名单要一起改。登录页不用改。
+微信、Google 的回调会跟着变成 `https://sky-wanderer.vercel.app/v1/auth/wechat/callback` 和 `.../google/callback`。微信开放平台和 Google Cloud 里的回调白名单要一起改。登录页不用改。客户端的 `SKY_AUTH_DEMO` 留空，请求才会发到这台服务。
 
 ## 本机
 
