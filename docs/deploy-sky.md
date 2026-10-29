@@ -1,49 +1,62 @@
 # 部署 Sky 账号服务
 
-这份说明只描述目标机器上的骨架。本仓库的改动**不会**登录 `124.222.228.215`，也不会改 Timia 的 compose、Nginx 或环境变量。
+临时目标是 **Vercel + Neon**。同机目录 `/opt/sky-wanderer`、本机 Postgres 和 `api.sky-wanderer.online` 的 Nginx **先不动、也不在这台机器上发布**。本仓库的改动不会登录 `124.222.228.215`，也不会改 Timia 的 compose、Nginx 或环境变量。
 
-Sky 和 Timia 用同一台机器，但是分开跑：
+`deploy/docker-compose.prod.yml` 不再构建服务。`deploy/nginx/api.sky-wanderer.online.conf` 保持原样，不要装到那台机器上。
 
-- 目录：`/opt/sky-wanderer`（放这份仓库的检出）
-- Compose 项目名：`sky-wanderer`
-- Postgres：容器 `sky-wanderer-postgres`，卷 `sky_wanderer_postgres`。不要连 Timia 的库。
-- API 只绑在本机 `127.0.0.1:8788`（可用 `SKY_BIND_PORT` 改）。先确认这个端口没有被 Timia 占用。
-- Nginx：单独的 `server_name api.sky-wanderer.online`，不要写进 Timia 的站点文件。
+## 三个目录
 
-## DNS 和证书
+| 目录 | 职责 |
+| --- | --- |
+| `codes/core` | HTTP 网关。`GET /health`，挂载账号路由，监听 `PORT`。运动、轨迹以后加在 `codes/core/sport`。 |
+| `codes/user` | 手机号、微信、Google 登录和账号合并。Postgres 迁移在 `codes/user/migrations`。 |
+| `codes/analytics` | 数据分析和 AI。由 core 以后在进程内调用。本阶段只有说明，没有实现。 |
 
-先加一条 A 记录：
+模块根在仓库根的 `go.mod`（Vercel 的 Go preset 从这里读版本）。入口是 `codes/core/cmd/api`，`vercel.json` 把它编成监听 `PORT` 的服务。
 
-| 主机 | 类型 | 值 |
-| --- | --- | --- |
-| `api.sky-wanderer.online` | A | `124.222.228.215` |
+## Neon
 
-证书等 DNS 生效后再签，只签这个名字，例如：
+在 Neon 建好库之后，把连接串放进环境变量，不要提交：
 
-```bash
-certbot certonly --webroot -w /var/www/sky-wanderer -d api.sky-wanderer.online
+| 变量 | 填什么 |
+| --- | --- |
+| `DATABASE_URL` | **Pooled** URL。主机名里有 `-pooler`。运行中的查询走这条。 |
+| `DATABASE_URL_UNPOOLED` | **Direct** URL。启动时做迁移。不填则迁移也用 `DATABASE_URL`。 |
+
+两条都要带 `sslmode=require`。示例在 `codes/env.sample` 和 `deploy/env.sample`。
+
+进程对 Neon pooler 使用简单查询协议，避免事务模式下的 prepared statement 被拆掉。
+
+## Vercel
+
+1. 新建项目，Root Directory 用仓库根（不要改成 `codes/server`，那个目录已经删除）。
+2. Framework Preset 选 Go。仓库里的 `vercel.json` 已经写了 `"framework": "go"`，并把 `./codes/core/cmd/api` 编成监听 `PORT` 的二进制。
+3. 把 `deploy/env.sample` 里的变量填进项目的 Environment Variables。生产把 `AUTH_DEMO` 设为 `0`。
+4. 部署完成后，用项目域名检查：`curl -sS https://<project>.vercel.app/health`，数据库通的时候是 `{"ok":true}`。
+
+iPhone 默认仍请求 `https://api.sky-wanderer.online`（`codes/ios/Config/Sky.xcconfig` 的 `SKY_API_BASE_URL`）。要改打到 Vercel，只改这一行的主机名，继续用 `SKY_URL_SLASH` 拼接，例如：
+
+```
+SKY_API_BASE_URL = https:$(SKY_URL_SLASH)$(SKY_URL_SLASH)your-project.vercel.app
 ```
 
-签好以后，在**自己的**站点文件里加 443，证书路径用 `/etc/letsencrypt/live/api.sky-wanderer.online/`。不要让 certbot 改写 Timia 的站点。在此之前，`deploy/nginx/api.sky-wanderer.online.conf` 只监听 80。
+微信、Google 的回调会跟着变成 `https://<project>.vercel.app/v1/auth/wechat/callback` 和 `.../google/callback`。微信开放平台和 Google Cloud 里的回调白名单要一起改。登录页不用改。
 
-## 启动
+## 本机
 
-在服务器上检出仓库到 `/opt/sky-wanderer` 之后：
-
-```bash
-cd /opt/sky-wanderer
-cp deploy/env.sample deploy/.env
-# 编辑 deploy/.env，至少换掉 POSTGRES_PASSWORD。不要把填好的文件提交进仓库。
-docker compose --env-file deploy/.env -f deploy/docker-compose.prod.yml up -d --build
-```
-
-把 `deploy/nginx/api.sky-wanderer.online.conf` 装成单独的 Nginx 站点并 reload。本机检查：
+没有数据库时：
 
 ```bash
-curl -sS http://127.0.0.1:8788/health
+AUTH_DEMO=1 PORT=8787 go run ./codes/core/cmd/api
 ```
 
-应返回 `{"ok":true}`。数据库没起来时是 503。
+这时手机号接受 `SKY-LOCAL`，数据写在 `data/auth-store.json`。不设 `AUTH_DEMO` 又不设 `DATABASE_URL` 时，进程会退出并说明原因。
+
+有 Neon（或别的 Postgres）时，导出 `DATABASE_URL`，把 `AUTH_DEMO` 设为 `0`，再跑同一条命令。测试：
+
+```bash
+go test ./codes/user/ ./codes/core/...
+```
 
 ## 要人填的密钥
 
@@ -51,19 +64,18 @@ curl -sS http://127.0.0.1:8788/health
 
 | 变量 | 作用 |
 | --- | --- |
-| `POSTGRES_PASSWORD` | Sky 自己的 Postgres。Compose 会把它写进 `DATABASE_URL`。请用字母和数字，避免把 URL 弄坏。 |
+| `DATABASE_URL` | Neon pooled URL。`AUTH_DEMO=1` 且不填时改用本地 JSON。 |
+| `DATABASE_URL_UNPOOLED` | Neon direct URL，给迁移用。 |
 | `AUTH_DEMO` | 生产设为 `0`。设为 `1` 时手机号接受演示码 `SKY-LOCAL`，微信和 Google 在没有授权码时接受客户端传来的 openid / `sub`。 |
 | `AUTH_CODE_PEPPER` | 短信验证码哈希的额外盐。建议填一串随机字符。不填也能启动，只是哈希不带盐。 |
 | `SMS_PROVIDER` | `http` 或 `aliyun`。空着时，非演示模式发验证码会返回 `sms_not_configured`。 |
 | `SMS_HTTP_URL` / `SMS_HTTP_TOKEN` | `http` 适配器。服务会 POST JSON：`{"phone","code","signName","templateCode"}`。 |
 | `ALIYUN_SMS_ACCESS_KEY_ID` / `ALIYUN_SMS_ACCESS_KEY_SECRET` / `ALIYUN_SMS_SIGN_NAME` / `ALIYUN_SMS_TEMPLATE_CODE` | 阿里云短信 SendSms。模板参数是 `{"code":"123456"}`。 |
-| `WECHAT_APP_ID` / `WECHAT_APP_SECRET` | 服务端用授权码换 openid。生产模式不信任客户端自己报的 openid。微信后台回调地址填 `https://api.sky-wanderer.online/v1/auth/wechat/callback`。 |
+| `WECHAT_APP_ID` / `WECHAT_APP_SECRET` | 服务端用授权码换 openid。生产模式不信任客户端自己报的 openid。 |
 | `GOOGLE_CLIENT_IDS` | 允许的 ID token `aud`，逗号分隔。 |
 | `GOOGLE_CLIENT_SECRET` | Web 客户端的密钥，用来用授权码换 ID token。 |
-| `GOOGLE_REDIRECT_URIS` | 允许的回调。默认 `https://api.sky-wanderer.online/v1/auth/google/callback`。这个地址也要写在 Google Cloud 的 Web 客户端里。 |
+| `GOOGLE_REDIRECT_URIS` | 允许的回调。默认 `https://api.sky-wanderer.online/v1/auth/google/callback`。 |
 
-iPhone 工程默认请求 `https://api.sky-wanderer.online`，配置在 `codes/ios/Config/Sky.xcconfig`。微信 AppID、Google 客户端 ID 是公开标识，填在同一份 xcconfig 的 `SKY_WECHAT_APP_ID` 和 `SKY_GOOGLE_CLIENT_ID`。密钥只放服务器。
+iPhone 上的微信 AppID、Google 客户端 ID 仍是公开标识，填在 `codes/ios/Config/Sky.xcconfig`。密钥只放 Vercel。
 
 本机演示：把 `SKY_API_BASE_URL` 留空，或把 `SKY_AUTH_DEMO` 设为 `1`。这时不访问服务器，手机号仍显示 `SKY-LOCAL`。
-
-在没有 Postgres 的机器上试进程：`AUTH_DEMO=1 npm start`（在 `codes/server`）。不设 `AUTH_DEMO` 又不设 `DATABASE_URL` 时，进程会直接退出并说明原因。

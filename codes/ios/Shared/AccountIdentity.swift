@@ -69,8 +69,8 @@ enum IdentityAuthError: Error, Equatable {
     }
 }
 
-/// Same merge rules as `codes/server/src/auth-service.ts`.
-/// The executable tests live in `codes/server/test`. Keep the two copies aligned.
+/// Same merge rules as `codes/user` (`Service.mergeUsers`).
+/// The executable tests live in `codes/user`. Keep the two copies aligned.
 ///
 /// This directory is the on-device demo. Phone still checks `IdentityDemoCode`.
 /// When `SkyAuthConfig` has an API base URL and `SKY_AUTH_DEMO` is off, `PhoneAppState`

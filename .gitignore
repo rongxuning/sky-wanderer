@@ -1,6 +1,11 @@
 # macOS
 .DS_Store
 
+# Local Go API demo store, secrets, and the Vercel build binary.
+/data/
+.env
+/server
+
 # Signing material and local upload artifacts. Never commit these.
 *.p8
 *.p12
