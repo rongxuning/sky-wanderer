@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Login routes. Register, forgot-password, and reset are not entry points.
+/// Pushed login routes. Email register and forgot-password stay on the login card.
 enum AuthRoute: Hashable {
     case phone
 }
@@ -27,41 +27,68 @@ struct AuthFlow: View {
     }
 }
 
+private enum LoginCardMode {
+    case login
+    case register
+}
+
+private enum LoginCardField: Hashable {
+    case email
+    case displayName
+    case password
+    case confirmPassword
+}
+
+private enum LoginCardNotice: Equatable {
+    case failure(String)
+    case hint(String)
+    case success(String)
+
+    var text: String {
+        switch self {
+        case .failure(let text), .hint(let text), .success(let text):
+            return text
+        }
+    }
+}
+
 struct LoginView: View {
     @EnvironmentObject private var app: PhoneAppState
     @Binding var path: NavigationPath
-    @State private var error = ""
+    @State private var mode: LoginCardMode = .login
+    @State private var email = ""
+    @State private var displayName = ""
+    @State private var password = ""
+    @State private var confirmPassword = ""
+    @State private var notice: LoginCardNotice?
     @State private var showNote = false
     @State private var busy = false
+    @FocusState private var focusedField: LoginCardField?
 
     var body: some View {
         ZStack {
             LoginSkyBackground()
             VStack(spacing: 0) {
                 topBar
-                Spacer(minLength: 24)
-                titleBlock
-                providerButtons
-                    .padding(.top, 36)
-                if !error.isEmpty {
-                    LoginErrorText(message: error)
-                        .padding(.top, 14)
-                        .padding(.horizontal, 28)
-                } else if !app.banner.isEmpty {
-                    Text(app.banner)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(LoginColor.sky)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 14)
-                        .padding(.horizontal, 28)
+                GeometryReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            Spacer(minLength: 8)
+                            titleBlock
+                            accountCard
+                                .padding(.top, 28)
+                                .padding(.horizontal, 22)
+                            agreement
+                                .padding(.top, 16)
+                                .padding(.bottom, 12)
+                            Spacer(minLength: 8)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: proxy.size.height)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                    .scrollIndicators(.hidden)
                 }
-                Spacer(minLength: 24)
-                Text("登录即表示同意用户协议与隐私政策")
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(LoginColor.footer)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 12)
             }
         }
         .navigationBarHidden(true)
@@ -114,37 +141,339 @@ struct LoginView: View {
         }
     }
 
-    private var providerButtons: some View {
-        VStack(spacing: 12) {
-            LoginProviderButton("本机手机号登录", action: openPhone) {
-                CarrierPhoneMark()
+    private var agreement: some View {
+        Text("登录即表示同意用户协议与隐私政策")
+            .font(.system(size: 12, weight: .regular))
+            .foregroundStyle(LoginColor.footer)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 24)
+    }
+
+    private var accountCard: some View {
+        VStack(spacing: 0) {
+            providerIcons
+                .disabled(busy)
+                .opacity(busy ? 0.72 : 1)
+
+            orDivider
+                .padding(.top, 16)
+
+            accountFields
+                .padding(.top, 14)
+                .animation(.easeInOut(duration: 0.2), value: mode)
+
+            if let notice {
+                Text(notice.text)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(noticeColor(notice))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 10)
+            } else if !app.banner.isEmpty {
+                Text(app.banner)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 10)
             }
-            LoginProviderButton("微信登录", action: signInWeChat) {
+
+            Button(action: submitAccount) {
+                Text(mode == .login ? "登录" : "创建账号")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(
+                        LoginCardPalette.green,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+            }
+            .buttonStyle(LoginPillPressStyle())
+            .disabled(busy)
+            .opacity(busy ? 0.72 : 1)
+            .padding(.top, 14)
+            .accessibilityLabel(mode == .login ? "登录" : "创建账号")
+
+            accountLinks
+                .padding(.top, 10)
+                .disabled(busy)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 22)
+        .frame(maxWidth: 360)
+        .frame(maxWidth: .infinity)
+        .preferredColorScheme(.dark)
+        .background(LoginCardPalette.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(.white, lineWidth: 4)
+        }
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.28), radius: 16, y: 7)
+    }
+
+    private var providerIcons: some View {
+        HStack(spacing: 28) {
+            providerIconButton("本机手机号登录", fill: LoginCardPalette.green, action: openPhone) {
+                CarrierPhoneMark(tint: .white)
+                    .scaleEffect(1.35)
+            }
+            providerIconButton("微信登录", fill: LoginCardPalette.button, action: signInWeChat) {
                 WeChatMark()
+                    .scaleEffect(1.2)
             }
-            LoginProviderButton("Google 登录", action: signInGoogle) {
+            providerIconButton("Google 登录", fill: LoginCardPalette.button, action: signInGoogle) {
                 GoogleMark()
+                    .scaleEffect(1.4)
             }
         }
-        .frame(maxWidth: 312)
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 28)
+    }
+
+    private func providerIconButton<Icon: View>(
+        _ label: String,
+        fill: Color,
+        action: @escaping () -> Void,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        Button(action: action) {
+            icon()
+                .frame(width: 50, height: 50)
+                .background(fill, in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(LoginPillPressStyle())
+        .accessibilityLabel(label)
+    }
+
+    private var orDivider: some View {
+        HStack(spacing: 12) {
+            Rectangle()
+                .fill(Color.white.opacity(0.22))
+                .frame(height: 1)
+            Text("or")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(Color.white.opacity(0.55))
+            Rectangle()
+                .fill(Color.white.opacity(0.22))
+                .frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("or")
+    }
+
+    private var accountFields: some View {
+        VStack(spacing: 10) {
+            cardField(
+                "邮箱",
+                text: $email,
+                icon: "envelope",
+                field: .email,
+                contentType: .emailAddress,
+                keyboard: .emailAddress,
+                submit: { focusedField = mode == .login ? .password : .displayName }
+            )
+            if mode == .register {
+                cardField(
+                    "显示名称",
+                    text: $displayName,
+                    icon: "person",
+                    field: .displayName,
+                    contentType: .name,
+                    submit: { focusedField = .password }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            cardField(
+                "密码",
+                text: $password,
+                icon: "lock",
+                field: .password,
+                secure: true,
+                contentType: mode == .login ? .password : .newPassword,
+                submit: { focusedField = mode == .login ? nil : .confirmPassword }
+            )
+            if mode == .register {
+                cardField(
+                    "确认密码",
+                    text: $confirmPassword,
+                    icon: "lock",
+                    field: .confirmPassword,
+                    secure: true,
+                    contentType: .newPassword,
+                    submit: { focusedField = nil }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func cardField(
+        _ placeholder: String,
+        text: Binding<String>,
+        icon: String,
+        field: LoginCardField,
+        secure: Bool = false,
+        contentType: UITextContentType?,
+        keyboard: UIKeyboardType = .default,
+        submit: @escaping () -> Void
+    ) -> some View {
+        let prompt = Text(placeholder).foregroundStyle(LoginCardPalette.caption)
+        return HStack(spacing: 8) {
+            Group {
+                if secure {
+                    SecureField("", text: editing(text), prompt: prompt)
+                } else {
+                    TextField("", text: editing(text), prompt: prompt)
+                }
+            }
+            .textContentType(contentType)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(keyboard)
+            .focused($focusedField, equals: field)
+            .foregroundStyle(.white)
+            .tint(.white)
+            .submitLabel(isLastField(field) ? .done : .next)
+            .onSubmit(submit)
+
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(LoginCardPalette.caption)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 46)
+        .frame(maxWidth: .infinity)
+        .background(LoginCardPalette.field, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private var accountLinks: some View {
+        HStack(spacing: 8) {
+            if mode == .login {
+                Button(action: forgotPassword) {
+                    Text("忘记密码？")
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                }
+                .foregroundStyle(LoginCardPalette.caption)
+                .accessibilityLabel("忘记密码")
+            }
+            Spacer(minLength: 8)
+            Button(action: switchMode) {
+                Text(mode == .login ? "注册账号" : "返回登录")
+                    .frame(minHeight: 32)
+                    .contentShape(Rectangle())
+            }
+            .foregroundStyle(.white)
+        }
+        .font(.system(size: 13, weight: .medium))
+        .buttonStyle(.plain)
+    }
+
+    private func forgotPassword() {
+        focusedField = nil
+        notice = .hint("暂不支持在线重置密码")
+    }
+
+    /// Typing clears a notice. Direct state writes (mode switch, fake register) do not.
+    private func editing(_ text: Binding<String>) -> Binding<String> {
+        Binding(
+            get: { text.wrappedValue },
+            set: { updated in
+                if text.wrappedValue != updated {
+                    notice = nil
+                }
+                text.wrappedValue = updated
+            }
+        )
+    }
+
+    private func isLastField(_ field: LoginCardField) -> Bool {
+        switch mode {
+        case .login:
+            return field == .password
+        case .register:
+            return field == .confirmPassword
+        }
+    }
+
+    private func noticeColor(_ notice: LoginCardNotice) -> Color {
+        switch notice {
+        case .failure:
+            return LoginCardPalette.failure
+        case .hint:
+            return Color.white.opacity(0.92)
+        case .success:
+            return LoginCardPalette.green
+        }
     }
 
     private func openPhone() {
-        error = ""
+        focusedField = nil
+        notice = nil
         path.append(AuthRoute.phone)
+    }
+
+    private func switchMode() {
+        focusedField = nil
+        withAnimation(.easeInOut(duration: 0.2)) {
+            mode = mode == .login ? .register : .login
+            password = ""
+            confirmPassword = ""
+            displayName = ""
+            notice = nil
+        }
+    }
+
+    /// Local checks only. Email and password accounts are not wired to a service yet.
+    private func submitAccount() {
+        focusedField = nil
+        let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedEmail.isEmpty else {
+            notice = .failure("请输入邮箱")
+            return
+        }
+        guard password.count >= 8 else {
+            notice = .failure("密码至少 8 位")
+            return
+        }
+        if mode == .register {
+            guard !normalizedName.isEmpty else {
+                notice = .failure("请输入显示名称")
+                return
+            }
+            guard password == confirmPassword else {
+                notice = .failure("两次输入的密码不一致")
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                mode = .login
+                password = ""
+                confirmPassword = ""
+                displayName = ""
+                notice = .success("注册成功，请登录")
+            }
+            return
+        }
+        notice = .hint("帐号密码登录即将开通")
     }
 
     private var loginNote: String {
         if SkyAuthConfig.usesLocalDirectory {
-            return "手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。"
+            return "手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。邮箱登录即将开通。"
         }
-        return "手机号会发送短信验证码。微信和 Google 会打开授权页，由 \(SkyAuthConfig.hostLabel) 核对身份。短信或开放平台密钥还没配好时，登录会提示还没有配置。"
+        return "手机号会发送短信验证码。微信和 Google 会打开授权页，由 \(SkyAuthConfig.hostLabel) 核对身份。短信或开放平台密钥还没配好时，登录会提示还没有配置。邮箱登录即将开通。"
     }
 
     private func signInWeChat() {
         guard !busy else { return }
+        focusedField = nil
+        notice = nil
         busy = true
         Task {
             defer { busy = false }
@@ -154,6 +483,8 @@ struct LoginView: View {
 
     private func signInGoogle() {
         guard !busy else { return }
+        focusedField = nil
+        notice = nil
         busy = true
         Task {
             defer { busy = false }
@@ -164,11 +495,11 @@ struct LoginView: View {
     private func finish(_ body: @MainActor () async throws -> Void) async {
         do {
             try await body()
-            error = ""
+            notice = nil
         } catch let failure as AuthFailure {
-            error = failure.message
+            notice = .failure(failure.message)
         } catch {
-            self.error = "登录没有完成"
+            notice = .failure("登录没有完成")
         }
     }
 }
@@ -328,8 +659,15 @@ private enum LoginColor {
     static let sky = Color(red: 22 / 255, green: 72 / 255, blue: 184 / 255)
     static let ink = Color(red: 17 / 255, green: 17 / 255, blue: 17 / 255)
     static let footer = Color(red: 78 / 255, green: 93 / 255, blue: 110 / 255)
-    static let buttonText = Color(red: 28 / 255, green: 32 / 255, blue: 38 / 255)
-    static let chevron = Color(red: 142 / 255, green: 152 / 255, blue: 164 / 255)
+}
+
+private enum LoginCardPalette {
+    static let card = Color(red: 28 / 255, green: 28 / 255, blue: 30 / 255)
+    static let button = Color(red: 44 / 255, green: 44 / 255, blue: 46 / 255)
+    static let field = Color(red: 58 / 255, green: 58 / 255, blue: 60 / 255)
+    static let green = Color(red: 30 / 255, green: 158 / 255, blue: 74 / 255)
+    static let caption = Color.white.opacity(0.55)
+    static let failure = Color(red: 1, green: 0.45, blue: 0.42)
 }
 
 private enum LoginWash {
@@ -450,51 +788,6 @@ private struct LoginSkyWashes: View {
 
 // MARK: - Controls
 
-private struct LoginProviderButton<Icon: View>: View {
-    var title: String
-    var action: () -> Void
-    var icon: Icon
-
-    init(_ title: String, action: @escaping () -> Void, @ViewBuilder icon: () -> Icon) {
-        self.title = title
-        self.action = action
-        self.icon = icon()
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 0) {
-                icon
-                    .frame(width: 32, height: 24, alignment: .leading)
-                Text(title)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(LoginColor.buttonText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(maxWidth: .infinity)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(LoginColor.chevron)
-                    .frame(width: 18, alignment: .trailing)
-            }
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background {
-                ZStack {
-                    Capsule().fill(.ultraThinMaterial)
-                    Capsule().fill(Color.white.opacity(0.74))
-                }
-            }
-            .overlay {
-                Capsule().strokeBorder(Color.white.opacity(0.92), lineWidth: 0.8)
-            }
-            .shadow(color: Color(red: 0.25, green: 0.45, blue: 0.72).opacity(0.12), radius: 10, y: 5)
-        }
-        .buttonStyle(LoginPillPressStyle())
-    }
-}
-
 private struct LoginPrimaryButton: View {
     var title: String
     var action: () -> Void
@@ -558,7 +851,7 @@ private func loginField(
 }
 
 private struct CarrierPhoneMark: View {
-    private let green = Color(red: 0.13, green: 0.68, blue: 0.42)
+    var tint: Color = Color(red: 0.13, green: 0.68, blue: 0.42)
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 1) {
@@ -568,7 +861,7 @@ private struct CarrierPhoneMark: View {
                 .font(.system(size: 10, weight: .medium))
                 .offset(y: -1)
         }
-        .foregroundStyle(green)
+        .foregroundStyle(tint)
         .accessibilityHidden(true)
     }
 }
