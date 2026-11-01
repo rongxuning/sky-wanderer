@@ -592,9 +592,14 @@ def upsert_setting(settings: str, key: str, literal: str) -> str:
     return settings + insertion
 
 
+# Xcode may insert single-line keys between isa and buildSettings. The iPhone
+# target has baseConfigurationReference (Sky.xcconfig); the Watch target does
+# not. Multiline values inside buildSettings (LD_RUNPATH_SEARCH_PATHS) are
+# already inside the settings group. Both Release blocks must match.
 BLOCK_RE = re.compile(
     r"/\* (?P<label>Debug|Release) \*/ = \{\n"
     r"\t\t\tisa = XCBuildConfiguration;\n"
+    r"(?:\t\t\t(?!buildSettings = )[^\n]*\n)*"
     r"\t\t\tbuildSettings = \{\n"
     r"(?P<settings>.*?)\n"
     r"\t\t\t\};\n"
@@ -987,6 +992,74 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
     else:
         raise SystemExit("development profile should be rejected")
 
+    # iPhone Release carries baseConfigurationReference plus a multiline
+    # LD_RUNPATH_SEARCH_PATHS. Watch Release has neither. Both must patch.
+    shaped = (
+        "\t\tAAAA0000000000000000001D /* Release */ = {\n"
+        "\t\t\tisa = XCBuildConfiguration;\n"
+        "\t\t\tbaseConfigurationReference = A10000000000000000000020 /* Sky.xcconfig */;\n"
+        "\t\t\tbuildSettings = {\n"
+        "\t\t\t\tCODE_SIGN_STYLE = Automatic;\n"
+        "\t\t\t\tCURRENT_PROJECT_VERSION = 1;\n"
+        "\t\t\t\tLD_RUNPATH_SEARCH_PATHS = (\n"
+        '\t\t\t\t\t"$(inherited)",\n'
+        '\t\t\t\t\t"@executable_path/Frameworks",\n'
+        "\t\t\t\t);\n"
+        "\t\t\t\tMARKETING_VERSION = 1.0;\n"
+        '\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "com.rongxuning.sky-wanderer";\n'
+        "\t\t\t};\n"
+        "\t\t\tname = Release;\n"
+        "\t\t};\n"
+        "\t\tBBBB0000000000000000001F /* Release */ = {\n"
+        "\t\t\tisa = XCBuildConfiguration;\n"
+        "\t\t\tbuildSettings = {\n"
+        "\t\t\t\tCODE_SIGN_STYLE = Automatic;\n"
+        "\t\t\t\tCURRENT_PROJECT_VERSION = 1;\n"
+        "\t\t\t\tMARKETING_VERSION = 1.0;\n"
+        '\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "com.rongxuning.sky-wanderer.watchkitapp";\n'
+        "\t\t\t};\n"
+        "\t\t\tname = Release;\n"
+        "\t\t};\n"
+        "\t\tCCCC0000000000000000001C /* Debug */ = {\n"
+        "\t\t\tisa = XCBuildConfiguration;\n"
+        "\t\t\tbaseConfigurationReference = A10000000000000000000020 /* Sky.xcconfig */;\n"
+        "\t\t\tbuildSettings = {\n"
+        "\t\t\t\tCODE_SIGN_STYLE = Automatic;\n"
+        "\t\t\t\tCURRENT_PROJECT_VERSION = 1;\n"
+        "\t\t\t\tMARKETING_VERSION = 1.0;\n"
+        '\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "com.rongxuning.sky-wanderer";\n'
+        "\t\t\t};\n"
+        "\t\t\tname = Debug;\n"
+        "\t\t};\n"
+    )
+    shaped_patched = patch_pbxproj(
+        shaped,
+        ios_profile="iOS App Store",
+        watch_profile="Watch App Store",
+        ios_profile_uuid="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        watch_profile_uuid="FFFFFFFF-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        identity="Apple Distribution: Sky (QTV9DUCAY7)",
+        team_id="QTV9DUCAY7",
+        build_number="2",
+        marketing_version="1.0",
+    )
+    assert shaped_patched.count("baseConfigurationReference = ") == shaped.count(
+        "baseConfigurationReference = "
+    )
+    assert '"@executable_path/Frameworks"' in shaped_patched
+    shaped_release = {}
+    for match in BLOCK_RE.finditer(shaped_patched):
+        bundle_id = _bundle_id(match.group("settings"))
+        if match.group("config") == "Debug":
+            assert "CODE_SIGN_STYLE = Automatic;" in match.group("settings")
+            assert "CURRENT_PROJECT_VERSION = 1;" in match.group("settings")
+            continue
+        shaped_release[bundle_id] = match.group("settings")
+    assert set(shaped_release) == {IOS_BUNDLE_ID, WATCH_BUNDLE_ID}
+    for settings in shaped_release.values():
+        assert "CODE_SIGN_STYLE = Manual;" in settings
+        assert "CURRENT_PROJECT_VERSION = 2;" in settings
+
     original = PBXPROJ.read_text()
     patched = patch_pbxproj(
         original,
@@ -1000,6 +1073,9 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
         marketing_version="1.0",
     )
     assert patched != original
+    assert original.count("baseConfigurationReference") == patched.count(
+        "baseConfigurationReference"
+    )
     assert original.count("CODE_SIGN_STYLE = Automatic;") == patched.count(
         "CODE_SIGN_STYLE = Automatic;"
     ) + 2
