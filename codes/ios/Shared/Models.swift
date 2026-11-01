@@ -288,6 +288,10 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     var name: String
     var points: [GeoPoint]
     var kind: Kind
+    /// When a GPX file was imported on this phone. The built-in preset has none.
+    var importedAt: Date?
+    /// Person named in the GPX. Empty when the file does not say.
+    var creator: String
 
     enum Kind: String, Codable {
         /// The one running route the phone editor can change.
@@ -296,6 +300,52 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     }
 
     static let presetRunningID = "preset-running"
+    static let sampleGPXID = "sample-xuhui-riverside"
+
+    init(
+        id: String,
+        name: String,
+        points: [GeoPoint],
+        kind: Kind,
+        importedAt: Date? = nil,
+        creator: String = ""
+    ) {
+        self.id = id
+        self.name = name
+        self.points = points
+        self.kind = kind
+        self.importedAt = importedAt
+        self.creator = creator
+    }
+
+    var creatorLabel: String {
+        let trimmed = creator.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "未知" : trimmed
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, points, kind, importedAt, creator
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        points = try container.decode([GeoPoint].self, forKey: .points)
+        kind = try container.decode(Kind.self, forKey: .kind)
+        importedAt = try container.decodeIfPresent(Date.self, forKey: .importedAt)
+        creator = try container.decodeIfPresent(String.self, forKey: .creator) ?? ""
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(points, forKey: .points)
+        try container.encode(kind, forKey: .kind)
+        try container.encodeIfPresent(importedAt, forKey: .importedAt)
+        try container.encode(creator, forKey: .creator)
+    }
 }
 
 struct TrainingStats {
