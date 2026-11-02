@@ -346,29 +346,21 @@ private struct SkyGlassTabBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            item(.records, symbol: "figure.hiking", title: "记录")
-            item(.training, symbol: "dumbbell", title: "训练")
+            item(.records, symbol: "book", title: "记录")
+            item(.training, symbol: "figure.run", title: "训练")
             item(.routes, symbol: "map", title: "路线")
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .background {
-            ZStack {
-                Capsule(style: .continuous)
-                    .fill(.ultraThinMaterial)
-                Capsule(style: .continuous)
-                    .fill(SkyTheme.Color.card.opacity(0.72))
-            }
-        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
         .overlay {
             Capsule(style: .continuous)
-                .stroke(SkyTheme.Color.card.opacity(0.95), lineWidth: 1)
+                .strokeBorder(SkyTheme.Color.card.opacity(0.5), lineWidth: 0.5)
         }
-        .clipShape(Capsule(style: .continuous))
         .shadow(
-            color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
-            radius: SkyTheme.Shadow.card.radius,
-            y: SkyTheme.Shadow.card.y
+            color: SkyTheme.Shadow.card.color.opacity(0.08),
+            radius: 16,
+            y: 4
         )
         .accessibilityElement(children: .contain)
     }
@@ -378,17 +370,20 @@ private struct SkyGlassTabBar: View {
         return Button {
             selection = tab
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 Image(systemName: selected ? filled(symbol) : symbol)
-                    .font(.system(size: 22, weight: .semibold))
-                    .frame(height: 24)
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(height: 20)
                 Text(title)
                     .font(SkyTheme.Font.caption)
                     .fontWeight(.medium)
             }
             .foregroundStyle(selected ? SkyTheme.Color.primary : SkyTheme.Color.secondary)
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: SkyTheme.Spacing.touchMin)
+            .frame(
+                minWidth: SkyTheme.Spacing.touchMin,
+                maxWidth: .infinity,
+                minHeight: SkyTheme.Spacing.touchMin
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -399,7 +394,7 @@ private struct SkyGlassTabBar: View {
     /// Outline symbols stay outline when a filled twin does not exist.
     private func filled(_ symbol: String) -> String {
         switch symbol {
-        case "dumbbell": return "dumbbell.fill"
+        case "book": return "book.fill"
         case "map": return "map.fill"
         default: return symbol
         }
