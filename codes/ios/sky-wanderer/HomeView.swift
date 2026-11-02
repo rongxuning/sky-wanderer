@@ -9,330 +9,153 @@ enum HomeRoute: Hashable {
     case me
 }
 
-enum SkyPage: String, Identifiable {
-    case train
+private enum SkyTab: Hashable {
     case records
+    case training
     case routes
-    case social
-    case me
-
-    var id: String { rawValue }
 }
 
 struct SkyHome: View {
     @EnvironmentObject private var app: PhoneAppState
-    @StateObject private var solar = SolarLocation()
-    @State private var path = NavigationPath()
-    @State private var agentText = ""
-    @State private var showAgentNote = false
-    @State private var showWheel = false
+    @State private var tab: SkyTab = .records
+    @State private var recordsPath = NavigationPath()
+    @State private var trainingPath = NavigationPath()
+    @State private var routesPath = NavigationPath()
     @State private var showLogin = false
-    @State private var openMeAfterLogin = false
-    @FocusState private var composerFocused: Bool
+
+    private var showsTabBar: Bool {
+        switch tab {
+        case .records: recordsPath.isEmpty
+        case .training: trainingPath.isEmpty
+        case .routes: routesPath.isEmpty
+        }
+    }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            home
-                .navigationDestination(for: HomeRoute.self) { homeDestination($0) }
-                .navigationDestination(for: TrainRoute.self) { trainDestination($0) }
-                .navigationDestination(for: RecordRoute.self) { recordDestination($0) }
-                .navigationDestination(for: MapRoute.self) { mapDestination($0) }
-                .navigationDestination(for: MeRoute.self) { meDestination($0) }
+        ZStack {
+            stack(path: $recordsPath) {
+                tabScreen(path: $recordsPath) {
+                    RecordFeedView()
+                }
+            }
+            .opacity(tab == .records ? 1 : 0)
+            .zIndex(tab == .records ? 1 : 0)
+            .allowsHitTesting(tab == .records)
+            .accessibilityHidden(tab != .records)
+
+            stack(path: $trainingPath) {
+                tabScreen(path: $trainingPath) {
+                    TrainingPlaceholder(path: $trainingPath)
+                }
+            }
+            .opacity(tab == .training ? 1 : 0)
+            .zIndex(tab == .training ? 1 : 0)
+            .allowsHitTesting(tab == .training)
+            .accessibilityHidden(tab != .training)
+
+            stack(path: $routesPath) {
+                tabScreen(path: $routesPath) {
+                    RoutesLibraryView(embeddedInHome: true)
+                }
+            }
+            .opacity(tab == .routes ? 1 : 0)
+            .zIndex(tab == .routes ? 1 : 0)
+            .allowsHitTesting(tab == .routes)
+            .accessibilityHidden(tab != .routes)
+        }
+        .background(SkyTheme.Color.grouped.ignoresSafeArea())
+        .safeAreaInset(edge: .bottom, spacing: showsTabBar ? 8 : 0) {
+            if showsTabBar {
+                SkyGlassTabBar(selection: $tab)
+                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                    .padding(.bottom, 4)
+            }
         }
         .onChange(of: app.finishedToken) { _, token in
             guard token > 0 else { return }
-            showWheel = false
-            var next = NavigationPath()
-            next.append(HomeRoute.records)
-            path = next
+            recordsPath = NavigationPath()
+            trainingPath = NavigationPath()
+            routesPath = NavigationPath()
+            tab = .records
         }
         .onChange(of: app.isLoggedIn) { _, loggedIn in
-            if loggedIn {
-                showLogin = false
-            } else {
-                openMeAfterLogin = false
-                showLogin = false
-                showWheel = false
-                path = NavigationPath()
-            }
+            showLogin = false
+            guard !loggedIn else { return }
+            recordsPath = NavigationPath()
+            trainingPath = NavigationPath()
+            routesPath = NavigationPath()
+            tab = .records
         }
-        .onChange(of: showLogin) { _, showing in
-            if !showing { continueAfterLoginIfNeeded() }
-        }
-        .fullScreenCover(isPresented: $showLogin, onDismiss: continueAfterLoginIfNeeded) {
+        .fullScreenCover(isPresented: $showLogin) {
             AuthFlow()
         }
     }
 
-    private var home: some View {
+    private func stack<Content: View>(
+        path: Binding<NavigationPath>,
+        @ViewBuilder root: () -> Content
+    ) -> some View {
+        NavigationStack(path: path) {
+            root()
+                .navigationDestination(for: HomeRoute.self) { route in
+                    SkyDestinations.home(route, presentLogin: { showLogin = true })
+                }
+                .navigationDestination(for: TrainRoute.self) { route in
+                    SkyDestinations.train(route, path: path)
+                }
+                .navigationDestination(for: RecordRoute.self) { route in
+                    SkyDestinations.record(route)
+                }
+                .navigationDestination(for: MapRoute.self) { route in
+                    SkyDestinations.map(route)
+                }
+                .navigationDestination(for: MeRoute.self) { route in
+                    SkyDestinations.me(route)
+                }
+        }
+    }
+
+    private func tabScreen<Content: View>(
+        path: Binding<NavigationPath>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(spacing: 0) {
-            ZStack {
-                VStack(spacing: 0) {
-                    topBar
-                    Spacer(minLength: 0)
-                    hero
-                    Spacer(minLength: 0)
-                }
-                if showWheel {
-                    Color.black.opacity(0.16)
-                        .contentShape(Rectangle())
-                        .onTapGesture { showWheel = false }
-                        .accessibilityHidden(true)
-                    PageWheel(entries: pageEntries, onSelect: openPage, onCancel: { showWheel = false })
-                        .transition(.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity))
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: showWheel)
-            bottomBar
-        }
-        .background(SkyHomeColor.page.ignoresSafeArea())
-        .navigationBarHidden(true)
-        .onAppear { solar.start() }
-        .onChange(of: composerFocused) { _, focused in
-            if focused { showWheel = false }
-        }
-        .alert("Sky", isPresented: $showAgentNote) {
-            Button("好", role: .cancel) {}
-        } message: {
-            Text("agent 入口稍后接通")
-        }
-    }
-
-    private var topBar: some View {
-        HStack(spacing: 10) {
-            roundButton(systemName: "gearshape", label: "设置") {
-                path.append(HomeRoute.settings)
-            }
-            accountButton
-            Spacer(minLength: 0)
-            roundButton(systemName: "qrcode.viewfinder", label: "扫一扫") {
-                path.append(HomeRoute.scan)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 4)
-    }
-
-    private var accountButton: some View {
-        Button(action: openAccount) {
-            Text(accountMark)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(SkyHomeColor.ink)
-                .frame(width: 42, height: 42)
-                .background {
+            HStack {
+                Spacer(minLength: 0)
+                AccountAvatarButton {
                     if app.isLoggedIn {
-                        Circle().fill(SkyHomeColor.chip)
+                        path.wrappedValue.append(HomeRoute.me)
                     } else {
-                        Circle()
-                            .stroke(SkyHomeColor.secondary, lineWidth: 1.5)
-                            .padding(1)
+                        showLogin = true
                     }
                 }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(app.isLoggedIn ? "账号" : "登录")
-    }
-
-    private var hero: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { timeline in
-            let daylight = SolarClock.isDaylight(
-                at: timeline.date,
-                latitude: solar.coordinate.latitude,
-                longitude: solar.coordinate.longitude
-            )
-            VStack(spacing: 8) {
-                Image(daylight ? "SkyAvatarDay" : "SkyAvatarNight")
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 196, height: 196)
-                    .accessibilityLabel(daylight ? "Sky，日间" : "Sky，夜间")
-                Text("Sky")
-                    .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(SkyHomeColor.secondary)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.top, 2)
+            .padding(.bottom, 4)
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SkyTheme.Color.grouped)
+        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
     }
+}
 
-    private var pageEntries: [PageWheelEntry] {
-        [
-            PageWheelEntry(
-                id: SkyPage.train.rawValue,
-                title: "训练",
-                subtitle: trainingSubtitle,
-                symbol: "figure.run",
-                tint: SkyHomeColor.train
-            ),
-            PageWheelEntry(
-                id: SkyPage.records.rawValue,
-                title: "记录",
-                subtitle: recordsSubtitle,
-                symbol: "list.bullet",
-                tint: SkyHomeColor.record
-            ),
-            PageWheelEntry(
-                id: SkyPage.routes.rawValue,
-                title: "路线",
-                subtitle: routesSubtitle,
-                symbol: "map",
-                tint: SkyHomeColor.route
-            ),
-            PageWheelEntry(
-                id: SkyPage.social.rawValue,
-                title: "社交",
-                subtitle: "分享和示例动态",
-                symbol: "person.2",
-                tint: SkyHomeColor.social
-            ),
-            PageWheelEntry(
-                id: SkyPage.me.rawValue,
-                title: "我",
-                subtitle: "健康与训练",
-                symbol: "person",
-                tint: SkyHomeColor.me
-            ),
-        ]
-    }
-
-    private var trainingSubtitle: String {
-        app.activeSession?.phase == .running ? "回到进行中的运动" : "开始徒步或跑步"
-    }
-
-    private var recordsSubtitle: String {
-        app.workouts.isEmpty ? "还没有徒步或跑步" : "\(app.workouts.count) 次徒步和跑步"
-    }
-
-    private var routesSubtitle: String {
-        let count = app.importedRoutes.count
-        return count == 0 ? "导入 GPX 路线" : "\(count) 条已导入路线"
-    }
-
-    private var bottomBar: some View {
-        HStack(spacing: 10) {
-            roundButton(
-                systemName: showWheel ? "xmark" : "circle.grid.2x2",
-                label: showWheel ? "关闭页面" : "页面",
-                size: 44
-            ) {
-                if showWheel {
-                    showWheel = false
-                } else {
-                    composerFocused = false
-                    showWheel = true
-                }
-            }
-
-            TextField("发消息", text: $agentText)
-                .font(.system(size: 16))
-                .foregroundStyle(SkyHomeColor.ink)
-                .focused($composerFocused)
-                .submitLabel(.send)
-                .onSubmit(noteAgent)
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(SkyHomeColor.chip, in: Capsule())
-                .accessibilityLabel("发给 Sky")
-            Button(action: noteAgent) {
-                Image(systemName: "mic")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(SkyHomeColor.ink)
-                    .frame(width: 44, height: 44)
-                    .background(SkyHomeColor.chip, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("语音")
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 8)
-        .background(SkyHomeColor.page)
-    }
-
-    private var accountMark: String {
-        guard app.isLoggedIn, let name = app.account?.name, !name.isEmpty else { return "未" }
-        return String(name.prefix(1))
-    }
-
-    private func openAccount() {
-        if app.isLoggedIn {
-            path.append(HomeRoute.me)
-        } else {
-            presentLogin(thenOpenMe: false)
-        }
-    }
-
-    private func presentLogin(thenOpenMe: Bool) {
-        showWheel = false
-        composerFocused = false
-        openMeAfterLogin = thenOpenMe
-        showLogin = true
-    }
-
-    /// Radial 「我」asks for a session first, then continues into that page.
-    private func continueAfterLoginIfNeeded() {
-        guard openMeAfterLogin else { return }
-        openMeAfterLogin = false
-        guard app.isLoggedIn else { return }
-        path.append(HomeRoute.me)
-    }
-
-    private func openPage(_ entry: PageWheelEntry) {
-        guard let page = SkyPage(rawValue: entry.id) else { return }
-        showWheel = false
-        switch page {
-        case .train:
-            if app.activeSession?.phase == .running {
-                path.append(TrainRoute.live)
-            } else {
-                path.append(TrainRoute.start)
-            }
-        case .records:
-            path.append(HomeRoute.records)
-        case .routes:
-            path.append(HomeRoute.routes)
-        case .social:
-            path.append(HomeRoute.social)
-        case .me:
-            if app.isLoggedIn {
-                path.append(HomeRoute.me)
-            } else {
-                presentLogin(thenOpenMe: true)
-            }
-        }
-    }
-
-    private func noteAgent() {
-        showWheel = false
-        agentText = ""
-        showAgentNote = true
-    }
-
-    private func roundButton(systemName: String, label: String, size: CGFloat = 42, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(SkyHomeColor.ink)
-                .frame(width: size, height: size)
-                .background(SkyHomeColor.chip, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
-
+private enum SkyDestinations {
     @ViewBuilder
-    private func homeDestination(_ route: HomeRoute) -> some View {
+    static func home(
+        _ route: HomeRoute,
+        presentLogin: @escaping () -> Void
+    ) -> some View {
         switch route {
         case .settings:
-            SkySettingsView(onLogin: { presentLogin(thenOpenMe: false) })
+            SkySettingsView(onLogin: presentLogin)
         case .scan:
             ScanQRView()
         case .records:
-            RecordsView()
+            RecordFeedView()
         case .routes:
             RoutesLibraryView()
         case .social:
@@ -343,10 +166,10 @@ struct SkyHome: View {
     }
 
     @ViewBuilder
-    private func trainDestination(_ route: TrainRoute) -> some View {
+    static func train(_ route: TrainRoute, path: Binding<NavigationPath>) -> some View {
         switch route {
         case .start:
-            StartMapView(path: $path)
+            StartMapView(path: path)
         case .team:
             TeamPickerView()
         case .live:
@@ -357,14 +180,14 @@ struct SkyHome: View {
     }
 
     @ViewBuilder
-    private func recordDestination(_ route: RecordRoute) -> some View {
+    static func record(_ route: RecordRoute) -> some View {
         if case .detail(let id) = route {
             WorkoutDetailView(workoutID: id)
         }
     }
 
     @ViewBuilder
-    private func mapDestination(_ route: MapRoute) -> some View {
+    static func map(_ route: MapRoute) -> some View {
         switch route {
         case .editor:
             PresetRouteEditor()
@@ -374,9 +197,211 @@ struct SkyHome: View {
     }
 
     @ViewBuilder
-    private func meDestination(_ route: MeRoute) -> some View {
+    static func me(_ route: MeRoute) -> some View {
         if case .layout = route {
             LayoutEditor()
+        }
+    }
+}
+
+private struct AccountAvatarButton: View {
+    @EnvironmentObject private var app: PhoneAppState
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            avatar
+                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(app.isLoggedIn ? "账号" : "登录")
+    }
+
+    @ViewBuilder
+    private var avatar: some View {
+        if app.isLoggedIn {
+            Text(mark)
+                .font(SkyTheme.Font.headline)
+                .foregroundStyle(SkyTheme.Color.onPrimary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(SkyTheme.Color.primary, in: Circle())
+                .overlay {
+                    Circle().stroke(SkyTheme.Color.card, lineWidth: 1.5)
+                }
+        } else {
+            ScenicAvatar()
+        }
+    }
+
+    private var mark: String {
+        guard let name = app.account?.name, !name.isEmpty else { return "我" }
+        return String(name.prefix(1))
+    }
+}
+
+/// Circular landscape stand-in for the home avatar in the approved mockup.
+private struct ScenicAvatar: View {
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            ZStack {
+                LinearGradient(
+                    colors: [SkyTheme.Color.primary, SkyTheme.Color.cardBorder],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                Ellipse()
+                    .fill(SkyTheme.Color.card.opacity(0.88))
+                    .frame(width: width * 0.36, height: height * 0.16)
+                    .position(x: width * 0.64, y: height * 0.28)
+                hill(width: width, height: height, crest: 0.58, controlY: 0.36, color: SkyTheme.Color.primary.opacity(0.45))
+                hill(width: width, height: height, crest: 0.74, controlY: 0.9, color: SkyTheme.Color.success)
+                hill(width: width, height: height, crest: 0.86, controlY: 0.78, color: SkyTheme.Color.success.opacity(0.72))
+            }
+        }
+        .clipShape(Circle())
+        .overlay {
+            Circle().stroke(SkyTheme.Color.card, lineWidth: 1.5)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func hill(width: CGFloat, height: CGFloat, crest: CGFloat, controlY: CGFloat, color: Color) -> some View {
+        Path { path in
+            path.move(to: CGPoint(x: 0, y: height * crest))
+            path.addQuadCurve(
+                to: CGPoint(x: width, y: height * (crest - 0.06)),
+                control: CGPoint(x: width * 0.48, y: height * controlY)
+            )
+            path.addLine(to: CGPoint(x: width, y: height))
+            path.addLine(to: CGPoint(x: 0, y: height))
+            path.closeSubpath()
+        }
+        .fill(color)
+    }
+}
+
+private struct TrainingPlaceholder: View {
+    @EnvironmentObject private var app: PhoneAppState
+    @Binding var path: NavigationPath
+
+    private var running: Bool {
+        app.activeSession?.phase == .running
+    }
+
+    var body: some View {
+        VStack(spacing: SkyTheme.Spacing.screenInset) {
+            Spacer(minLength: 0)
+            Image(systemName: running ? "figure.run" : "dumbbell")
+                .font(.system(size: 36, weight: .semibold))
+                .foregroundStyle(SkyTheme.Color.primary)
+                .accessibilityHidden(true)
+            Text(running ? "训练进行中" : "准备开始")
+                .font(SkyTheme.Font.headline)
+                .foregroundStyle(SkyTheme.Color.ink)
+            Text(running ? "可以回到正在进行的运动。" : "开始徒步或跑步。运动数据会留在这台手机上。")
+                .font(SkyTheme.Font.footnote)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Button(action: openTraining) {
+                Text(running ? "回到运动" : "开始训练")
+                    .font(SkyTheme.Font.headline)
+                    .foregroundStyle(SkyTheme.Color.onPrimary)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: SkyTheme.Spacing.touchMin)
+            }
+            .buttonStyle(SkyPrimaryButtonStyle())
+            .padding(.horizontal, 32)
+            .padding(.top, SkyTheme.Spacing.related)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SkyTheme.Color.grouped)
+    }
+
+    private func openTraining() {
+        if running {
+            path.append(TrainRoute.live)
+        } else {
+            path.append(TrainRoute.start)
+        }
+    }
+}
+
+private struct SkyPrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                configuration.isPressed ? SkyTheme.Color.primaryPressed : SkyTheme.Color.primary,
+                in: Capsule()
+            )
+    }
+}
+
+private struct SkyGlassTabBar: View {
+    @Binding var selection: SkyTab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            item(.records, symbol: "figure.hiking", title: "记录")
+            item(.training, symbol: "dumbbell", title: "训练")
+            item(.routes, symbol: "map", title: "路线")
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 6)
+        .background {
+            ZStack {
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+                Capsule(style: .continuous)
+                    .fill(SkyTheme.Color.card.opacity(0.72))
+            }
+        }
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(SkyTheme.Color.card.opacity(0.95), lineWidth: 1)
+        }
+        .clipShape(Capsule(style: .continuous))
+        .shadow(
+            color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
+            radius: SkyTheme.Shadow.card.radius,
+            y: SkyTheme.Shadow.card.y
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    private func item(_ tab: SkyTab, symbol: String, title: String) -> some View {
+        let selected = selection == tab
+        return Button {
+            selection = tab
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: selected ? filled(symbol) : symbol)
+                    .font(.system(size: 22, weight: .semibold))
+                    .frame(height: 24)
+                Text(title)
+                    .font(SkyTheme.Font.caption)
+                    .fontWeight(.medium)
+            }
+            .foregroundStyle(selected ? SkyTheme.Color.primary : SkyTheme.Color.secondary)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: SkyTheme.Spacing.touchMin)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// Outline symbols stay outline when a filled twin does not exist.
+    private func filled(_ symbol: String) -> String {
+        switch symbol {
+        case "dumbbell": return "dumbbell.fill"
+        case "map": return "map.fill"
+        default: return symbol
         }
     }
 }
@@ -418,11 +443,6 @@ struct SkySettingsView: View {
                         Text("健康与训练")
                     }
                 }
-            }
-            Section {
-                Text("首页形象按当地日出和日落切换。没有定位权限时，用上海附近的位置。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("设置")
