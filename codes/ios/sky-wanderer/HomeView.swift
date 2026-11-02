@@ -189,7 +189,8 @@ struct SkyHome: View {
     }
 
     private var routesSubtitle: String {
-        app.savedRoutes.isEmpty ? "地图上的路线" : "\(app.savedRoutes.count) 条已保存路线"
+        let count = app.importedRoutes.count
+        return count == 0 ? "导入 GPX 路线" : "\(count) 条已导入路线"
     }
 
     private var bottomBar: some View {
@@ -294,7 +295,7 @@ struct SkyHome: View {
         case .records:
             RecordsView()
         case .routes:
-            MapLibraryView()
+            RoutesLibraryView()
         case .social:
             SocialFeedView()
         case .me:
@@ -325,8 +326,11 @@ struct SkyHome: View {
 
     @ViewBuilder
     private func mapDestination(_ route: MapRoute) -> some View {
-        if case .editor = route {
+        switch route {
+        case .editor:
             PresetRouteEditor()
+        case .detail(let id):
+            RouteDetailView(routeID: id)
         }
     }
 

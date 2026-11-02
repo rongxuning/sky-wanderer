@@ -32,6 +32,7 @@ final class PhoneAppState: ObservableObject {
                 existing.metricOrder = LiveBlock.standard
             }
             Self.ensurePreset(&existing)
+            Self.ensureSampleRoute(&existing)
             loaded = existing
         } else {
             var fresh = Database()
@@ -39,6 +40,7 @@ final class PhoneAppState: ObservableObject {
             fresh.posts = SampleLibrary.posts()
             fresh.seeded = true
             Self.ensurePreset(&fresh)
+            Self.ensureSampleRoute(&fresh)
             loaded = fresh
         }
         SessionContinuity.reconcile(&loaded, keychain: SessionKeychain.read())
@@ -46,6 +48,29 @@ final class PhoneAppState: ObservableObject {
         AppFiles.save(loaded, name: filename)
         SessionKeychain.store(SessionContinuity.credential(in: loaded))
         Task { await self.confirmRemoteSession() }
+        let routePoints = database.routes.filter { $0.kind == .gpx }.map(\.points)
+        Task { await OfflineTileStore.prefetch(routePoints) }
+    }
+
+    /// Inserts the bundled GPX once, so the routes list is usable before a manual import.
+    private static func ensureSampleRoute(_ database: inout Database) {
+        if database.sampleRouteSeeded { return }
+        if database.routes.contains(where: { $0.kind == .gpx }) {
+            database.sampleRouteSeeded = true
+            return
+        }
+        guard let track = GPXFile.parse(SampleGPX.data).first, track.points.count >= 2 else { return }
+        database.routes.append(
+            SavedRoute(
+                id: SavedRoute.sampleGPXID,
+                name: track.name,
+                points: track.points,
+                kind: .gpx,
+                importedAt: Date(),
+                creator: track.creator
+            )
+        )
+        database.sampleRouteSeeded = true
     }
 
     private static func ensurePreset(_ database: inout Database) {
@@ -78,6 +103,12 @@ final class PhoneAppState: ObservableObject {
 
     var savedRoutes: [SavedRoute] { database.routes }
 
+    var importedRoutes: [SavedRoute] {
+        database.routes
+            .filter { $0.kind == .gpx }
+            .sorted { ($0.importedAt ?? .distantPast) > ($1.importedAt ?? .distantPast) }
+    }
+
     func replacePresetRunning(points: [GeoPoint]) {
         mutate { database in
             guard let index = database.routes.firstIndex(where: { $0.kind == .presetRunning }) else { return }
@@ -85,8 +116,9 @@ final class PhoneAppState: ObservableObject {
         }
     }
 
-    func addGPXRoutes(_ imported: [(name: String, points: [GeoPoint])]) -> [String] {
+    func addGPXRoutes(_ imported: [GPXTrack]) -> [String] {
         var identifiers: [String] = []
+        var fresh: [[GeoPoint]] = []
         mutate { database in
             for item in imported where item.points.count >= 2 {
                 let identifier = UUID().uuidString
@@ -98,11 +130,32 @@ final class PhoneAppState: ObservableObject {
                     title = "\(base) \(suffix)"
                     suffix += 1
                 }
-                database.routes.append(SavedRoute(id: identifier, name: title, points: item.points, kind: .gpx))
+                let creator = item.creator.trimmingCharacters(in: .whitespacesAndNewlines)
+                database.routes.append(
+                    SavedRoute(
+                        id: identifier,
+                        name: title,
+                        points: item.points,
+                        kind: .gpx,
+                        importedAt: Date(),
+                        creator: creator
+                    )
+                )
                 identifiers.append(identifier)
+                fresh.append(item.points)
             }
         }
+        if !fresh.isEmpty {
+            Task { await OfflineTileStore.prefetch(fresh) }
+        }
         return identifiers
+    }
+
+    func deleteRoute(id: String) {
+        guard id != SavedRoute.presetRunningID else { return }
+        mutate { database in
+            database.routes.removeAll { $0.id == id && $0.kind == .gpx }
+        }
     }
 
     var metricOrder: [LiveBlock] {

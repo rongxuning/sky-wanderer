@@ -32,6 +32,7 @@ enum MeRoute: Hashable {
 
 enum MapRoute: Hashable {
     case editor
+    case detail(String)
 }
 
 struct RootView: View {

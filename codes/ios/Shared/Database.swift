@@ -14,12 +14,14 @@ struct Database {
     var seeded: Bool = false
     /// Planned routes saved on this device. Missing in older files.
     var routes: [SavedRoute] = []
+    /// True after the phone has offered the bundled sample GPX once.
+    var sampleRouteSeeded: Bool = false
 }
 
 extension Database: Codable {
     private enum CodingKeys: String, CodingKey {
         case accounts, identities, authSessions, authRecords, sessionAccountID, sessionToken
-        case workouts, posts, metricOrder, selectedTeammateIDs, seeded, routes
+        case workouts, posts, metricOrder, selectedTeammateIDs, seeded, routes, sampleRouteSeeded
     }
 
     init(from decoder: Decoder) throws {
@@ -36,6 +38,7 @@ extension Database: Codable {
         selectedTeammateIDs = try container.decodeIfPresent([String].self, forKey: .selectedTeammateIDs) ?? []
         seeded = try container.decodeIfPresent(Bool.self, forKey: .seeded) ?? false
         routes = try container.decodeIfPresent([SavedRoute].self, forKey: .routes) ?? []
+        sampleRouteSeeded = try container.decodeIfPresent(Bool.self, forKey: .sampleRouteSeeded) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -52,6 +55,7 @@ extension Database: Codable {
         try container.encode(selectedTeammateIDs, forKey: .selectedTeammateIDs)
         try container.encode(seeded, forKey: .seeded)
         try container.encode(routes, forKey: .routes)
+        try container.encode(sampleRouteSeeded, forKey: .sampleRouteSeeded)
     }
 }
 
