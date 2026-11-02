@@ -1,6 +1,7 @@
+import MapKit
 import SwiftUI
 
-/// Records tab. White cards on the grouped background, six metrics beside a track thumbnail.
+/// Records tab. Short white cards: map thumbnail, then duration and a three-column metric row.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
 
@@ -62,117 +63,442 @@ struct RecordFeedView: View {
     }
 }
 
+/// Confirmed record-card metrics. 10pt inset is the design measurement; the spacing scale has no 10.
+private enum RecordCardLayout {
+    static let thumbnail: CGFloat = 84
+    static let inset: CGFloat = 10
+    static let contentGap: CGFloat = 10
+}
+
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            RecordTrackThumbnail(points: workout.route, sport: workout.sport)
-            HStack(alignment: .top, spacing: SkyTheme.Spacing.related) {
-                VStack(alignment: .leading, spacing: 10) {
-                    metric("平均心率", value: Format.integer(workout.averageHeartRate), unit: "bpm")
-                    metric("训练时长", value: Format.clock(workout.duration), unit: nil)
-                    metric("平均步频", value: Format.integer(workout.averageCadence), unit: "spm")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: 10) {
-                    metric("平均配速", value: Format.pace(workout.averagePaceSecPerKm), unit: "/km")
-                    metric("开始时间", value: Format.relativeDayTime(workout.start), unit: nil)
-                    metric("动态消耗", value: energyText, unit: "kcal")
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .center, spacing: RecordCardLayout.contentGap) {
+            RecordMapThumbnail(points: workout.route, sport: workout.sport)
+            VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
+                header
+                metrics
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
+        .padding(RecordCardLayout.inset)
         .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
         .shadow(
             color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
             radius: SkyTheme.Shadow.card.radius,
             y: SkyTheme.Shadow.card.y
         )
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityAddTraits(.isButton)
     }
 
-    private var energyText: String {
-        guard workout.energyKilocalories > 0 else { return "—" }
-        return String(Int(workout.energyKilocalories.rounded()))
-    }
-
-    private func metric(_ title: String, value: String, unit: String?) -> some View {
-        let shownUnit = value == "—" ? nil : unit
-        return VStack(alignment: .leading, spacing: 2) {
-            Text(title)
+    private var header: some View {
+        HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
+            Text(RecordCardText.clock(workout.duration))
+                .font(SkyTheme.Font.headline)
+                .fontWeight(.bold)
+                .foregroundStyle(SkyTheme.Color.ink)
+                .monospacedDigit()
+                .lineLimit(1)
+                .layoutPriority(1)
+            Spacer(minLength: 6)
+            Text(RecordCardText.started(workout.start))
                 .font(SkyTheme.Font.caption)
                 .foregroundStyle(SkyTheme.Color.secondary)
                 .lineLimit(1)
-            HStack(alignment: .firstTextBaseline, spacing: 3) {
-                Text(value)
-                    .font(SkyTheme.Font.headline)
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                if let shownUnit {
-                    Text(shownUnit)
-                        .font(SkyTheme.Font.caption)
-                        .foregroundStyle(SkyTheme.Color.secondary)
-                        .lineLimit(1)
-                }
+                .minimumScaleFactor(0.5)
+                .allowsTightening(true)
+        }
+    }
+
+    /// Three columns, no rules: a 2×2 on the left, then load, then score.
+    /// The 2×2 splits into two equal tracks, so the row is four equal columns.
+    private var metrics: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                distanceColumn
+                paceColumn
+                columnLabel("训练负荷")
+                columnLabel("训练评分")
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                smallMetric(heartText)
+                smallMetric(cadenceText)
+                columnValue(loadText, SkyTheme.Color.ink)
+                columnValue(scoreText, SkyTheme.Color.primary)
             }
         }
+    }
+
+    private var distanceColumn: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
+            Text(distanceValue)
+                .font(SkyTheme.Font.headline)
+                .fontWeight(.bold)
+                .foregroundStyle(SkyTheme.Color.ink)
+                .monospacedDigit()
+            if let distanceUnit {
+                Text(distanceUnit)
+                    .font(SkyTheme.Font.caption)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title == "开始时间" ? "训练开始时间" : title)
-        .accessibilityValue(shownUnit.map { "\(value) \($0)" } ?? value)
+    }
+
+    private var paceColumn: some View {
+        Text(RecordCardText.pace(workout.averagePaceSecPerKm))
+            .font(SkyTheme.Font.caption)
+            .foregroundStyle(SkyTheme.Color.secondary)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func smallMetric(_ text: String) -> some View {
+        Text(text)
+            .font(SkyTheme.Font.caption)
+            .foregroundStyle(SkyTheme.Color.secondary)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func columnLabel(_ title: String) -> some View {
+        Text(title)
+            .font(SkyTheme.Font.caption)
+            .foregroundStyle(SkyTheme.Color.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func columnValue(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .font(SkyTheme.Font.headline)
+            .fontWeight(.bold)
+            .foregroundStyle(color)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var distanceValue: String {
+        RecordCardText.distance(workout.distanceMeters).value
+    }
+
+    private var distanceUnit: String? {
+        RecordCardText.distance(workout.distanceMeters).unit
+    }
+
+    private var heartText: String {
+        let value = Format.integer(workout.averageHeartRate)
+        return value == "—" ? value : "\(value) bpm"
+    }
+
+    private var cadenceText: String {
+        let value = Format.integer(workout.averageCadence)
+        return value == "—" ? value : "\(value) spm"
+    }
+
+    private var loadText: String {
+        let load = workout.sessionLoad
+        return load > 0 ? "\(load)" : "—"
+    }
+
+    /// No training-score field on `WorkoutRecord`. Keep the column, and use the same empty mark as other metrics.
+    private var scoreText: String { "—" }
+
+    private var accessibilitySummary: String {
+        let distance = distanceUnit.map { "\(distanceValue) \($0)" } ?? distanceValue
+        return [
+            "时长 \(RecordCardText.clock(workout.duration))",
+            "开始 \(RecordCardText.started(workout.start))",
+            "距离 \(distance)",
+            "配速 \(RecordCardText.pace(workout.averagePaceSecPerKm))",
+            "平均心率 \(heartText)",
+            "平均步频 \(cadenceText)",
+            "训练负荷 \(loadText)",
+            "训练评分 \(scoreText)"
+        ].joined(separator: "，")
     }
 }
 
-struct RecordTrackThumbnail: View {
+private enum RecordCardText {
+    private static let startFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
+    private static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "zh_CN")
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        return calendar
+    }()
+
+    private static let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
+
+    static func clock(_ interval: TimeInterval) -> String {
+        let seconds = max(0, Int(interval.rounded()))
+        return String(format: "%02d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    }
+
+    static func started(_ date: Date) -> String {
+        let index = max(0, min(6, calendar.component(.weekday, from: date) - 1))
+        return "\(startFormatter.string(from: date))（周\(weekdays[index])）"
+    }
+
+    /// Prime marks, no `/km`. Gray caption in the card.
+    static func pace(_ secondsPerKm: Double) -> String {
+        guard secondsPerKm.isFinite, secondsPerKm > 0, secondsPerKm < 3_600 else { return "—" }
+        let total = Int(secondsPerKm.rounded())
+        return "\(total / 60)′\(String(format: "%02d", total % 60))″"
+    }
+
+    static func distance(_ meters: Double) -> (value: String, unit: String?) {
+        guard meters > 1 else { return ("—", nil) }
+        return (String(format: "%.1f", meters / 1000), "km")
+    }
+}
+
+struct RecordMapThumbnail: View {
     var points: [GeoPoint]
     var sport: SportKind
+
+    @Environment(\.displayScale) private var displayScale
+    @State private var image: UIImage?
+    @State private var renderedKey = ""
+
+    private var cacheKey: String {
+        RecordMapSnapshot.key(for: points, scale: displayScale)
+    }
+
+    private var shownImage: UIImage? {
+        if renderedKey == cacheKey {
+            return image
+        }
+        return RecordMapSnapshot.cachedImage(forKey: cacheKey)
+    }
 
     var body: some View {
         ZStack {
             SkyTheme.Color.cardBorder
-            roadHints
-            if points.count >= 2 {
-                trackLayer
+            if let shownImage {
+                Image(uiImage: shownImage)
+                    .resizable()
+                    .interpolation(.medium)
+                    .scaledToFill()
+            } else if points.count >= 2 {
+                RecordTrackLine(points: points)
             } else {
                 Image(systemName: sport == .running ? "figure.run" : "figure.hiking")
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.system(size: 26, weight: .semibold))
                     .foregroundStyle(SkyTheme.Color.primary)
             }
         }
-        .frame(width: 108, height: 116)
+        .frame(width: RecordCardLayout.thumbnail, height: RecordCardLayout.thumbnail)
         .clipShape(RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous))
         .accessibilityHidden(true)
+        .task(id: cacheKey) {
+            guard points.count >= 2 else {
+                image = nil
+                renderedKey = cacheKey
+                return
+            }
+            let rendered = await RecordMapSnapshot.image(for: points, scale: displayScale)
+            guard !Task.isCancelled else { return }
+            image = rendered
+            renderedKey = cacheKey
+        }
+    }
+}
+
+/// Resumes a snapshot continuation once. Cancel can race the completion handler.
+private final class SnapshotResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+
+    func resume(
+        _ continuation: CheckedContinuation<MKMapSnapshotter.Snapshot?, Never>,
+        with snapshot: MKMapSnapshotter.Snapshot?
+    ) {
+        lock.lock()
+        let already = resumed
+        resumed = true
+        lock.unlock()
+        if !already {
+            continuation.resume(returning: snapshot)
+        }
+    }
+}
+
+/// Static MapKit snapshot with a primary route. The flat track is only the stand-in before tiles arrive.
+private enum RecordMapSnapshot {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 40
+        return cache
+    }()
+
+    static func key(for points: [GeoPoint], scale: CGFloat) -> String {
+        var hash: UInt64 = UInt64(points.count)
+        let step = max(points.count / 16, 1)
+        var index = 0
+        while index < points.count {
+            let point = points[index]
+            hash = hash &* 31 &+ UInt64(bitPattern: Int64((point.latitude * 10_000).rounded()))
+            hash = hash &* 31 &+ UInt64(bitPattern: Int64((point.longitude * 10_000).rounded()))
+            index += step
+        }
+        return "\(hash)-\(Int((scale * 10).rounded()))"
     }
 
-    private var roadHints: some View {
-        Canvas { context, size in
-            let roads: [(CGFloat, CGFloat, CGFloat)] = [
-                (0.28, 0.42, 0.18),
-                (0.62, 0.7, 0.46),
-                (0.4, 0.22, 0.55)
-            ]
-            for (start, end, control) in roads {
-                var path = Path()
-                path.move(to: CGPoint(x: 0, y: size.height * start))
-                path.addQuadCurve(
-                    to: CGPoint(x: size.width, y: size.height * end),
-                    control: CGPoint(x: size.width * 0.55, y: size.height * control)
-                )
-                context.stroke(
-                    path,
-                    with: .color(SkyTheme.Color.separator.opacity(0.85)),
-                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                )
+    static func cachedImage(forKey key: String) -> UIImage? {
+        cache.object(forKey: key as NSString)
+    }
+
+    static func image(for points: [GeoPoint], scale: CGFloat) async -> UIImage? {
+        let key = self.key(for: points, scale: scale) as NSString
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+        guard points.count >= 2, let region = region(for: points) else { return nil }
+
+        let options = MKMapSnapshotter.Options()
+        options.region = region
+        options.size = CGSize(width: RecordCardLayout.thumbnail, height: RecordCardLayout.thumbnail)
+        options.scale = max(scale, 1)
+        options.mapType = .standard
+        options.showsBuildings = false
+        options.pointOfInterestFilter = .excludingAll
+        options.traitCollection = UITraitCollection(traitsFrom: [
+            UITraitCollection(userInterfaceStyle: .light),
+            UITraitCollection(displayScale: options.scale)
+        ])
+
+        let snapshotter = MKMapSnapshotter(options: options)
+        let box = SnapshotResume()
+        let snapshot: MKMapSnapshotter.Snapshot? = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                snapshotter.start { snapshot, _ in
+                    box.resume(continuation, with: snapshot)
+                }
+            }
+        } onCancel: {
+            snapshotter.cancel()
+        }
+        guard let snapshot, !Task.isCancelled else { return nil }
+        let rendered = render(points: points, on: snapshot)
+        cache.setObject(rendered, forKey: key)
+        return rendered
+    }
+
+    private static func region(for points: [GeoPoint]) -> MKCoordinateRegion? {
+        guard let first = points.first else { return nil }
+        var minLat = first.latitude
+        var maxLat = first.latitude
+        var minLon = first.longitude
+        var maxLon = first.longitude
+        for point in points {
+            minLat = min(minLat, point.latitude)
+            maxLat = max(maxLat, point.latitude)
+            minLon = min(minLon, point.longitude)
+            maxLon = max(maxLon, point.longitude)
+        }
+        let center = CLLocationCoordinate2D(
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLon + maxLon) / 2
+        )
+        // Extra span leaves room for the end pin inside the rounded thumbnail.
+        let pad = 1.85
+        let minimum = 0.0012
+        return MKCoordinateRegion(
+            center: center,
+            span: MKCoordinateSpan(
+                latitudeDelta: max(maxLat - minLat, minimum) * pad,
+                longitudeDelta: max(maxLon - minLon, minimum) * pad
+            )
+        )
+    }
+
+    private static func render(points: [GeoPoint], on snapshot: MKMapSnapshotter.Snapshot) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = snapshot.image.scale
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: snapshot.image.size, format: format)
+        let coordinates = simplified(points).map(\.coordinate)
+        let stroke = UIColor(SkyTheme.Color.primary)
+        let hole = UIColor(SkyTheme.Color.card)
+        return renderer.image { _ in
+            snapshot.image.draw(at: .zero)
+            guard coordinates.count >= 2 else { return }
+            let path = UIBezierPath()
+            path.lineWidth = 3
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            for (index, coordinate) in coordinates.enumerated() {
+                let point = snapshot.point(for: coordinate)
+                if index == 0 {
+                    path.move(to: point)
+                } else {
+                    path.addLine(to: point)
+                }
+            }
+            stroke.setStroke()
+            path.stroke()
+            if let last = coordinates.last {
+                drawPin(at: snapshot.point(for: last), fill: stroke, hole: hole)
             }
         }
     }
 
-    private var trackLayer: some View {
+    private static func drawPin(at tip: CGPoint, fill: UIColor, hole: UIColor) {
+        let radius: CGFloat = 3.6
+        let center = CGPoint(x: tip.x, y: tip.y - radius - 2)
+        let head = UIBezierPath(
+            ovalIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+        )
+        let tail = UIBezierPath()
+        tail.move(to: CGPoint(x: tip.x - radius * 0.72, y: center.y + radius * 0.35))
+        tail.addLine(to: tip)
+        tail.addLine(to: CGPoint(x: tip.x + radius * 0.72, y: center.y + radius * 0.35))
+        tail.close()
+        fill.setFill()
+        tail.fill()
+        head.fill()
+        let pupil = radius * 0.38
+        hole.setFill()
+        UIBezierPath(
+            ovalIn: CGRect(x: center.x - pupil, y: center.y - pupil, width: pupil * 2, height: pupil * 2)
+        ).fill()
+    }
+
+    private static func simplified(_ points: [GeoPoint], limit: Int = 180) -> [GeoPoint] {
+        guard points.count > limit, limit >= 2 else { return points }
+        let step = Double(points.count - 1) / Double(limit - 1)
+        return (0..<limit).map { index in
+            let position = min(points.count - 1, Int((Double(index) * step).rounded()))
+            return points[position]
+        }
+    }
+}
+
+/// Primary route on the card fill while the map snapshot is still loading, or if tiles fail.
+private struct RecordTrackLine: View {
+    var points: [GeoPoint]
+
+    var body: some View {
         Canvas { context, size in
             let spots = projected(in: size)
             guard spots.count >= 2 else { return }
@@ -187,16 +513,16 @@ struct RecordTrackThumbnail: View {
                 style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
             )
             if let last = spots.last {
-                let head = CGRect(x: last.x - 4, y: last.y - 16, width: 8, height: 8)
+                let head = CGRect(x: last.x - 3.6, y: last.y - 12, width: 7.2, height: 7.2)
                 context.fill(Path(ellipseIn: head), with: .color(SkyTheme.Color.primary))
-                var pin = Path()
-                pin.move(to: CGPoint(x: last.x - 4, y: last.y - 9))
-                pin.addLine(to: CGPoint(x: last.x + 4, y: last.y - 9))
-                pin.addLine(to: last)
-                pin.closeSubpath()
-                context.fill(pin, with: .color(SkyTheme.Color.primary))
-                let hole = CGRect(x: last.x - 1.6, y: last.y - 14.4, width: 3.2, height: 3.2)
-                context.fill(Path(ellipseIn: hole), with: .color(SkyTheme.Color.card))
+                var tail = Path()
+                tail.move(to: CGPoint(x: last.x - 2.6, y: last.y - 6))
+                tail.addLine(to: last)
+                tail.addLine(to: CGPoint(x: last.x + 2.6, y: last.y - 6))
+                tail.closeSubpath()
+                context.fill(tail, with: .color(SkyTheme.Color.primary))
+                let pupil = CGRect(x: last.x - 1.4, y: last.y - 9.8, width: 2.8, height: 2.8)
+                context.fill(Path(ellipseIn: pupil), with: .color(SkyTheme.Color.card))
             }
         }
     }
@@ -213,7 +539,7 @@ struct RecordTrackThumbnail: View {
         let maxY = north.max() ?? 0
         let spanX = max(maxX - minX, 1)
         let spanY = max(maxY - minY, 1)
-        let pad: CGFloat = 16
+        let pad: CGFloat = 12
         let width = max(size.width - pad * 2, 1)
         let height = max(size.height - pad * 2, 1)
         let scale = min(width / spanX, height / spanY)
@@ -228,4 +554,16 @@ struct RecordTrackThumbnail: View {
             )
         }
     }
+}
+
+#Preview {
+    ScrollView {
+        VStack(spacing: SkyTheme.Spacing.screenInset) {
+            ForEach(SampleLibrary.workouts()) { workout in
+                RecordSummaryCard(workout: workout)
+            }
+        }
+        .padding(SkyTheme.Spacing.screenInset)
+    }
+    .background(SkyTheme.Color.grouped)
 }
