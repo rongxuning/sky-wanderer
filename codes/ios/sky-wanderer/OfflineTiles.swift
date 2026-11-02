@@ -1,5 +1,6 @@
 import Darwin
 import MapKit
+import SwiftUI
 import UIKit
 
 struct TileKey: Hashable {
@@ -294,8 +295,10 @@ enum OfflineTileDisk {
 }
 
 final class DiskTileOverlay: MKTileOverlay {
-    override init() {
-        super.init(urlTemplate: "")
+    // MKTileOverlay's designated initializer is init(urlTemplate:).
+    // NSObject.init is only a convenience initializer, so it cannot be overridden.
+    override init(urlTemplate: String?) {
+        super.init(urlTemplate: urlTemplate)
         canReplaceMapContent = true
         minimumZ = 2
         maximumZ = 18
@@ -434,7 +437,7 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
         if let tileOverlay {
             map.removeOverlay(tileOverlay)
         }
-        let overlay = DiskTileOverlay()
+        let overlay = DiskTileOverlay(urlTemplate: "")
         map.addOverlay(overlay)
         tileOverlay = overlay
         liftLines(on: map)
