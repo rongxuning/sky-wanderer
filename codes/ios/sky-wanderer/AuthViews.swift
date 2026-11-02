@@ -76,38 +76,9 @@ struct LoginView: View {
                         .padding(.top, SkyTheme.Spacing.section)
                         .disabled(busy)
                         .opacity(busy ? 0.72 : 1)
-                    orDivider
+                    credentialColumn
+                        .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, SkyTheme.Spacing.section)
-                    accountFields
-                        .padding(.top, SkyTheme.Spacing.section)
-                        .animation(.easeInOut(duration: 0.2), value: mode)
-                    if let notice {
-                        Text(notice.text)
-                            .font(SkyTheme.Font.footnote)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(noticeColor(notice))
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, SkyTheme.Spacing.related)
-                            .transition(.opacity)
-                    } else if !app.banner.isEmpty {
-                        Text(app.banner)
-                            .font(SkyTheme.Font.footnote)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(SkyTheme.Color.secondary)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, SkyTheme.Spacing.related)
-                    }
-                    LoginPrimaryButton(mode == .login ? "登录" : "创建账号", action: submitAccount)
-                        .disabled(busy)
-                        .opacity(busy ? 0.72 : 1)
-                        .padding(.top, SkyTheme.Spacing.screenInset)
-                    accountLinks
-                        .padding(.top, SkyTheme.Spacing.related)
-                        .disabled(busy)
                     agreement
                         .padding(.top, SkyTheme.Spacing.section)
                         .padding(.bottom, SkyTheme.Spacing.section)
@@ -175,7 +146,7 @@ struct LoginView: View {
     }
 
     private var providerButtons: some View {
-        VStack(spacing: SkyTheme.Spacing.controlGap) {
+        HStack(spacing: SkyTheme.Spacing.controlGap) {
             providerButton("本机手机号登录", action: openPhone) {
                 CarrierPhoneMark(tint: SkyTheme.Color.primary)
             }
@@ -188,24 +159,60 @@ struct LoginView: View {
         }
     }
 
+    /// Visible title stays off the control. `label` is the VoiceOver name.
     private func providerButton<Icon: View>(
         _ label: String,
         action: @escaping () -> Void,
         @ViewBuilder icon: () -> Icon
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: SkyTheme.Spacing.related) {
-                Spacer(minLength: 0)
-                icon()
-                    .frame(width: 22, height: 22)
-                Text(label)
-                    .font(SkyTheme.Font.headline)
-                    .foregroundStyle(SkyTheme.Color.primary)
-                    .multilineTextAlignment(.center)
-                Spacer(minLength: 0)
-            }
+            icon()
+                .frame(width: 22, height: 22)
+                .frame(maxWidth: .infinity)
         }
         .buttonStyle(SkyOutlineButtonStyle())
+        .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.touchMin)
+        .accessibilityLabel(label)
+    }
+
+    /// Divider, fields, primary button, and account links. 60% of the login content width.
+    private var credentialColumn: some View {
+        CenteredFractionLayout(fraction: 0.6) {
+            VStack(spacing: 0) {
+                orDivider
+                accountFields
+                    .padding(.top, SkyTheme.Spacing.section)
+                    .animation(.easeInOut(duration: 0.2), value: mode)
+                if let notice {
+                    Text(notice.text)
+                        .font(SkyTheme.Font.footnote)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(noticeColor(notice))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, SkyTheme.Spacing.related)
+                        .transition(.opacity)
+                } else if !app.banner.isEmpty {
+                    Text(app.banner)
+                        .font(SkyTheme.Font.footnote)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, SkyTheme.Spacing.related)
+                }
+                LoginPrimaryButton(mode == .login ? "登录" : "创建账号", action: submitAccount)
+                    .disabled(busy)
+                    .opacity(busy ? 0.72 : 1)
+                    .padding(.top, SkyTheme.Spacing.screenInset)
+                accountLinks
+                    .padding(.top, SkyTheme.Spacing.related)
+                    .disabled(busy)
+            }
+            .frame(maxWidth: .infinity)
+        }
     }
 
     private var orDivider: some View {
@@ -654,6 +661,32 @@ private struct SkyPrimaryButtonStyle: ButtonStyle {
                 in: Capsule()
             )
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Sizes its child to `fraction` of the proposed width so the parent can center that column.
+private struct CenteredFractionLayout: Layout {
+    var fraction: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache _: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        guard let fullWidth = proposal.width else {
+            return child.sizeThatFits(.unspecified)
+        }
+        let childWidth = fullWidth * fraction
+        let size = child.sizeThatFits(ProposedViewSize(width: childWidth, height: nil))
+        return CGSize(width: childWidth, height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal _: ProposedViewSize, subviews: Subviews, cache _: inout ()) {
+        guard let child = subviews.first else { return }
+        let childProposal = ProposedViewSize(width: bounds.width, height: nil)
+        let size = child.sizeThatFits(childProposal)
+        let origin = CGPoint(
+            x: bounds.minX + max(0, (bounds.width - size.width) / 2),
+            y: bounds.minY
+        )
+        child.place(at: origin, proposal: childProposal)
     }
 }
 
