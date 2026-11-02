@@ -6,11 +6,12 @@ enum AuthRoute: Hashable {
 }
 
 struct AuthFlow: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var path = NavigationPath()
 
     var body: some View {
         NavigationStack(path: $path) {
-            LoginView(path: $path)
+            LoginView(path: $path, onClose: { dismiss() })
                 .navigationDestination(for: AuthRoute.self) { route in
                     switch route {
                     case .phone:
@@ -22,7 +23,6 @@ struct AuthFlow: View {
         .presentationBackground {
             LoginSkyBackground()
         }
-        .interactiveDismissDisabled(true)
         .preferredColorScheme(.light)
     }
 }
@@ -55,6 +55,7 @@ private enum LoginCardNotice: Equatable {
 struct LoginView: View {
     @EnvironmentObject private var app: PhoneAppState
     @Binding var path: NavigationPath
+    var onClose: () -> Void = {}
     @State private var mode: LoginCardMode = .login
     @State private var email = ""
     @State private var displayName = ""
@@ -101,6 +102,19 @@ struct LoginView: View {
 
     private var topBar: some View {
         HStack {
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LoginColor.ink.opacity(0.82))
+                    .frame(width: 26, height: 26)
+                    .overlay {
+                        Circle().strokeBorder(LoginColor.ink.opacity(0.82), lineWidth: 1.35)
+                    }
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("关闭")
             Spacer()
             Button {
                 showNote = true

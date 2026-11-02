@@ -26,6 +26,8 @@ struct SkyHome: View {
     @State private var agentText = ""
     @State private var showAgentNote = false
     @State private var showWheel = false
+    @State private var showLogin = false
+    @State private var openMeAfterLogin = false
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -43,6 +45,22 @@ struct SkyHome: View {
             var next = NavigationPath()
             next.append(HomeRoute.records)
             path = next
+        }
+        .onChange(of: app.isLoggedIn) { _, loggedIn in
+            if loggedIn {
+                showLogin = false
+            } else {
+                openMeAfterLogin = false
+                showLogin = false
+                showWheel = false
+                path = NavigationPath()
+            }
+        }
+        .onChange(of: showLogin) { _, showing in
+            if !showing { continueAfterLoginIfNeeded() }
+        }
+        .fullScreenCover(isPresented: $showLogin, onDismiss: continueAfterLoginIfNeeded) {
+            AuthFlow()
         }
     }
 
@@ -114,7 +132,7 @@ struct SkyHome: View {
                 }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(app.isLoggedIn ? "账号" : "未登录")
+        .accessibilityLabel(app.isLoggedIn ? "账号" : "登录")
     }
 
     private var hero: some View {
@@ -241,6 +259,24 @@ struct SkyHome: View {
     }
 
     private func openAccount() {
+        if app.isLoggedIn {
+            path.append(HomeRoute.me)
+        } else {
+            presentLogin(thenOpenMe: false)
+        }
+    }
+
+    private func presentLogin(thenOpenMe: Bool) {
+        showWheel = false
+        composerFocused = false
+        openMeAfterLogin = thenOpenMe
+        showLogin = true
+    }
+
+    /// Radial 「我」asks for a session first, then continues into that page.
+    private func continueAfterLoginIfNeeded() {
+        guard openMeAfterLogin else { return }
+        openMeAfterLogin = false
         guard app.isLoggedIn else { return }
         path.append(HomeRoute.me)
     }
@@ -262,8 +298,11 @@ struct SkyHome: View {
         case .social:
             path.append(HomeRoute.social)
         case .me:
-            guard app.isLoggedIn else { return }
-            path.append(HomeRoute.me)
+            if app.isLoggedIn {
+                path.append(HomeRoute.me)
+            } else {
+                presentLogin(thenOpenMe: true)
+            }
         }
     }
 
@@ -289,7 +328,7 @@ struct SkyHome: View {
     private func homeDestination(_ route: HomeRoute) -> some View {
         switch route {
         case .settings:
-            SkySettingsView()
+            SkySettingsView(onLogin: { presentLogin(thenOpenMe: false) })
         case .scan:
             ScanQRView()
         case .records:
@@ -356,6 +395,7 @@ enum SkyHomeColor {
 
 struct SkySettingsView: View {
     @EnvironmentObject private var app: PhoneAppState
+    var onLogin: () -> Void = {}
 
     var body: some View {
         List {
@@ -365,6 +405,8 @@ struct SkySettingsView: View {
                     Button("退出登录", role: .destructive) {
                         app.logout()
                     }
+                } else {
+                    Button("登录", action: onLogin)
                 }
             }
             Section {

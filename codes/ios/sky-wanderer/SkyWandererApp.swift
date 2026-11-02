@@ -36,16 +36,8 @@ enum MapRoute: Hashable {
 }
 
 struct RootView: View {
-    @EnvironmentObject private var app: PhoneAppState
-
     var body: some View {
-        Group {
-            if app.isLoggedIn {
-                SkyHome()
-            } else {
-                AuthFlow()
-            }
-        }
-        .preferredColorScheme(.light)
+        SkyHome()
+            .preferredColorScheme(.light)
     }
 }
