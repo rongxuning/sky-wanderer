@@ -3,7 +3,7 @@ import SwiftUI
 /// Light-first Sky 1.0.0 tokens.
 ///
 /// Numbers match `docs/design/tokens.json` and `docs/design/sky-design-system.md`.
-/// New screens read `SkyTheme`. `SkyHomeColor`, `LoginColor`, and the `omni*` palette stay until those screens migrate.
+/// New screens read `SkyTheme`. `SkyHomeColor` and the `omni*` palette stay until those screens migrate.
 enum SkyTheme {
     enum Color {
         static let primary = SkyHex.color(0x1E88FE)
