@@ -17,24 +17,53 @@ struct RoutesLibraryView: View {
     @EnvironmentObject private var draft: WorkoutDraft
     @State private var importing = false
     @State private var importError: String?
+    /// Home tab keeps this list and drops the navigation title.
+    var embeddedInHome: Bool = false
 
     var body: some View {
-        Group {
-            if app.importedRoutes.isEmpty {
-                emptyState
-            } else {
-                routeList
+        VStack(spacing: 0) {
+            if embeddedInHome, !app.importedRoutes.isEmpty {
+                HStack {
+                    Button {
+                        importing = true
+                    } label: {
+                        Text("导入")
+                            .font(SkyTheme.Font.callout)
+                            .foregroundStyle(SkyTheme.Color.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("导入 GPX")
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                .padding(.top, 2)
+                .padding(.bottom, 4)
+            }
+            Group {
+                if app.importedRoutes.isEmpty {
+                    emptyState
+                } else {
+                    routeList
+                }
             }
         }
-        .background(CanvasBackground())
-        .navigationTitle("路线")
+        .background {
+            if embeddedInHome {
+                SkyTheme.Color.grouped
+            } else {
+                CanvasBackground()
+            }
+        }
+        .navigationTitle(embeddedInHome ? "" : "路线")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.visible, for: .navigationBar)
-        .navigationBarHidden(false)
+        .toolbar(embeddedInHome ? .hidden : .visible, for: .navigationBar)
+        .navigationBarHidden(embeddedInHome)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("导入") { importing = true }
-                    .accessibilityLabel("导入 GPX")
+            if !embeddedInHome {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("导入") { importing = true }
+                        .accessibilityLabel("导入 GPX")
+                }
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: GPXFile.types) { result in

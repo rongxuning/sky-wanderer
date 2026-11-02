@@ -59,6 +59,22 @@ enum Format {
         return formatter.string(from: date)
     }
 
+    /// Home record cards. Today and yesterday use Shanghai local days, matching `time`.
+    static func relativeDayTime(_ date: Date, now: Date = Date()) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "zh_CN")
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let clock = time(date)
+        if calendar.isDate(date, inSameDayAs: now) {
+            return "今天 \(clock)"
+        }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) {
+            return "昨天 \(clock)"
+        }
+        return dayTime(date)
+    }
+
     static func number(_ value: Double, digits: Int = 0) -> String {
         guard value > 0 else { return "—" }
         return String(format: "%.\(digits)f", value)
