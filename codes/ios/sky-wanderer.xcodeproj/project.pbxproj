@@ -58,6 +58,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		/* sky-wanderer/DesignSystem/SkyTheme.swift compiles into the sky-wanderer iPhone target via this synchronized group. Info.plist is the only membership exception. The watch target does not synchronize this folder. */
 		A10000000000000000000006 /* sky-wanderer */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000B /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "sky-wanderer"; sourceTree = "<group>"; };
 		A10000000000000000000007 /* sky-wanderer-watch */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000C /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "sky-wanderer-watch"; sourceTree = "<group>"; };
 		A10000000000000000000008 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
