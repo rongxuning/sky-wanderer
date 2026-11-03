@@ -5,7 +5,7 @@
 | 目录 | 现在做什么 | 以后 |
 | --- | --- | --- |
 | `codes/core` | 进程入口 `codes/core/cmd/api`。监听 `PORT`（没设则 `8787`）。`GET /health`。把 `codes/user` 的登录路由挂上来。 | `codes/core/sport` 增加运动、轨迹、路线。网关启动时读取 `sport.Routes()`。 |
-| `codes/user` | 手机号、微信、Google。同一个用户可以有多种身份。绑定一个已经属于别人的身份时，合并进**更早创建**的账号，较新的账号作废（`retiredAt`），不物理删除。 | 保持账号边界。不放分析任务。 |
+| `codes/user` | 手机号、微信、Google、邮箱密码。同一个用户可以有多种身份。绑定一个已经属于别人的身份时，合并进**更早创建**的账号，较新的账号作废（`retiredAt`），不物理删除。邮箱密码只存 bcrypt 哈希。 | 保持账号边界。不放分析任务。 |
 | `codes/analytics` | 只有说明。 | AI 与数据分析。由 core 在进程内调用，不单独对 iOS 暴露第二套登录。 |
 
 临时部署是 Vercel + Neon，不是同机 `/opt/sky-wanderer`。同机 compose 和 Nginx 暂缓，见 [deploy-sky.md](deploy-sky.md)。
@@ -31,7 +31,7 @@ curl -sS localhost:8787/health
 
 Vercel 项目根就是本仓库。Go preset 从根上的 `cmd/api/main.go` 找到入口，再按 `vercel.json` 编译，步骤见 [deploy-sky.md](deploy-sky.md)。环境变量与 `deploy/env.sample` 相同。部署本身不在这个改动里做。
 
-iPhone 的 `SKY_API_BASE_URL` 临时指向 `https://sky-wanderer.vercel.app`。`https://api.sky-wanderer.online` 仍是以后的自定义域名，见 [deploy-sky.md](deploy-sky.md)。登录界面不改。
+iPhone 的 `SKY_API_BASE_URL` 临时指向 `https://sky-wanderer.vercel.app`。`https://api.sky-wanderer.online` 仍是以后的自定义域名，见 [deploy-sky.md](deploy-sky.md)。登录页的邮箱密码走上面的注册和登录接口。
 
 ## 登录接口
 
@@ -41,7 +41,8 @@ iPhone 的 `SKY_API_BASE_URL` 临时指向 `https://sky-wanderer.vercel.app`。`
 | --- | --- | --- |
 | `GET` | `/health` | 数据库可连时 `{"ok":true}`，否则 503 `db_unavailable` |
 | `POST` | `/v1/auth/phone/send-code` | `{"phone":"13800138000"}`。演示且没配短信时，响应带 `demoCode` |
-| `POST` | `/v1/auth/login` | 手机号带 `smsCode`（演示模式也可带 `demoCode`，值为 `SKY-LOCAL`）。微信带 `authorizationCode`。Google 带 `idToken`，或 `authorizationCode` + `redirectUri` + `clientId` |
+| `POST` | `/v1/auth/register` | 邮箱注册。`{"type":"email","email","password","displayName"}`。密码至少 8 位。重复邮箱返回 `email_taken`。成功响应与登录相同，`created` 为 `true` |
+| `POST` | `/v1/auth/login` | 手机号带 `smsCode`（演示模式也可带 `demoCode`，值为 `SKY-LOCAL`）。微信带 `authorizationCode`。Google 带 `idToken`，或 `authorizationCode` + `redirectUri` + `clientId`。邮箱带 `email` 和 `password`，不存在返回 `email_not_found`，密码不对返回 `invalid_password` |
 | `POST` | `/v1/auth/bind` | `Authorization: Bearer`。身份属于别人时合并进更早的账号 |
 | `GET` | `/v1/auth/identities` | 当前账号的身份 |
 | `DELETE` | `/v1/auth/identities` | body 带 `type` 和 `providerSubject`。最后一种不能删 |

@@ -72,14 +72,38 @@ func runStatements(ctx context.Context, db sqlRunner, script string) error {
 		}
 		kept = append(kept, line)
 	}
-	for _, statement := range strings.Split(strings.Join(kept, "\n"), ";") {
-		text := strings.TrimSpace(statement)
-		if text == "" {
-			continue
-		}
-		if _, err := db.Exec(ctx, text); err != nil {
+	for _, statement := range splitSQL(strings.Join(kept, "\n")) {
+		if _, err := db.Exec(ctx, statement); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// splitSQL separates statements on semicolons, but keeps a dollar-quoted
+// DO block together so its internal semicolons stay in one statement.
+func splitSQL(script string) []string {
+	var statements []string
+	var b strings.Builder
+	quoted := false
+	for i := 0; i < len(script); i++ {
+		if strings.HasPrefix(script[i:], "$$") {
+			quoted = !quoted
+			b.WriteString("$$")
+			i++
+			continue
+		}
+		if !quoted && script[i] == ';' {
+			if text := strings.TrimSpace(b.String()); text != "" {
+				statements = append(statements, text)
+			}
+			b.Reset()
+			continue
+		}
+		b.WriteByte(script[i])
+	}
+	if text := strings.TrimSpace(b.String()); text != "" {
+		statements = append(statements, text)
+	}
+	return statements
 }

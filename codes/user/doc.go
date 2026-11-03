@@ -1,4 +1,4 @@
-// Package user is the account system: phone, WeChat, and Google on one user.
+// Package user is the account system: phone, WeChat, Google, and email on one user.
 // Binding an identity that already belongs to someone else merges into the
 // earlier-created account and retires the newer one.
 //

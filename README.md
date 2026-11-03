@@ -7,7 +7,7 @@ iPhone 和 Apple Watch 上的徒步、跑步应用。用 Xcode 16 或更新版�
 - `codes/ios`：iPhone、Apple Watch 和共用代码
 - `codes/web`：Web 端
 - `codes/core`：Go HTTP 网关（健康检查、登录路由；运动和轨迹的扩展点）
-- `codes/user`：登录与账号（手机号、微信、Google）
+- `codes/user`：登录与账号（手机号、微信、Google、邮箱密码）
 - `codes/analytics`：数据分析与 AI（本阶段只有说明）
 - `deploy`：发布流程和脚本
 - `docs/planning`、`docs/proposals`、`docs/design`：规划、方案、设计
@@ -20,10 +20,10 @@ Bundle ID：`com.rongxuning.sky-wanderer`，手表是 `com.rongxuning.sky-wander
 
 ## 真实和模拟
 
-真实路径：HealthKit 授权后读取心率、睡眠、步数，并记录徒步和跑步；地图用 MapKit 和系统定位。手机号、微信、Google 请求临时地址 `https://sky-wanderer.vercel.app`（`api.sky-wanderer.online` 仍是以后的自定义域名，Nginx 先不动）：短信验证码、微信授权码和 Google ID token 都在服务端核对。同一个身份再次登录回到同一个用户；把已经属于别人的身份绑过来时，合并进更早创建的账号。服务在 `codes/core` 和 `codes/user`，部署说明在 [docs/deploy-sky.md](docs/deploy-sky.md)。临时环境是 Vercel + Neon；同机 `/opt/sky-wanderer` 暂缓。`Config/Sky.xcconfig` 里的 `SKY_API_BASE_URL` 已指向该 Vercel 域名；留空或把 `SKY_AUTH_DEMO` 设为 `1` 时，仍用本机目录 `codes/ios/Shared/AccountIdentity.swift`。登录页调用 `PhoneAppState` 上的 `signInPhone`、`signInWeChat`、`signInGoogle`。
+真实路径：HealthKit 授权后读取心率、睡眠、步数，并记录徒步和跑步；地图用 MapKit 和系统定位。手机号、微信、Google、邮箱密码请求临时地址 `https://sky-wanderer.vercel.app`（`api.sky-wanderer.online` 仍是以后的自定义域名，Nginx 先不动）：短信验证码、微信授权码、Google ID token 和邮箱密码都在服务端核对。密码只存 bcrypt 哈希。同一个身份再次登录回到同一个用户；把已经属于别人的身份绑过来时，合并进更早创建的账号。服务在 `codes/core` 和 `codes/user`，部署说明在 [docs/deploy-sky.md](docs/deploy-sky.md)。临时环境是 Vercel + Neon；同机 `/opt/sky-wanderer` 暂缓。`Config/Sky.xcconfig` 里的 `SKY_API_BASE_URL` 已指向该 Vercel 域名；留空或把 `SKY_AUTH_DEMO` 设为 `1` 时，仍用本机目录。登录页调用 `PhoneAppState` 上的 `signInPhone`、`signInWeChat`、`signInGoogle`，邮箱注册和登录调用 `registerEmail`、`signInEmail`。
 
 iPhone 打开即进入首页，不强制登录。首页底部是磨砂玻璃胶囊标签，只有记录、训练、路线三项，默认停在记录。没有会话时这三页仍可使用。未登录时点左下角浮动头像，会打开全屏登录页；关闭后回到当前页。已登录时点头像进入「我」。头像在磨砂玻璃标签左侧，与标签分开。登录成功后会话写在本机 `phone.json`，同时把 session token 和账号标识放进 Keychain。冷启动先读这两处：有效会话则首页已是登录态，没有会话则停在未登录的首页。退出登录回到记录页，不会再被挡回登录页。
 
-模拟路径：没有 HealthKit 或锻炼启动失败时，运动数据在本机生成，界面会写「本地模拟」。组队没有服务器，`LocalTeammateSimulator` 按 `TeammateSync` 在本机移动示例队友。账号服务地址为空或打开 `SKY_AUTH_DEMO` 时，手机号不发短信，验证页给出演示验证码 `SKY-LOCAL`；微信和 Google 用本机占位身份。密码重置仍使用演示码 `OMNI-LOCAL`，登录页不再进入注册、忘记密码或重置密码。社交示例帖和示例训练记录是本地种子数据。手表和手机的记录各自存在本机，没有同步。手表上的社交、组队、我、周/月/年统计是更短的一版，没有手机上的密图表。
+模拟路径：没有 HealthKit 或锻炼启动失败时，运动数据在本机生成，界面会写「本地模拟」。组队没有服务器，`LocalTeammateSimulator` 按 `TeammateSync` 在本机移动示例队友。账号服务地址为空或打开 `SKY_AUTH_DEMO` 时，手机号不发短信，验证页给出演示验证码 `SKY-LOCAL`；微信和 Google 用本机占位身份；邮箱和密码只写在这台手机上。忘记密码仍提示暂不支持。社交示例帖和示例训练记录是本地种子数据。手表和手机的记录各自存在本机，没有同步。手表上的社交、组队、我、周/月/年统计是更短的一版，没有手机上的密图表。
 
 训练负荷、体能储备、休息建议的公式在 `Shared/TrainingEstimate.swift`。图表 Z1–Z5 的分界在 `Shared/ZoneScale.swift`，只用于着色，不是医疗标准。

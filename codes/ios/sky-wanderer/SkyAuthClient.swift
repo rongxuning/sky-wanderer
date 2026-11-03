@@ -46,6 +46,18 @@ struct SkyAPIError: Error {
             return "账号不存在"
         case "invalid_phone":
             return "请填写有效手机号"
+        case "invalid_email":
+            return "请填写有效邮箱"
+        case "email_taken":
+            return "这个邮箱已经注册"
+        case "email_not_found":
+            return "这个邮箱还没有注册"
+        case "invalid_password":
+            return "密码不正确"
+        case "password_too_short":
+            return "密码至少 8 位"
+        case "password_too_long":
+            return "密码过长"
         case "invalid_subject":
             return "登录信息没有完成"
         case "db_unavailable":
@@ -112,6 +124,10 @@ enum SkyAuthClient {
 
     static func login(_ body: [String: String]) async throws -> RemoteAuthPayload {
         try await request(path: "v1/auth/login", method: "POST", body: body, token: nil)
+    }
+
+    static func register(_ body: [String: String]) async throws -> RemoteAuthPayload {
+        try await request(path: "v1/auth/register", method: "POST", body: body, token: nil)
     }
 
     static func bind(_ body: [String: String], token: String) async throws -> RemoteAuthPayload {

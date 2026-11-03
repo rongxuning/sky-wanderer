@@ -24,6 +24,7 @@ type LoginInput struct {
 	DisplayName       *string
 	Email             *string
 	Phone             *string
+	Password          *string
 }
 
 type LoginResult struct {
@@ -198,10 +199,44 @@ func (s *Service) SendPhoneCode(ctx context.Context, phone string) (PhoneCodeRes
 	return PhoneCodeResult{Phone: subject, ExpiresInSeconds: seconds}, nil
 }
 
+func (s *Service) RegisterEmail(ctx context.Context, input LoginInput) (LoginResult, error) {
+	input.Type = "email"
+	prepared, err := s.prepare(ctx, input)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	hashed, err := hashPassword(prepared.Password)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	prepared.PasswordHash = hashed
+	prepared.Password = ""
+	var result LoginResult
+	err = s.run(ctx, func(tx Repository) error {
+		existing, err := tx.FindIdentity(ctx, prepared.Type, prepared.Subject)
+		if err != nil {
+			return err
+		}
+		if existing != nil {
+			return &AuthError{Code: "email_taken", Message: "email is already registered"}
+		}
+		var loadErr error
+		result, loadErr = s.insertOrLoad(ctx, tx, prepared)
+		if IsConflict(loadErr) {
+			return &AuthError{Code: "email_taken", Message: "email is already registered"}
+		}
+		return loadErr
+	})
+	return result, err
+}
+
 func (s *Service) LoginOrRegister(ctx context.Context, input LoginInput) (LoginResult, error) {
 	prepared, err := s.prepare(ctx, input)
 	if err != nil {
 		return LoginResult{}, err
+	}
+	if prepared.Type == "email" {
+		return s.loginEmail(ctx, prepared)
 	}
 	var result LoginResult
 	err = s.run(ctx, func(tx Repository) error {
@@ -230,6 +265,11 @@ func (s *Service) BindIdentity(ctx context.Context, input BindInput) (BindResult
 		if err != nil {
 			return err
 		}
+		if prepared.Type == "email" {
+			if err := s.prepareEmailSecret(ctx, tx, &prepared); err != nil {
+				return err
+			}
+		}
 		if err := s.withCode(ctx, tx, prepared); err != nil {
 			return err
 		}
@@ -252,7 +292,13 @@ func (s *Service) ListIdentities(ctx context.Context, sessionToken string) ([]Id
 			return err
 		}
 		identities, err = tx.ListIdentitiesByUser(ctx, user.ID)
-		return err
+		if err != nil {
+			return err
+		}
+		for i := range identities {
+			identities[i].PasswordHash = ""
+		}
+		return nil
 	})
 	return identities, err
 }
@@ -297,13 +343,15 @@ func (s *Service) Logout(ctx context.Context, sessionToken string) error {
 }
 
 type prepared struct {
-	Type        string
-	Subject     string
-	Email       string
-	DisplayName string
-	Phone       string
-	SmsCode     string
-	DemoBypass  bool
+	Type         string
+	Subject      string
+	Email        string
+	DisplayName  string
+	Phone        string
+	SmsCode      string
+	DemoBypass   bool
+	Password     string
+	PasswordHash string
 }
 
 func (s *Service) prepare(ctx context.Context, input LoginInput) (prepared, error) {
@@ -361,6 +409,12 @@ func (s *Service) prepare(ctx context.Context, input LoginInput) (prepared, erro
 			message = "provider subject is required"
 		}
 		return prepared{}, &AuthError{Code: "invalid_subject", Message: message}
+	}
+	if input.Type == "email" {
+		return prepareEmail(input)
+	}
+	if input.Type != "google" {
+		return prepared{}, &AuthError{Code: "invalid_subject", Message: "type must be phone, wechat, google, or email"}
 	}
 	googleInput := GoogleCheckInput{
 		IDToken:           deref(input.IDToken),
@@ -444,6 +498,82 @@ func (s *Service) consumeCode(ctx context.Context, store Repository, phone, code
 	return store.DeletePhoneCode(ctx, phone)
 }
 
+func prepareEmail(input LoginInput) (prepared, error) {
+	raw := deref(input.Email)
+	if strings.TrimSpace(raw) == "" {
+		raw = input.ProviderSubject
+	}
+	subject, err := CanonicalSubject("email", raw)
+	if err != nil {
+		return prepared{}, err
+	}
+	password := deref(input.Password)
+	if err := validatePassword(password); err != nil {
+		return prepared{}, err
+	}
+	return prepared{
+		Type:        "email",
+		Subject:     subject,
+		Email:       subject,
+		DisplayName: deref(input.DisplayName),
+		Password:    password,
+	}, nil
+}
+
+func (s *Service) loginEmail(ctx context.Context, item prepared) (LoginResult, error) {
+	var result LoginResult
+	err := s.run(ctx, func(tx Repository) error {
+		existing, err := tx.FindIdentity(ctx, item.Type, item.Subject)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			_ = checkPassword(placeholderPasswordHash(), item.Password)
+			return &AuthError{Code: "email_not_found", Message: "email is not registered"}
+		}
+		if !checkPassword(existing.PasswordHash, item.Password) {
+			return &AuthError{Code: "invalid_password", Message: "password is incorrect"}
+		}
+		user, err := s.activeUser(ctx, tx, existing.UserID)
+		if err != nil {
+			return err
+		}
+		if existing.UserID != user.ID {
+			if err := tx.UpdateIdentityUser(ctx, existing.ID, user.ID); err != nil {
+				return err
+			}
+		}
+		session, err := s.openSession(ctx, tx, user.ID)
+		if err != nil {
+			return err
+		}
+		result = LoginResult{User: user, Session: session, Created: false}
+		return nil
+	})
+	return result, err
+}
+
+func (s *Service) prepareEmailSecret(ctx context.Context, store Repository, item *prepared) error {
+	existing, err := store.FindIdentity(ctx, item.Type, item.Subject)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		hashed, err := hashPassword(item.Password)
+		if err != nil {
+			return err
+		}
+		item.PasswordHash = hashed
+		item.Password = ""
+		return nil
+	}
+	if !checkPassword(existing.PasswordHash, item.Password) {
+		return &AuthError{Code: "invalid_password", Message: "password is incorrect"}
+	}
+	item.Password = ""
+	return nil
+}
+
 func (s *Service) insertOrLoad(ctx context.Context, store Repository, item prepared) (LoginResult, error) {
 	existing, err := store.FindIdentity(ctx, item.Type, item.Subject)
 	if err != nil {
@@ -482,6 +612,7 @@ func (s *Service) insertOrLoad(ctx context.Context, store Repository, item prepa
 		Phone:           identityPhone(item),
 		UserID:          user.ID,
 		CreatedAt:       createdAt,
+		PasswordHash:    item.PasswordHash,
 	}
 	if err := store.InsertUser(ctx, user); err != nil {
 		return LoginResult{}, err
@@ -543,6 +674,7 @@ func (s *Service) bindPrepared(ctx context.Context, store Repository, token stri
 		Phone:           identityPhone(item),
 		UserID:          current.ID,
 		CreatedAt:       FormatTime(s.now()),
+		PasswordHash:    item.PasswordHash,
 	}); err != nil {
 		return BindResult{}, err
 	}
@@ -675,6 +807,15 @@ func displayNameFor(item prepared, email string) string {
 	switch item.Type {
 	case "wechat":
 		return "微信用户"
+	case "email":
+		local := email
+		if i := strings.IndexByte(email, '@'); i > 0 {
+			local = email[:i]
+		}
+		if local != "" {
+			return local
+		}
+		return "邮箱用户"
 	case "google":
 		local := email
 		if i := strings.IndexByte(email, '@'); i >= 0 {

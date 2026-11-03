@@ -26,6 +26,9 @@ type Identity struct {
 	Phone           *string `json:"phone"`
 	UserID          string  `json:"userId"`
 	CreatedAt       string  `json:"createdAt"`
+	// PasswordHash is the bcrypt hash for an email identity. It is stored with the
+	// identity and omitted from API responses. Other identity types leave it empty.
+	PasswordHash string `json:"passwordHash,omitempty"`
 }
 
 type Session struct {
@@ -54,7 +57,12 @@ func (e *AuthError) Error() string {
 }
 
 func IsIdentityType(value string) bool {
-	return value == "phone" || value == "wechat" || value == "google"
+	switch value {
+	case "phone", "wechat", "google", "email":
+		return true
+	default:
+		return false
+	}
 }
 
 func IsConflict(err error) bool {
@@ -64,6 +72,13 @@ func IsConflict(err error) bool {
 
 func CanonicalSubject(kind, raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
+	if kind == "email" {
+		email := NormalizeEmail(trimmed)
+		if !validEmail(email) {
+			return "", &AuthError{Code: "invalid_email", Message: "email is invalid"}
+		}
+		return email, nil
+	}
 	if kind != "phone" {
 		if trimmed == "" {
 			return "", &AuthError{Code: "invalid_subject", Message: "provider subject is required"}
@@ -95,6 +110,21 @@ func CanonicalSubject(kind, raw string) (string, error) {
 
 func NormalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func validEmail(email string) bool {
+	if email == "" || len(email) > 254 {
+		return false
+	}
+	at := strings.IndexByte(email, '@')
+	if at <= 0 || at != strings.LastIndexByte(email, '@') || at == len(email)-1 {
+		return false
+	}
+	domain := email[at+1:]
+	if strings.HasPrefix(domain, ".") || strings.HasSuffix(domain, ".") || !strings.Contains(domain, ".") {
+		return false
+	}
+	return !strings.ContainsAny(email, " \t\r\n")
 }
 
 func FormatTime(t time.Time) string {
