@@ -252,6 +252,9 @@ struct IdentityDirectory {
         if master.passwordHash.isEmpty, !loser.passwordHash.isEmpty {
             master.passwordHash = loser.passwordHash
         }
+        if master.avatarFilename == nil, let filename = loser.avatarFilename, !filename.isEmpty {
+            master.avatarFilename = filename
+        }
         master.mergedFromUserIDs.append(loser.id)
         master.mergedFromUserIDs.append(contentsOf: loser.mergedFromUserIDs)
         loser.retiredAt = Date()

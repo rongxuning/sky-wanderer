@@ -27,7 +27,13 @@ enum RecordRoute: Hashable {
 }
 
 enum MeRoute: Hashable {
-    case layout
+    case avatar
+    case username
+    case password
+    case health
+    case trainingAuthorization
+    case notifications
+    case sdkList
 }
 
 enum MapRoute: Hashable {

@@ -1,141 +1,299 @@
 import SwiftUI
+import UIKit
 
+/// Signed-in profile. The home avatar pushes this when a session exists.
 struct MeView: View {
     @EnvironmentObject private var app: PhoneAppState
-    @StateObject private var health = MeHealth()
+    @State private var confirmLogout = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                sectionTitle("账号")
-                HStack {
-                    Text(app.account?.name ?? "未登录")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    Spacer()
-                    if app.isLoggedIn {
-                        Text("已登录")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.omniCobalt)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color.omniIce.opacity(0.35), in: Capsule())
-                    }
-                }
-                .padding(16)
-                .glass()
-
-                sectionTitle("健康")
-                if !health.note.isEmpty {
-                    Text(health.note)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                }
-                VStack(spacing: 0) {
-                    healthRow("心率", value: "\(Int(health.heartRate.rounded()))", unit: "次/分", sample: health.heartIsSample, coral: true)
-                    healthRow("睡眠", value: String(format: "%.1f", health.sleepHours), unit: "小时", sample: health.sleepIsSample, coral: false)
-                    healthRow("步数", value: "\(health.steps)", unit: "步", sample: health.stepsAreSample, coral: false)
-                }
-                .glass()
-
-                sectionTitle("训练估计，不是医疗建议")
-                VStack(alignment: .leading, spacing: 12) {
-                    estimateRow("体能储备", "\(app.estimate.reserve)")
-                    estimateRow("训练负荷", "\(app.estimate.recentLoad)")
-                    estimateRow("休息时间建议", app.estimate.restHint)
-                    Text("近 7 日负荷来自每次的时长和平均心率。这是训练估计，不是医疗建议。")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                }
-                .padding(16)
-                .glass()
-
-                sectionTitle("展示")
-                NavigationLink(value: MeRoute.layout) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("调整展示位置")
-                                .font(.system(size: 17, weight: .semibold, design: .rounded))
-                            Text("运动中的数据顺序")
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(Color.omniMuted)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(Color.omniIdle)
-                    }
-                    .foregroundStyle(Color.omniInk)
-                    .padding(16)
-                    .glass()
-                }
-                .buttonStyle(.plain)
-
-                if app.isLoggedIn {
-                    Button {
-                        app.logout()
-                    } label: {
-                        Text("退出登录")
-                            .font(.system(size: 17, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.omniCobalt)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                }
+        Group {
+            if app.isLoggedIn {
+                profileList
+            } else {
+                loggedOut
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 32)
         }
-        .background(CanvasBackground())
-        .navigationTitle("我")
+        .background(SkyTheme.Color.grouped.ignoresSafeArea())
+        .navigationTitle("我的")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.visible, for: .navigationBar)
         .navigationBarHidden(false)
-        .task {
-            await health.refresh()
+        .toolbarBackground(SkyTheme.Color.grouped, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .tint(SkyTheme.Color.primary)
+        .sheet(isPresented: $confirmLogout) {
+            MeLogoutSheet {
+                app.logout()
+            }
+            .presentationDetents([.height(340), .medium])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(SkyTheme.Color.background)
         }
     }
 
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 13, weight: .bold, design: .rounded))
-            .foregroundStyle(Color.omniMuted)
+    private var profileList: some View {
+        List {
+            Section {
+                NavigationLink(value: MeRoute.avatar) {
+                    profileHeader
+                }
+                .navigationLinkIndicatorVisibility(.hidden)
+                .accessibilityLabel("更换头像，\(displayName)")
+                .meRow()
+
+                meLink("用户名", value: displayName, route: .username)
+                meLink("修改密码", value: passwordMode.rowValue, route: .password)
+            }
+
+            Section {
+                meLink("健康", value: nil, route: .health)
+                meLink("训练授权", value: nil, route: .trainingAuthorization)
+            } header: {
+                meHeader("健康与训练")
+            }
+
+            Section {
+                meLink("通知设置", value: nil, route: .notifications)
+                meLink("第三方 SDK 清单", value: nil, route: .sdkList)
+            } header: {
+                meHeader("隐私")
+            }
+
+            Section {
+                Button {
+                    confirmLogout = true
+                } label: {
+                    Text("退出登录")
+                        .font(SkyTheme.Font.headline)
+                        .foregroundStyle(SkyTheme.Color.danger)
+                        .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.listRowMin)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("退出登录")
+                .meRow()
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
     }
 
-    private func healthRow(_ title: String, value: String, unit: String, sample: Bool, coral: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
+    private var profileHeader: some View {
+        VStack(spacing: SkyTheme.Spacing.related) {
+            AccountAvatarFace(
+                name: displayName,
+                image: app.accountAvatar,
+                diameter: 88,
+                ring: SkyTheme.Color.cardBorder
+            )
+            Text(displayName)
+                .font(SkyTheme.Font.largeTitle)
+                .foregroundStyle(SkyTheme.Color.ink)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            if let email = emailLine {
+                Text(email)
+                    .font(SkyTheme.Font.footnote)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .lineLimit(1)
+            }
+            Text("更换头像")
+                .font(SkyTheme.Font.footnote)
+                .foregroundStyle(SkyTheme.Color.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, SkyTheme.Spacing.related)
+    }
+
+    private var loggedOut: some View {
+        VStack(spacing: SkyTheme.Spacing.related) {
+            Spacer(minLength: 0)
+            Text("请先登录")
+                .font(SkyTheme.Font.headline)
+                .foregroundStyle(SkyTheme.Color.ink)
+            Text("登录后可以查看头像、用户名和健康授权。")
+                .font(SkyTheme.Font.footnote)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .multilineTextAlignment(.center)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var displayName: String {
+        let name = app.account?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "我" : name
+    }
+
+    private var emailLine: String? {
+        let email = app.account?.email.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return email.isEmpty ? nil : email
+    }
+
+    private var passwordMode: MePasswordMode {
+        MePasswordMode.resolve(
+            usesLocalDirectory: SkyAuthConfig.usesLocalDirectory,
+            hasPassword: !(app.account?.passwordHash.isEmpty ?? true)
+        )
+    }
+
+    private func meLink(_ title: String, value: String?, route: MeRoute) -> some View {
+        NavigationLink(value: route) {
+            HStack(spacing: SkyTheme.Spacing.related) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniMuted)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    .font(SkyTheme.Font.headline)
+                    .foregroundStyle(SkyTheme.Color.ink)
+                Spacer(minLength: SkyTheme.Spacing.related)
+                if let value, !value.isEmpty {
                     Text(value)
-                        .font(.system(size: 28, weight: .heavy, design: .rounded))
-                        .foregroundStyle(coral ? Color.omniCoral : Color.omniIce)
-                    Text(unit)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
+                        .font(SkyTheme.Font.subheadline)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                        .lineLimit(1)
                 }
             }
-            Spacer()
-            if sample {
-                Text("示例")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniCobalt)
-            }
+            .frame(minHeight: SkyTheme.Spacing.listRowMin)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .meRow()
     }
 
-    private func estimateRow(_ title: String, _ value: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-            Spacer()
-            Text(value)
-                .font(.system(size: 18, weight: .heavy, design: .rounded))
-                .foregroundStyle(Color.omniCobalt)
+    private func meHeader(_ title: String) -> some View {
+        Text(title)
+            .font(SkyTheme.Font.footnote)
+            .foregroundStyle(SkyTheme.Color.secondary)
+            .textCase(nil)
+    }
+}
+
+struct AccountAvatarFace: View {
+    var name: String
+    var image: UIImage?
+    var diameter: CGFloat
+    var ring: Color = SkyTheme.Color.card
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Text(mark)
+                    .font(diameter >= 72 ? SkyTheme.Font.largeTitle : SkyTheme.Font.headline)
+                    .foregroundStyle(SkyTheme.Color.onPrimary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(SkyTheme.Color.primary)
+            }
         }
+        .frame(width: diameter, height: diameter)
+        .clipShape(Circle())
+        .overlay {
+            Circle().stroke(ring, lineWidth: 1.5)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var mark: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return "我" }
+        return String(first)
+    }
+}
+
+struct MeLogoutSheet: View {
+    var confirm: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
+                Text("退出登录")
+                    .font(SkyTheme.Font.title2)
+                    .foregroundStyle(SkyTheme.Color.ink)
+                Text("退出后，这台手机上的运动记录还在。再次登录可以回到账号。")
+                    .font(SkyTheme.Font.subheadline)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                MeCapsuleButton(title: "退出登录", role: .danger) {
+                    dismiss()
+                    confirm()
+                }
+                    .padding(.top, SkyTheme.Spacing.related)
+                    .accessibilityLabel("确认退出登录")
+                Button("取消") { dismiss() }
+                    .font(SkyTheme.Font.headline)
+                    .foregroundStyle(SkyTheme.Color.primary)
+                    .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.touchMin)
+            }
+            .padding(SkyTheme.Spacing.section)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(SkyTheme.Color.background)
+    }
+
+    @Environment(\.dismiss) private var dismiss
+}
+
+struct MeCapsuleButton: View {
+    enum Role {
+        case primary
+        case danger
+    }
+
+    var title: String
+    var role: Role = .primary
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(SkyTheme.Font.headline)
+                .foregroundStyle(SkyTheme.Color.onPrimary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                .padding(.vertical, SkyTheme.Spacing.related)
+                .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.touchMin)
+        }
+        .buttonStyle(MeCapsuleButtonStyle(role: role))
+    }
+}
+
+struct MeCapsuleButtonStyle: ButtonStyle {
+    var role: MeCapsuleButton.Role = .primary
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(fill(pressed: configuration.isPressed), in: Capsule())
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+
+    private func fill(pressed: Bool) -> Color {
+        switch role {
+        case .primary:
+            return pressed ? SkyTheme.Color.primaryPressed : SkyTheme.Color.primary
+        case .danger:
+            return pressed ? SkyTheme.Color.danger.opacity(0.88) : SkyTheme.Color.danger
+        }
+    }
+}
+
+extension View {
+    func meRow() -> some View {
+        listRowBackground(SkyTheme.Color.card)
+            .listRowSeparatorTint(SkyTheme.Color.separator)
+    }
+
+    func meInputChrome() -> some View {
+        padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.vertical, SkyTheme.Spacing.related)
+            .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.touchMin)
+            .background(
+                SkyTheme.Color.background,
+                in: RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
+                    .stroke(SkyTheme.Color.separator, lineWidth: 1)
+            }
     }
 }
