@@ -68,26 +68,29 @@ struct LoginView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
-            ScrollView {
-                VStack(spacing: 0) {
-                    titleBlock
-                        .padding(.top, SkyTheme.Spacing.section)
-                    providerButtons
-                        .padding(.top, SkyTheme.Spacing.section)
-                        .disabled(busy)
-                        .opacity(busy ? 0.72 : 1)
-                    credentialColumn
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, SkyTheme.Spacing.section)
-                    agreement
-                        .padding(.top, SkyTheme.Spacing.section)
-                        .padding(.bottom, SkyTheme.Spacing.section)
+            GeometryReader { geo in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        titleBlock
+                            .padding(.top, SkyTheme.Spacing.section)
+                        providerButtons
+                            .padding(.top, SkyTheme.Spacing.section)
+                            .disabled(busy)
+                            .opacity(busy ? 0.72 : 1)
+                        credentialColumn
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, SkyTheme.Spacing.section)
+                        agreement
+                            .padding(.top, SkyTheme.Spacing.section)
+                            .padding(.bottom, SkyTheme.Spacing.section)
+                    }
+                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                    .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .bottom)
                 }
-                .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                .frame(maxWidth: .infinity)
+                .scrollDismissesKeyboard(.interactively)
+                .scrollBounceBehavior(.basedOnSize)
+                .scrollIndicators(.hidden)
             }
-            .scrollDismissesKeyboard(.interactively)
-            .scrollIndicators(.hidden)
         }
         .background(SkyTheme.Color.background.ignoresSafeArea())
         .navigationBarHidden(true)
