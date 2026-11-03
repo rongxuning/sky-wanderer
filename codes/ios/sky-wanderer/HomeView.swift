@@ -34,7 +34,7 @@ struct SkyHome: View {
     var body: some View {
         ZStack {
             stack(path: $recordsPath) {
-                tabScreen(path: $recordsPath) {
+                tabScreen {
                     RecordFeedView()
                 }
             }
@@ -44,7 +44,7 @@ struct SkyHome: View {
             .accessibilityHidden(tab != .records)
 
             stack(path: $trainingPath) {
-                tabScreen(path: $trainingPath) {
+                tabScreen {
                     TrainingPlaceholder(path: $trainingPath)
                 }
             }
@@ -54,7 +54,7 @@ struct SkyHome: View {
             .accessibilityHidden(tab != .training)
 
             stack(path: $routesPath) {
-                tabScreen(path: $routesPath) {
+                tabScreen {
                     RoutesLibraryView(embeddedInHome: true)
                 }
             }
@@ -66,9 +66,15 @@ struct SkyHome: View {
         .background(SkyTheme.Color.grouped.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: showsTabBar ? 8 : 0) {
             if showsTabBar {
-                SkyGlassTabBar(selection: $tab)
-                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                    .padding(.bottom, 4)
+                HStack(alignment: .center, spacing: SkyTheme.Spacing.controlGap) {
+                    AccountAvatarButton {
+                        openAccount()
+                    }
+                    .fixedSize()
+                    SkyGlassTabBar(selection: $tab)
+                }
+                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                .padding(.bottom, 4)
             }
         }
         .onChange(of: app.finishedToken) { _, token in
@@ -116,30 +122,28 @@ struct SkyHome: View {
     }
 
     private func tabScreen<Content: View>(
-        path: Binding<NavigationPath>,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer(minLength: 0)
-                AccountAvatarButton {
-                    if app.isLoggedIn {
-                        path.wrappedValue.append(HomeRoute.me)
-                    } else {
-                        showLogin = true
-                    }
-                }
+        content()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(SkyTheme.Color.grouped)
+            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private func openAccount() {
+        if app.isLoggedIn {
+            switch tab {
+            case .records:
+                recordsPath.append(HomeRoute.me)
+            case .training:
+                trainingPath.append(HomeRoute.me)
+            case .routes:
+                routesPath.append(HomeRoute.me)
             }
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
-            .padding(.top, 2)
-            .padding(.bottom, 4)
-            content()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            showLogin = true
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SkyTheme.Color.grouped)
-        .navigationBarHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
     }
 }
 
@@ -208,11 +212,17 @@ private struct AccountAvatarButton: View {
     @EnvironmentObject private var app: PhoneAppState
     var action: () -> Void
 
+    /// Glass plate matches the tab bar: a 44pt control plus the bar's 2pt padding on each edge.
+    private static let plate = SkyTheme.Spacing.touchMin + 4
+    private static let artwork: CGFloat = 40
+
     var body: some View {
         Button(action: action) {
             avatar
-                .frame(width: 40, height: 40)
-                .frame(width: 44, height: 44)
+                .frame(width: Self.artwork, height: Self.artwork)
+                .frame(width: Self.plate, height: Self.plate)
+                .skyFloatingGlass(in: Circle())
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(app.isLoggedIn ? "账号" : "登录")
@@ -229,6 +239,7 @@ private struct AccountAvatarButton: View {
                 .overlay {
                     Circle().stroke(SkyTheme.Color.card, lineWidth: 1.5)
                 }
+                .accessibilityHidden(true)
         } else {
             ScenicAvatar()
         }
@@ -341,6 +352,21 @@ private struct SkyPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+private extension View {
+    /// Frosted plate shared by the home tab capsule and the avatar button.
+    func skyFloatingGlass<S: InsettableShape>(in shape: S) -> some View {
+        background(.ultraThinMaterial, in: shape)
+            .overlay {
+                shape.strokeBorder(SkyTheme.Color.card.opacity(0.5), lineWidth: 0.5)
+            }
+            .shadow(
+                color: SkyTheme.Shadow.card.color.opacity(0.08),
+                radius: 16,
+                y: 4
+            )
+    }
+}
+
 private struct SkyGlassTabBar: View {
     @Binding var selection: SkyTab
 
@@ -352,16 +378,7 @@ private struct SkyGlassTabBar: View {
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
-        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(SkyTheme.Color.card.opacity(0.5), lineWidth: 0.5)
-        }
-        .shadow(
-            color: SkyTheme.Shadow.card.color.opacity(0.08),
-            radius: 16,
-            y: 4
-        )
+        .skyFloatingGlass(in: Capsule(style: .continuous))
         .accessibilityElement(children: .contain)
     }
 
