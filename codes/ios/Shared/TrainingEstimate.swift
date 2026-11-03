@@ -50,6 +50,8 @@ enum RecordStats {
     /// 平均步幅 = 各次 `averageStrideMeters` 的时长加权平均；单次没有步幅序列时，用速度和步频推算。
     /// 健康导入经常没有步幅和步频，这时平均步幅为 0，界面显示「—」。
     /// 平均负荷 = 窗口内各次负荷的算术平均，包含负荷为 0 的记录。
+    /// 总负荷 = 各次负荷之和。
+    /// 训练评分 = 有心率记录的时长加权强度（心率 / 180，上限 100）。还没有单独的评分字段。
     static func make(workouts: [WorkoutRecord], window: StatsWindow, now: Date = Date()) -> TrainingStats {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "zh_CN")
@@ -62,15 +64,17 @@ enum RecordStats {
                 return calendar.isDate(workout.start, equalTo: now, toGranularity: .month)
             case .year:
                 return calendar.isDate(workout.start, equalTo: now, toGranularity: .year)
+            case .all:
+                return true
             }
         }
         guard !matched.isEmpty else { return .empty }
         let heartPool = matched.filter { $0.averageHeartRate > 0 }
-        let cadencePool = matched.filter { $0.averageCadence > 0 }
+        let cadencePool = matched.filter { $0.resolvedAverageCadence > 0 }
         let heartDuration = heartPool.reduce(0) { $0 + $1.duration }
         let cadenceDuration = cadencePool.reduce(0) { $0 + $1.duration }
         let heart = heartDuration > 0 ? heartPool.reduce(0) { $0 + $1.averageHeartRate * $1.duration } / heartDuration : 0
-        let cadence = cadenceDuration > 0 ? cadencePool.reduce(0) { $0 + $1.averageCadence * $1.duration } / cadenceDuration : 0
+        let cadence = cadenceDuration > 0 ? cadencePool.reduce(0) { $0 + $1.resolvedAverageCadence * $1.duration } / cadenceDuration : 0
         let moving = matched.filter { $0.distanceMeters > 1 && $0.duration > 0 }
         let movingDistance = moving.reduce(0) { $0 + $1.distanceMeters }
         let movingDuration = moving.reduce(0) { $0 + $1.duration }
@@ -80,7 +84,15 @@ enum RecordStats {
         let stride = strideDuration > 0
             ? stridePool.reduce(0) { $0 + $1.averageStrideMeters * $1.duration } / strideDuration
             : 0
-        let load = Double(matched.reduce(0) { $0 + $1.sessionLoad }) / Double(matched.count)
+        let totalLoad = matched.reduce(0) { $0 + $1.sessionLoad }
+        let load = Double(totalLoad) / Double(matched.count)
+        let scoreDuration = heartPool.reduce(0) { $0 + $1.duration }
+        let score = scoreDuration > 0
+            ? heartPool.reduce(0) { partial, workout in
+                let intensity = min(100, (workout.averageHeartRate / 180) * 100)
+                return partial + intensity * workout.duration
+            } / scoreDuration
+            : 0
         return TrainingStats(
             distanceMeters: matched.reduce(0) { $0 + $1.distanceMeters },
             averageHeartRate: heart,
@@ -89,7 +101,9 @@ enum RecordStats {
             count: matched.count,
             averagePaceSecPerKm: pace,
             averageStrideMeters: stride,
-            averageSessionLoad: load
+            averageSessionLoad: load,
+            totalSessionLoad: Double(totalLoad),
+            trainingScore: score
         )
     }
 }

@@ -511,7 +511,7 @@ final class LiveSession: ObservableObject {
             distanceMeters: distanceMeters,
             energyKilocalories: energyKilocalories,
             averageHeartRate: mean(hearts),
-            averageCadence: mean(cadences),
+            averageCadence: storedCadence(seriesMean: mean(cadences)),
             elevationGainMeters: elevationGainMeters,
             route: recordedRoute,
             splits: splits,
@@ -531,6 +531,12 @@ final class LiveSession: ObservableObject {
         let usable = values.filter { $0 > 0 }
         guard !usable.isEmpty else { return 0 }
         return usable.reduce(0, +) / Double(usable.count)
+    }
+
+    /// Pedometer cadence when it arrived. Otherwise steps over the session, which is the same average.
+    private func storedCadence(seriesMean: Double) -> Double {
+        if seriesMean > 0 { return seriesMean }
+        return CadenceMath.stepsPerMinute(steps: stepCount, duration: max(elapsed, 1))
     }
 }
 

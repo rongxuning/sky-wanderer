@@ -81,8 +81,13 @@ enum AppleHealth {
         var records: [WorkoutRecord] = []
         for workout in workouts {
             guard let sport = SportKind.from(workout.workoutActivityType) else { continue }
-            let route = await routePoints(for: workout)
-            records.append(record(from: workout, sport: sport, route: route))
+            async let route = routePoints(for: workout)
+            async let cadence = cadenceStepsPerMinute(for: workout)
+            let resolvedRoute = await route
+            let resolvedCadence = await cadence
+            records.append(
+                record(from: workout, sport: sport, route: resolvedRoute, cadence: resolvedCadence)
+            )
         }
         return records
     }
@@ -95,7 +100,80 @@ enum AppleHealth {
         return await DayHealth(heartRate: heart, sleepHours: sleep, steps: steps)
     }
 
-    private static func record(from workout: HKWorkout, sport: SportKind, route: [GeoPoint]) -> WorkoutRecord {
+    /// Steps per minute from the workout's own cadence, then from its step count.
+    /// A time-range step query is only the fallback when the workout did not store either statistic.
+    private static func cadenceStepsPerMinute(for workout: HKWorkout) async -> Double {
+        let perMinute = HKUnit.count().unitDivided(by: .minute())
+        if let value = average(workout, identifier: .runningCadence, unit: perMinute) {
+            let normalized = CadenceMath.stepsPerMinute(from: value)
+            if normalized > 0 { return normalized }
+        }
+        if let value = await quantityAverage(
+            .runningCadence,
+            unit: perMinute,
+            start: workout.startDate,
+            end: workout.endDate
+        ) {
+            let normalized = CadenceMath.stepsPerMinute(from: value)
+            if normalized > 0 { return normalized }
+        }
+        let duration = workout.endDate.timeIntervalSince(workout.startDate)
+        if let steps = sum(workout, identifier: .stepCount, unit: .count()) {
+            let normalized = CadenceMath.stepsPerMinute(steps: steps, duration: duration)
+            if normalized > 0 { return normalized }
+        }
+        if let steps = await quantitySum(.stepCount, unit: .count(), start: workout.startDate, end: workout.endDate) {
+            return CadenceMath.stepsPerMinute(steps: steps, duration: duration)
+        }
+        return 0
+    }
+
+    private static func quantityAverage(
+        _ identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        start: Date,
+        end: Date
+    ) async -> Double? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsQuery(
+                quantityType: type,
+                quantitySamplePredicate: predicate,
+                options: .discreteAverage
+            ) { _, stats, _ in
+                continuation.resume(returning: stats?.averageQuantity()?.doubleValue(for: unit))
+            }
+            store.execute(query)
+        }
+    }
+
+    private static func quantitySum(
+        _ identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        start: Date,
+        end: Date
+    ) async -> Double? {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsQuery(
+                quantityType: type,
+                quantitySamplePredicate: predicate,
+                options: .cumulativeSum
+            ) { _, stats, _ in
+                continuation.resume(returning: stats?.sumQuantity()?.doubleValue(for: unit))
+            }
+            store.execute(query)
+        }
+    }
+
+    private static func record(
+        from workout: HKWorkout,
+        sport: SportKind,
+        route: [GeoPoint],
+        cadence: Double
+    ) -> WorkoutRecord {
         // Prefer statistics. Some imported workouts leave statistics(for:) nil and only
         // fill the older totals, which would otherwise be stored as 0.
         // Heart rate has no workout-level total, so it stays on statistics.
@@ -118,7 +196,7 @@ enum AppleHealth {
             distanceMeters: distance,
             energyKilocalories: energy,
             averageHeartRate: heart,
-            averageCadence: 0,
+            averageCadence: cadence,
             elevationGainMeters: climb,
             route: route,
             splits: [],
@@ -236,7 +314,7 @@ enum AppleHealth {
     private static var readTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = [HKObjectType.workoutType(), HKSeriesType.workoutRoute()]
         let quantities: [HKQuantityTypeIdentifier] = [
-            .heartRate, .activeEnergyBurned, .distanceWalkingRunning, .stepCount,
+            .heartRate, .activeEnergyBurned, .distanceWalkingRunning, .stepCount, .runningCadence,
             .runningPower, .runningStrideLength, .runningGroundContactTime, .flightsClimbed
         ]
         for identifier in quantities {

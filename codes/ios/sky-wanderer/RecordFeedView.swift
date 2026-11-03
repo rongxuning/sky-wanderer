@@ -1,15 +1,57 @@
 import MapKit
 import SwiftUI
 
+private enum RecordFeedSection: Hashable {
+    case list
+    case stats
+}
+
 /// Records tab. Short white cards: map thumbnail, then duration and a three-column metric row.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
+    @State private var section: RecordFeedSection = .list
+    @State private var topWorkoutID: UUID?
 
     var body: some View {
-        Group {
-            if app.workouts.isEmpty {
-                empty
-            } else {
+        VStack(spacing: 0) {
+            RecordSectionControl(selection: $section)
+                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                .padding(.top, SkyTheme.Spacing.related)
+                .padding(.bottom, SkyTheme.Spacing.related)
+            switch section {
+            case .list:
+                recordList
+            case .stats:
+                RecordStatsPage()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SkyTheme.Color.grouped)
+        .task {
+            await app.importFromApple()
+        }
+    }
+
+    private var monthLabel: String {
+        let workout = app.workouts.first { $0.id == topWorkoutID } ?? app.workouts.first
+        return workout.map { Format.monthTitle($0.start) } ?? ""
+    }
+
+    @ViewBuilder
+    private var recordList: some View {
+        if app.workouts.isEmpty {
+            empty
+        } else {
+            VStack(spacing: 0) {
+                Text(monthLabel)
+                    .font(SkyTheme.Font.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(SkyTheme.Color.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                    .padding(.bottom, SkyTheme.Spacing.related)
+                    .background(SkyTheme.Color.grouped)
+                    .accessibilityAddTraits(.isHeader)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
                         if !app.banner.isEmpty {
@@ -23,6 +65,17 @@ struct RecordFeedView: View {
                                 RecordSummaryCard(workout: workout)
                             }
                             .buttonStyle(.plain)
+                            .background {
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: RecordTopAnchorsKey.self,
+                                        value: [RecordTopAnchor(
+                                            id: workout.id,
+                                            minY: geo.frame(in: .scrollView).minY
+                                        )]
+                                    )
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, SkyTheme.Spacing.screenInset)
@@ -30,16 +83,39 @@ struct RecordFeedView: View {
                     .padding(.bottom, SkyTheme.Spacing.related)
                 }
                 .scrollClipDisabled()
+                .onPreferenceChange(RecordTopAnchorsKey.self) { anchors in
+                    guard let next = Self.topmostWorkoutID(in: anchors), next != topWorkoutID else { return }
+                    topWorkoutID = next
+                }
                 .refreshable {
                     await app.importFromApple()
                 }
             }
+            .onAppear {
+                if topWorkoutID == nil {
+                    topWorkoutID = app.workouts.first?.id
+                }
+            }
+            .onChange(of: app.workouts.map(\.id)) { _, ids in
+                guard let topWorkoutID else {
+                    self.topWorkoutID = ids.first
+                    return
+                }
+                if !ids.contains(topWorkoutID) {
+                    self.topWorkoutID = ids.first
+                }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SkyTheme.Color.grouped)
-        .task {
-            await app.importFromApple()
+    }
+
+    /// The card whose top has reached the list, or the first card when none have.
+    private static func topmostWorkoutID(in anchors: [RecordTopAnchor]) -> UUID? {
+        let line: CGFloat = 12
+        let crossed = anchors.filter { $0.minY <= line }
+        if let current = crossed.max(by: { $0.minY < $1.minY }) {
+            return current.id
         }
+        return anchors.min(by: { $0.minY < $1.minY })?.id
     }
 
     private var empty: some View {
@@ -60,6 +136,172 @@ struct RecordFeedView: View {
         }
         .padding(.horizontal, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct RecordSectionControl: View {
+    @Binding var selection: RecordFeedSection
+
+    var body: some View {
+        HStack(spacing: 4) {
+            segment(.list, title: "记录列表")
+            segment(.stats, title: "统计数据")
+        }
+        .padding(4)
+        .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous))
+        .animation(.easeInOut(duration: 0.18), value: selection)
+    }
+
+    private func segment(_ section: RecordFeedSection, title: String) -> some View {
+        let selected = selection == section
+        return Button {
+            selection = section
+        } label: {
+            Text(title)
+                .font(SkyTheme.Font.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(selected ? SkyTheme.Color.onPrimary : SkyTheme.Color.secondary)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 36)
+                .background {
+                    if selected {
+                        Capsule().fill(SkyTheme.Color.primary)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct RecordStatsPage: View {
+    @EnvironmentObject private var app: PhoneAppState
+    @State private var window: StatsWindow = .week
+
+    private var stats: TrainingStats {
+        app.stats(for: window)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
+                periodSwitcher
+                statsGrid
+            }
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.bottom, SkyTheme.Spacing.section)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var periodSwitcher: some View {
+        HStack(spacing: 4) {
+            ForEach(StatsWindow.allCases) { item in
+                let selected = window == item
+                Button {
+                    window = item
+                } label: {
+                    Text(item.rawValue)
+                        .font(SkyTheme.Font.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(selected ? SkyTheme.Color.onPrimary : SkyTheme.Color.secondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 36)
+                        .background {
+                            if selected {
+                                Capsule().fill(SkyTheme.Color.primary)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.rawValue)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(SkyTheme.Color.card, in: Capsule(style: .continuous))
+        .animation(.easeInOut(duration: 0.18), value: window)
+    }
+
+    private var statsGrid: some View {
+        LazyVGrid(
+            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+            alignment: .leading,
+            spacing: SkyTheme.Spacing.screenInset
+        ) {
+            cell("总距离", distanceText)
+            cell("平均配速", RecordCardText.pace(stats.averagePaceSecPerKm))
+            cell("平均心率", Format.integer(stats.averageHeartRate))
+            cell("总爬升", metersText(stats.elevationGainMeters))
+            cell("平均步频", Format.integer(stats.averageCadence))
+            cell("平均步幅", strideText)
+            cell("总负荷", loadText)
+            cell("训练评分", scoreText)
+        }
+        .padding(SkyTheme.Spacing.cardPadding)
+        .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
+        .shadow(
+            color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
+            radius: SkyTheme.Shadow.card.radius,
+            y: SkyTheme.Shadow.card.y
+        )
+    }
+
+    private func cell(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(SkyTheme.Font.title3)
+                .fontWeight(.bold)
+                .foregroundStyle(SkyTheme.Color.ink)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(title)
+                .font(SkyTheme.Font.caption)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var distanceText: String {
+        guard stats.distanceMeters > 1 else { return "—" }
+        return String(format: "%.1f km", stats.distanceMeters / 1000)
+    }
+
+    private func metersText(_ meters: Double) -> String {
+        guard meters > 0 else { return "—" }
+        return "\(Int(meters.rounded())) m"
+    }
+
+    private var strideText: String {
+        guard stats.averageStrideMeters > 0 else { return "—" }
+        return "\(Int((stats.averageStrideMeters * 100).rounded())) cm"
+    }
+
+    private var loadText: String {
+        guard stats.totalSessionLoad > 0 else { return "—" }
+        return String(Int(stats.totalSessionLoad.rounded()))
+    }
+
+    private var scoreText: String {
+        guard stats.trainingScore > 0 else { return "—" }
+        return String(Int(stats.trainingScore.rounded()))
+    }
+}
+
+private struct RecordTopAnchor: Equatable {
+    var id: UUID
+    var minY: CGFloat
+}
+
+private struct RecordTopAnchorsKey: PreferenceKey {
+    static var defaultValue: [RecordTopAnchor] = []
+
+    static func reduce(value: inout [RecordTopAnchor], nextValue: () -> [RecordTopAnchor]) {
+        value.append(contentsOf: nextValue())
     }
 }
 
@@ -204,7 +446,7 @@ struct RecordSummaryCard: View {
     }
 
     private var cadenceText: String {
-        let value = Format.integer(workout.averageCadence)
+        let value = Format.integer(workout.resolvedAverageCadence)
         return value == "—" ? value : "\(value) spm"
     }
 

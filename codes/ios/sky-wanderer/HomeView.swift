@@ -66,14 +66,18 @@ struct SkyHome: View {
         .background(SkyTheme.Color.grouped.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: showsTabBar ? 8 : 0) {
             if showsTabBar {
-                HStack(alignment: .center, spacing: SkyTheme.Spacing.controlGap) {
+                ZStack(alignment: .leading) {
+                    SkyGlassTabBar(selection: $tab)
+                        .containerRelativeFrame(.horizontal) { length, _ in
+                            SkyTabBarMetrics.width(in: length)
+                        }
+                        .frame(maxWidth: .infinity)
                     AccountAvatarButton {
                         openAccount()
                     }
                     .fixedSize()
-                    SkyGlassTabBar(selection: $tab)
+                    .padding(.leading, SkyTheme.Spacing.screenInset)
                 }
-                .padding(.horizontal, SkyTheme.Spacing.screenInset)
                 .padding(.bottom, 4)
             }
         }
@@ -367,6 +371,20 @@ private extension View {
     }
 }
 
+/// The bar used to fill the width beside the avatar. It is now 70% of that span and centered.
+private enum SkyTabBarMetrics {
+    static func width(in containerWidth: CGFloat) -> CGFloat {
+        let avatar = SkyTheme.Spacing.touchMin + 4
+        let previous = containerWidth
+            - SkyTheme.Spacing.screenInset * 2
+            - avatar
+            - SkyTheme.Spacing.controlGap
+        let narrowed = previous * 0.7
+        let minimum = SkyTheme.Spacing.touchMin * 3
+        return max(narrowed, minimum)
+    }
+}
+
 private struct SkyGlassTabBar: View {
     @Binding var selection: SkyTab
 
@@ -376,7 +394,7 @@ private struct SkyGlassTabBar: View {
             item(.training, symbol: "figure.run", title: "训练")
             item(.routes, symbol: "map", title: "路线")
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 2)
         .padding(.vertical, 2)
         .skyFloatingGlass(in: Capsule(style: .continuous))
         .accessibilityElement(children: .contain)

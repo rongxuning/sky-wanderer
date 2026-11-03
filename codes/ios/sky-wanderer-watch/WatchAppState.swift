@@ -8,11 +8,15 @@ final class WatchAppState: ObservableObject {
     private let filename = "watch.json"
 
     init() {
-        if let loaded = AppFiles.load(filename), loaded.seeded {
+        if var loaded = AppFiles.load(filename), loaded.seeded {
+            let before = loaded.workouts.count
+            loaded.workouts.removeAll { $0.origin == .sample }
             database = loaded
+            if loaded.workouts.count != before {
+                AppFiles.save(loaded, name: filename)
+            }
         } else {
             var fresh = Database()
-            fresh.workouts = SampleLibrary.workouts()
             fresh.posts = SampleLibrary.posts()
             fresh.seeded = true
             database = fresh
@@ -22,6 +26,7 @@ final class WatchAppState: ObservableObject {
 
     var workouts: [WorkoutRecord] {
         database.workouts
+            .filter { $0.origin != .sample }
             .filter { $0.sport == .hiking || $0.sport == .running }
             .sorted { $0.start > $1.start }
     }
@@ -69,12 +74,7 @@ final class WatchAppState: ObservableObject {
             try await AppleHealth.authorize()
             let imported = try await AppleActivitySource().importRunsAndHikes()
             mutate { database in
-                for record in imported {
-                    guard let healthID = record.healthKitUUID else { continue }
-                    if database.workouts.contains(where: { $0.healthKitUUID == healthID }) { continue }
-                    database.workouts.append(record)
-                }
-                database.workouts.sort { $0.start > $1.start }
+                WorkoutImport.merge(imported, into: &database.workouts)
             }
         } catch {
             return

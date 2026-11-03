@@ -134,6 +134,22 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
         TrainingEstimate.sessionLoad(duration: duration, averageHeartRate: averageHeartRate, sport: sport)
     }
 
+    /// Steps per minute for the record card.
+    /// Prefers the stored average, then a mean of the cadence series, then split cadence.
+    /// Health imports often leave `averageCadence` at 0 even when a series or later import has steps.
+    var resolvedAverageCadence: Double {
+        if averageCadence > 0 { return averageCadence }
+        let series = cadenceSeries.map(\.value).filter { $0 > 0 }
+        if !series.isEmpty {
+            return series.reduce(0, +) / Double(series.count)
+        }
+        let fromSplits = splits.map(\.cadence).filter { $0 > 0 }
+        if !fromSplits.isEmpty {
+            return fromSplits.reduce(0, +) / Double(fromSplits.count)
+        }
+        return 0
+    }
+
     /// Meters per step.
     /// Uses a time-weighted mean of `stride` when that series has samples.
     /// Otherwise derives stride from speed and cadence: (1000 / pace) / (cadence / 60).
@@ -160,9 +176,10 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
             measured = only.value
         } else {
             let pace = averagePaceSecPerKm
-            guard averageCadence > 30, pace > 0, pace < 3_600 else { return 0 }
+            let cadence = resolvedAverageCadence
+            guard cadence > 30, pace > 0, pace < 3_600 else { return 0 }
             let metersPerSecond = 1000 / pace
-            measured = metersPerSecond / (averageCadence / 60)
+            measured = metersPerSecond / (cadence / 60)
         }
         guard measured >= 0.30, measured <= 2.20 else { return 0 }
         return measured
@@ -364,6 +381,12 @@ struct TrainingStats {
     var averageStrideMeters: Double
     /// Arithmetic mean of per-session load, including sessions whose load is 0.
     var averageSessionLoad: Double
+    /// Sum of per-session load in the window.
+    var totalSessionLoad: Double
+    /// Placeholder 训练评分 until a score is stored.
+    /// Duration-weighted mean of heart-rate intensity (HR / 180, capped at 100).
+    /// 0 when no workout in the window has a heart rate.
+    var trainingScore: Double
 
     static let empty = TrainingStats(
         distanceMeters: 0,
@@ -373,7 +396,9 @@ struct TrainingStats {
         count: 0,
         averagePaceSecPerKm: 0,
         averageStrideMeters: 0,
-        averageSessionLoad: 0
+        averageSessionLoad: 0,
+        totalSessionLoad: 0,
+        trainingScore: 0
     )
 }
 
@@ -381,5 +406,41 @@ enum StatsWindow: String, CaseIterable, Identifiable {
     case week = "周"
     case month = "月"
     case year = "年"
+    case all = "总"
     var id: String { rawValue }
+}
+
+/// Turns a raw cadence quantity or a step count into steps per minute.
+/// Values outside a walking/running band are treated as missing so the UI can show 「—」.
+enum CadenceMath {
+    static func stepsPerMinute(from raw: Double) -> Double {
+        guard raw.isFinite, raw > 0 else { return 0 }
+        let perMinute = raw < 10 ? raw * 60 : raw
+        guard perMinute >= 40, perMinute <= 250 else { return 0 }
+        return perMinute
+    }
+
+    static func stepsPerMinute(steps: Double, duration: TimeInterval) -> Double {
+        guard steps > 0, duration > 0 else { return 0 }
+        return stepsPerMinute(from: steps / (duration / 60))
+    }
+}
+
+enum WorkoutImport {
+    /// Appends new Health workouts and fills cadence on rows that were imported before cadence was read.
+    /// Drops seeded sample workouts so the records list only keeps real sessions.
+    static func merge(_ imported: [WorkoutRecord], into workouts: inout [WorkoutRecord]) {
+        for record in imported {
+            guard let healthID = record.healthKitUUID else { continue }
+            if let index = workouts.firstIndex(where: { $0.healthKitUUID == healthID }) {
+                if workouts[index].resolvedAverageCadence <= 0, record.averageCadence > 0 {
+                    workouts[index].averageCadence = record.averageCadence
+                }
+                continue
+            }
+            workouts.append(record)
+        }
+        workouts.removeAll { $0.origin == .sample }
+        workouts.sort { $0.start > $1.start }
+    }
 }
