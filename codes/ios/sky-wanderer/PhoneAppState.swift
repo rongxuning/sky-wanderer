@@ -31,12 +31,12 @@ final class PhoneAppState: ObservableObject {
             if existing.metricOrder.isEmpty {
                 existing.metricOrder = LiveBlock.standard
             }
+            existing.workouts.removeAll { $0.origin == .sample }
             Self.ensurePreset(&existing)
             Self.ensureSampleRoute(&existing)
             loaded = existing
         } else {
             var fresh = Database()
-            fresh.workouts = SampleLibrary.workouts()
             fresh.posts = SampleLibrary.posts()
             fresh.seeded = true
             Self.ensurePreset(&fresh)
@@ -93,6 +93,7 @@ final class PhoneAppState: ObservableObject {
 
     var workouts: [WorkoutRecord] {
         database.workouts
+            .filter { $0.origin != .sample }
             .filter { $0.sport == .hiking || $0.sport == .running }
             .sorted { $0.start > $1.start }
     }
@@ -523,12 +524,7 @@ final class PhoneAppState: ObservableObject {
             try await source.prepare()
             let imported = try await source.importRunsAndHikes()
             mutate { database in
-                for record in imported {
-                    guard let healthID = record.healthKitUUID else { continue }
-                    if database.workouts.contains(where: { $0.healthKitUUID == healthID }) { continue }
-                    database.workouts.append(record)
-                }
-                database.workouts.sort { $0.start > $1.start }
+                WorkoutImport.merge(imported, into: &database.workouts)
             }
         } catch {
             banner = "暂时读不到 Apple 健康里的锻炼"
