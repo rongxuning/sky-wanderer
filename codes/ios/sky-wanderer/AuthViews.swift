@@ -145,6 +145,7 @@ struct LoginView: View {
             .frame(maxWidth: .infinity)
     }
 
+    /// Phone, WeChat, and Google as equal circles. Titles stay off the control.
     private var providerButtons: some View {
         HStack(spacing: SkyTheme.Spacing.controlGap) {
             providerButton("本机手机号登录", action: openPhone) {
@@ -157,9 +158,11 @@ struct LoginView: View {
                 GoogleMark()
             }
         }
+        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     /// Visible title stays off the control. `label` is the VoiceOver name.
+    /// The control is a fixed square so the outline stays a circle instead of a stretched capsule.
     private func providerButton<Icon: View>(
         _ label: String,
         action: @escaping () -> Void,
@@ -168,10 +171,9 @@ struct LoginView: View {
         Button(action: action) {
             icon()
                 .frame(width: 22, height: 22)
-                .frame(maxWidth: .infinity)
         }
-        .buttonStyle(SkyOutlineButtonStyle())
-        .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.touchMin)
+        .buttonStyle(SkyCircleOutlineButtonStyle())
+        .fixedSize()
         .accessibilityLabel(label)
     }
 
@@ -690,14 +692,14 @@ private struct CenteredFractionLayout: Layout {
     }
 }
 
-private struct SkyOutlineButtonStyle: ButtonStyle {
+/// Compact circular outline. Diameter is the 44pt touch target; the glyph stays centered inside.
+private struct SkyCircleOutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let stroke = configuration.isPressed ? SkyTheme.Color.primaryPressed : SkyTheme.Color.primary
         configuration.label
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
-            .padding(.vertical, SkyTheme.Spacing.related)
-            .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.touchMin)
-            .background(Capsule().strokeBorder(stroke, lineWidth: 1.5))
+            .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin)
+            .background(Circle().strokeBorder(stroke, lineWidth: 1.5))
+            .contentShape(Circle())
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
