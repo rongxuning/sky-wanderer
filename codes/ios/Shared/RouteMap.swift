@@ -8,11 +8,24 @@ struct RouteMap: View {
     var showsUser: Bool = false
     var userCoordinate: CLLocationCoordinate2D? = nil
     var cornerRadius: CGFloat = 0
+    /// Recorded-route stroke. Other screens keep the historical cobalt default.
+    var routeColor: Color = Color.omniCobalt
+    var routeLineWidth: CGFloat = 4
+    /// Start dot and end square. Off unless a detail screen asks for them.
+    var showsEndpoints: Bool = false
+    /// Hides the compass and other Map controls. The legal label stays.
+    var hidesMapControls: Bool = false
+    /// Increment to fit the camera back to the route.
+    var fitToken: Int = 0
 
     @State private var position: MapCameraPosition = .automatic
     @State private var framedUser = false
 
     var body: some View {
+        map
+    }
+
+    private var map: some View {
         Map(position: $position, interactionModes: [.pan, .zoom]) {
             if showsUser {
                 UserAnnotation()
@@ -23,7 +36,21 @@ struct RouteMap: View {
             }
             if route.count >= 2 {
                 MapPolyline(coordinates: route.map(\.coordinate))
-                    .stroke(Color.omniCobalt, lineWidth: 4)
+                    .stroke(routeColor, lineWidth: routeLineWidth)
+            }
+            if showsEndpoints, let start = route.first {
+                Annotation("起点", coordinate: start.coordinate, anchor: .center) {
+                    endpointMark(square: false)
+                        .accessibilityLabel("起点")
+                }
+                .annotationTitles(.hidden)
+            }
+            if showsEndpoints, route.count >= 2, let end = route.last {
+                Annotation("终点", coordinate: end.coordinate, anchor: .center) {
+                    endpointMark(square: true)
+                        .accessibilityLabel("终点")
+                }
+                .annotationTitles(.hidden)
             }
             ForEach(teammates) { mate in
                 Annotation(mate.name, coordinate: mate.coordinate) {
@@ -40,6 +67,7 @@ struct RouteMap: View {
             }
         }
         .mapStyle(.standard)
+        .modifier(RouteMapControlModifier(hidden: hidesMapControls))
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onAppear {
             frameCamera()
@@ -51,6 +79,28 @@ struct RouteMap: View {
         .onChange(of: planned) { _, _ in frameCamera() }
         .onChange(of: userCoordinate?.latitude) { _, _ in frameUserOnce() }
         .onChange(of: userCoordinate?.longitude) { _, _ in frameUserOnce() }
+        .onChange(of: fitToken) { _, _ in frameCamera() }
+    }
+
+    private func endpointMark(square: Bool) -> some View {
+        let side: CGFloat = 14
+        return Group {
+            if square {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(routeColor)
+                    .frame(width: side, height: side)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .stroke(Color.white, lineWidth: 2)
+                    )
+            } else {
+                Circle()
+                    .fill(routeColor)
+                    .frame(width: side, height: side)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+            }
+        }
+        .shadow(color: Color.black.opacity(0.22), radius: 2, y: 1)
     }
 
     /// The first user fix is part of the frame. Later fixes do not move the camera.
@@ -77,6 +127,19 @@ struct RouteMap: View {
             return
         }
         position = .region(region)
+    }
+}
+
+private struct RouteMapControlModifier: ViewModifier {
+    var hidden: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if hidden {
+            content.mapControls { }
+        } else {
+            content
+        }
     }
 }
 
