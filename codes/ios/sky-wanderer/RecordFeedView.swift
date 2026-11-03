@@ -18,6 +18,9 @@ struct RecordFeedView: View {
                 .padding(.horizontal, SkyTheme.Spacing.screenInset)
                 .padding(.top, SkyTheme.Spacing.related)
                 .padding(.bottom, SkyTheme.Spacing.related)
+                .frame(maxWidth: .infinity)
+                .background(SkyTheme.Color.grouped)
+                .zIndex(1)
             switch section {
             case .list:
                 recordList
@@ -51,6 +54,7 @@ struct RecordFeedView: View {
                     .padding(.horizontal, SkyTheme.Spacing.screenInset)
                     .padding(.bottom, SkyTheme.Spacing.related)
                     .background(SkyTheme.Color.grouped)
+                    .zIndex(1)
                     .accessibilityAddTraits(.isHeader)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
@@ -82,7 +86,7 @@ struct RecordFeedView: View {
                     .padding(.top, SkyTheme.Spacing.related)
                     .padding(.bottom, SkyTheme.Spacing.related)
                 }
-                .scrollClipDisabled()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .onPreferenceChange(RecordTopAnchorsKey.self) { anchors in
                     guard let next = Self.topmostWorkoutID(in: anchors), next != topWorkoutID else { return }
                     topWorkoutID = next
@@ -91,6 +95,7 @@ struct RecordFeedView: View {
                     await app.importFromApple()
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear {
                 if topWorkoutID == nil {
                     topWorkoutID = app.workouts.first?.id
@@ -184,15 +189,22 @@ private struct RecordStatsPage: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
-                periodSwitcher
+        VStack(spacing: 0) {
+            periodSwitcher
+                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                .padding(.bottom, SkyTheme.Spacing.screenInset)
+                .frame(maxWidth: .infinity)
+                .background(SkyTheme.Color.grouped)
+                .zIndex(1)
+            ScrollView {
                 statsGrid
+                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                    .padding(.bottom, SkyTheme.Spacing.section)
             }
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
-            .padding(.bottom, SkyTheme.Spacing.section)
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .scrollIndicators(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var periodSwitcher: some View {
@@ -798,14 +810,3 @@ private struct RecordTrackLine: View {
     }
 }
 
-#Preview {
-    ScrollView {
-        VStack(spacing: SkyTheme.Spacing.screenInset) {
-            ForEach(SampleLibrary.workouts()) { workout in
-                RecordSummaryCard(workout: workout)
-            }
-        }
-        .padding(SkyTheme.Spacing.screenInset)
-    }
-    .background(SkyTheme.Color.grouped)
-}

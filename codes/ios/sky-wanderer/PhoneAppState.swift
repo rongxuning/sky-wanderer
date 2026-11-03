@@ -31,7 +31,7 @@ final class PhoneAppState: ObservableObject {
             if existing.metricOrder.isEmpty {
                 existing.metricOrder = LiveBlock.standard
             }
-            existing.workouts.removeAll { $0.origin == .sample }
+            existing.workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
             Self.ensurePreset(&existing)
             Self.ensureSampleRoute(&existing)
             loaded = existing
@@ -93,7 +93,7 @@ final class PhoneAppState: ObservableObject {
 
     var workouts: [WorkoutRecord] {
         database.workouts
-            .filter { $0.origin != .sample }
+            .filter { !SampleLibrary.isSeededWorkout($0) }
             .filter { $0.sport == .hiking || $0.sport == .running }
             .sorted { $0.start > $1.start }
     }
@@ -559,6 +559,7 @@ final class PhoneAppState: ObservableObject {
     }
 
     func addWorkout(_ record: WorkoutRecord) {
+        guard !SampleLibrary.isSeededWorkout(record) else { return }
         mutate { database in
             if let healthID = record.healthKitUUID,
                database.workouts.contains(where: { $0.healthKitUUID == healthID }) {
