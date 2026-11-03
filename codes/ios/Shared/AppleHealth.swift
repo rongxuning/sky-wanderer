@@ -100,23 +100,11 @@ enum AppleHealth {
         return await DayHealth(heartRate: heart, sleepHours: sleep, steps: steps)
     }
 
-    /// Steps per minute from the workout's own cadence, then from its step count.
-    /// A time-range step query is only the fallback when the workout did not store either statistic.
+    /// Steps per minute from the workout's step count.
+    /// A time-range step query is only the fallback when the workout did not store that statistic.
+    /// watchOS 26.5 has no `HKQuantityTypeIdentifier.runningCadence` member, and Apple does not
+    /// document that identifier, so both targets use step count.
     private static func cadenceStepsPerMinute(for workout: HKWorkout) async -> Double {
-        let perMinute = HKUnit.count().unitDivided(by: .minute())
-        if let value = average(workout, identifier: .runningCadence, unit: perMinute) {
-            let normalized = CadenceMath.stepsPerMinute(from: value)
-            if normalized > 0 { return normalized }
-        }
-        if let value = await quantityAverage(
-            .runningCadence,
-            unit: perMinute,
-            start: workout.startDate,
-            end: workout.endDate
-        ) {
-            let normalized = CadenceMath.stepsPerMinute(from: value)
-            if normalized > 0 { return normalized }
-        }
         let duration = workout.endDate.timeIntervalSince(workout.startDate)
         if let steps = sum(workout, identifier: .stepCount, unit: .count()) {
             let normalized = CadenceMath.stepsPerMinute(steps: steps, duration: duration)
@@ -126,26 +114,6 @@ enum AppleHealth {
             return CadenceMath.stepsPerMinute(steps: steps, duration: duration)
         }
         return 0
-    }
-
-    private static func quantityAverage(
-        _ identifier: HKQuantityTypeIdentifier,
-        unit: HKUnit,
-        start: Date,
-        end: Date
-    ) async -> Double? {
-        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return nil }
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
-        return await withCheckedContinuation { continuation in
-            let query = HKStatisticsQuery(
-                quantityType: type,
-                quantitySamplePredicate: predicate,
-                options: .discreteAverage
-            ) { _, stats, _ in
-                continuation.resume(returning: stats?.averageQuantity()?.doubleValue(for: unit))
-            }
-            store.execute(query)
-        }
     }
 
     private static func quantitySum(
@@ -314,7 +282,7 @@ enum AppleHealth {
     private static var readTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = [HKObjectType.workoutType(), HKSeriesType.workoutRoute()]
         let quantities: [HKQuantityTypeIdentifier] = [
-            .heartRate, .activeEnergyBurned, .distanceWalkingRunning, .stepCount, .runningCadence,
+            .heartRate, .activeEnergyBurned, .distanceWalkingRunning, .stepCount,
             .runningPower, .runningStrideLength, .runningGroundContactTime, .flightsClimbed
         ]
         for identifier in quantities {
