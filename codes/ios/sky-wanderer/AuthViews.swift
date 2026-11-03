@@ -399,13 +399,18 @@ struct LoginView: View {
         }
     }
 
-    /// Local checks only. Email and password accounts are not wired to a service yet.
+    /// Local checks, then the account service. A session is stored the same way as phone login.
     private func submitAccount() {
+        guard !busy else { return }
         focusedField = nil
         let normalizedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedEmail.isEmpty else {
             notice = .failure("请输入邮箱")
+            return
+        }
+        guard emailLooksValid(normalizedEmail) else {
+            notice = .failure("请填写有效邮箱")
             return
         }
         guard password.count >= 8 else {
@@ -421,23 +426,34 @@ struct LoginView: View {
                 notice = .failure("两次输入的密码不一致")
                 return
             }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                mode = .login
-                password = ""
-                confirmPassword = ""
-                displayName = ""
-                notice = .success("注册成功，请登录")
-            }
-            return
         }
-        notice = .hint("帐号密码登录即将开通")
+        busy = true
+        let secret = password
+        let registering = mode == .register
+        Task {
+            defer { busy = false }
+            await finish {
+                if registering {
+                    try await app.registerEmail(name: normalizedName, password: secret, email: normalizedEmail)
+                } else {
+                    try await app.signInEmail(email: normalizedEmail, password: secret)
+                }
+            }
+        }
+    }
+
+    private func emailLooksValid(_ value: String) -> Bool {
+        let parts = value.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else { return false }
+        let domain = parts[1]
+        return domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
     }
 
     private var loginNote: String {
         if SkyAuthConfig.usesLocalDirectory {
-            return "手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。邮箱登录即将开通。"
+            return "手机号使用本机演示验证码 \(IdentityDemoCode.token)，不会发送短信。微信和 Google 使用本机占位身份，还没有接上微信或 Google 的登录服务。邮箱和密码只保存在这台手机上。"
         }
-        return "手机号会发送短信验证码。微信和 Google 会打开授权页，由 \(SkyAuthConfig.hostLabel) 核对身份。短信或开放平台密钥还没配好时，登录会提示还没有配置。邮箱登录即将开通。"
+        return "手机号会发送短信验证码。微信和 Google 会打开授权页，由 \(SkyAuthConfig.hostLabel) 核对身份。邮箱和密码由同一账号服务校验。短信或开放平台密钥还没配好时，登录会提示还没有配置。"
     }
 
     private func signInWeChat() {

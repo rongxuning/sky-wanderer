@@ -84,6 +84,32 @@ func dispatch(auth *user.Service, ready Ready, path string, w http.ResponseWrite
 		writeJSON(w, http.StatusOK, result)
 		return nil
 	}
+	if r.Method == http.MethodPost && path == "/v1/auth/register" {
+		body, err := readBody(r)
+		if err != nil {
+			return err
+		}
+		input, err := readEmailRegister(body)
+		if err != nil {
+			return err
+		}
+		result, err := auth.RegisterEmail(r.Context(), input)
+		if err != nil {
+			return err
+		}
+		identities, err := auth.ListIdentities(r.Context(), result.Session.Token)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, http.StatusOK, authPayload{
+			User:       result.User,
+			Session:    result.Session,
+			Created:    result.Created,
+			Merged:     false,
+			Identities: identities,
+		})
+		return nil
+	}
 	if r.Method == http.MethodPost && path == "/v1/auth/login" {
 		body, err := readBody(r)
 		if err != nil {
@@ -208,12 +234,13 @@ type authBody struct {
 	DisplayName       any `json:"displayName"`
 	Email             any `json:"email"`
 	Phone             any `json:"phone"`
+	Password          any `json:"password"`
 }
 
 func readLogin(body authBody) (user.LoginInput, error) {
 	kind, ok := body.Type.(string)
 	if !ok || !user.IsIdentityType(kind) {
-		return user.LoginInput{}, &user.AuthError{Code: "invalid_subject", Message: "type must be phone, wechat, or google"}
+		return user.LoginInput{}, &user.AuthError{Code: "invalid_subject", Message: "type must be phone, wechat, google, or email"}
 	}
 	return user.LoginInput{
 		Type:              kind,
@@ -229,6 +256,24 @@ func readLogin(body authBody) (user.LoginInput, error) {
 		DisplayName:       stringPtrIfString(body.DisplayName),
 		Email:             stringPtrIfString(body.Email),
 		Phone:             stringPtrIfString(body.Phone),
+		Password:          stringPtrIfString(body.Password),
+	}, nil
+}
+
+func readEmailRegister(body authBody) (user.LoginInput, error) {
+	kind := stringOrEmpty(body.Type)
+	if kind == "" {
+		kind = "email"
+	}
+	if kind != "email" {
+		return user.LoginInput{}, &user.AuthError{Code: "invalid_subject", Message: "register accepts email only"}
+	}
+	return user.LoginInput{
+		Type:            "email",
+		ProviderSubject: stringOrEmpty(body.ProviderSubject),
+		DisplayName:     stringPtrIfString(body.DisplayName),
+		Email:           stringPtrIfString(body.Email),
+		Password:        stringPtrIfString(body.Password),
 	}, nil
 }
 
@@ -322,9 +367,11 @@ func statusFor(code string) int {
 	switch code {
 	case "not_authenticated":
 		return http.StatusUnauthorized
-	case "last_identity":
+	case "last_identity", "email_taken":
 		return http.StatusConflict
-	case "identity_not_found", "user_missing":
+	case "invalid_password":
+		return http.StatusUnauthorized
+	case "identity_not_found", "user_missing", "email_not_found":
 		return http.StatusNotFound
 	case "sms_rate_limited":
 		return http.StatusTooManyRequests

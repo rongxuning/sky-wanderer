@@ -163,8 +163,10 @@ func (r *pgRepo) ListUsers(ctx context.Context) ([]User, error) {
 	return users, rows.Err()
 }
 
+const identityColumns = "id, type, provider_subject, email, phone, user_id, created_at, password_hash"
+
 func (r *pgRepo) FindIdentity(ctx context.Context, kind, providerSubject string) (*Identity, error) {
-	row := r.q.QueryRow(ctx, `SELECT id, type, provider_subject, email, phone, user_id, created_at
+	row := r.q.QueryRow(ctx, `SELECT `+identityColumns+`
 		FROM identities WHERE type = $1 AND provider_subject = $2`, kind, providerSubject)
 	item, err := scanIdentity(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -177,8 +179,8 @@ func (r *pgRepo) FindIdentity(ctx context.Context, kind, providerSubject string)
 }
 
 func (r *pgRepo) InsertIdentity(ctx context.Context, identity Identity) error {
-	_, err := r.q.Exec(ctx, `INSERT INTO identities (id, type, provider_subject, email, phone, user_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+	_, err := r.q.Exec(ctx, `INSERT INTO identities (id, type, provider_subject, email, phone, user_id, created_at, password_hash)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 		identity.ID,
 		identity.Type,
 		identity.ProviderSubject,
@@ -186,6 +188,7 @@ func (r *pgRepo) InsertIdentity(ctx context.Context, identity Identity) error {
 		nullableString(identity.Phone),
 		identity.UserID,
 		mustTime(identity.CreatedAt),
+		identity.PasswordHash,
 	)
 	if isUnique(err) {
 		return &AuthError{Code: "identity_conflict", Message: "identity already exists"}
@@ -199,11 +202,11 @@ func (r *pgRepo) UpdateIdentityUser(ctx context.Context, id, userID string) erro
 }
 
 func (r *pgRepo) ListIdentitiesByUser(ctx context.Context, userID string) ([]Identity, error) {
-	return r.listIdentities(ctx, "SELECT id, type, provider_subject, email, phone, user_id, created_at FROM identities WHERE user_id = $1 ORDER BY created_at, id", userID)
+	return r.listIdentities(ctx, "SELECT "+identityColumns+" FROM identities WHERE user_id = $1 ORDER BY created_at, id", userID)
 }
 
 func (r *pgRepo) ListIdentities(ctx context.Context) ([]Identity, error) {
-	return r.listIdentities(ctx, "SELECT id, type, provider_subject, email, phone, user_id, created_at FROM identities ORDER BY created_at, id")
+	return r.listIdentities(ctx, "SELECT "+identityColumns+" FROM identities ORDER BY created_at, id")
 }
 
 func (r *pgRepo) listIdentities(ctx context.Context, query string, args ...any) ([]Identity, error) {
@@ -369,10 +372,14 @@ func scanUser(row rowScanner) (User, error) {
 func scanIdentity(row rowScanner) (Identity, error) {
 	var item Identity
 	var created time.Time
-	if err := row.Scan(&item.ID, &item.Type, &item.ProviderSubject, &item.Email, &item.Phone, &item.UserID, &created); err != nil {
+	var passwordHash *string
+	if err := row.Scan(&item.ID, &item.Type, &item.ProviderSubject, &item.Email, &item.Phone, &item.UserID, &created, &passwordHash); err != nil {
 		return Identity{}, err
 	}
 	item.CreatedAt = FormatTime(created)
+	if passwordHash != nil {
+		item.PasswordHash = *passwordHash
+	}
 	return item, nil
 }
 

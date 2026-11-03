@@ -133,6 +133,81 @@ func TestAuthHTTP(t *testing.T) {
 	})
 }
 
+func TestEmailPasswordHTTP(t *testing.T) {
+	repo := user.NewMemoryRepository(nil)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	auth := user.NewService(user.ServiceOptions{
+		Repo: repo,
+		Demo: true,
+		Now:  func() time.Time { return now },
+	})
+	handler := NewHandler(auth, nil)
+
+	registered := postJSON(t, handler, "/v1/auth/register", map[string]any{
+		"type": "email", "email": "Walker@Example.com", "password": "correct-horse", "displayName": "Walker",
+	}, "")
+	if registered.Code != 200 || registered.JSON["created"] != true {
+		t.Fatalf("%d %s", registered.Code, registered.Body)
+	}
+	if strings.Contains(registered.Body, "correct-horse") || strings.Contains(registered.Body, "passwordHash") || strings.Contains(registered.Body, "$2") {
+		t.Fatalf("secret leaked %s", registered.Body)
+	}
+	userBody := registered.JSON["user"].(map[string]any)
+	if userBody["email"] != "walker@example.com" || userBody["displayName"] != "Walker" || userBody["retiredAt"] != nil {
+		t.Fatalf("user %#v", userBody)
+	}
+	identities := registered.JSON["identities"].([]any)
+	if len(identities) != 1 {
+		t.Fatalf("identities %#v", identities)
+	}
+	identity := identities[0].(map[string]any)
+	if identity["type"] != "email" || identity["providerSubject"] != "walker@example.com" {
+		t.Fatalf("identity %#v", identity)
+	}
+
+	duplicate := postJSON(t, handler, "/v1/auth/register", map[string]any{
+		"type": "email", "email": "walker@example.com", "password": "another-password", "displayName": "Other",
+	}, "")
+	if duplicate.Code != 409 || duplicate.JSON["error"].(map[string]any)["code"] != "email_taken" {
+		t.Fatalf("%d %#v", duplicate.Code, duplicate.JSON)
+	}
+
+	wrong := postJSON(t, handler, "/v1/auth/login", map[string]any{
+		"type": "email", "email": "walker@example.com", "password": "wrong-password",
+	}, "")
+	if wrong.Code != 401 || wrong.JSON["error"].(map[string]any)["code"] != "invalid_password" {
+		t.Fatalf("%d %#v", wrong.Code, wrong.JSON)
+	}
+
+	missing := postJSON(t, handler, "/v1/auth/login", map[string]any{
+		"type": "email", "email": "missing@example.com", "password": "correct-horse",
+	}, "")
+	if missing.Code != 404 || missing.JSON["error"].(map[string]any)["code"] != "email_not_found" {
+		t.Fatalf("%d %#v", missing.Code, missing.JSON)
+	}
+
+	logged := postJSON(t, handler, "/v1/auth/login", map[string]any{
+		"type": "email", "email": "walker@example.com", "password": "correct-horse",
+	}, "")
+	if logged.Code != 200 || logged.JSON["created"] != false {
+		t.Fatalf("%d %s", logged.Code, logged.Body)
+	}
+	if logged.JSON["user"].(map[string]any)["id"] != userBody["id"] {
+		t.Fatalf("user %#v", logged.JSON["user"])
+	}
+	if strings.Contains(logged.Body, "passwordHash") || strings.Contains(logged.Body, "correct-horse") {
+		t.Fatalf("secret leaked %s", logged.Body)
+	}
+	token := logged.JSON["session"].(map[string]any)["token"].(string)
+	req := httptest.NewRequest(http.MethodGet, "/v1/auth/identities", nil)
+	req.Header.Set("authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != 200 || strings.Contains(rec.Body.String(), "passwordHash") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHealthUnavailable(t *testing.T) {
 	auth := user.NewService(user.ServiceOptions{Repo: user.NewMemoryRepository(nil), Demo: true})
 	handler := NewHandler(auth, func(context.Context) error {

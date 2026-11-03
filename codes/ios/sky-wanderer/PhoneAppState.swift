@@ -184,13 +184,65 @@ final class PhoneAppState: ObservableObject {
             throw AuthFailure(message: "这个账号已经注册")
         }
         if database.accounts.contains(where: { $0.retiredAt == nil && $0.email.lowercased() == mail }) {
-            throw AuthFailure(message: "这个邮箱已经绑定")
+            throw AuthFailure(message: "这个邮箱已经注册")
         }
         let created = Account(id: UUID(), name: accountName, email: mail, passwordHash: Self.hash(password), createdAt: Date())
+        let identity = AuthIdentity(
+            id: UUID(),
+            type: .email,
+            providerSubject: mail,
+            email: mail,
+            phone: nil,
+            userId: created.id,
+            createdAt: created.createdAt
+        )
         mutate { database in
             database.accounts.append(created)
+            database.identities.append(identity)
             Self.issueSession(on: &database, accountID: created.id)
         }
+    }
+
+    /// Email and password. Uses the on-device directory when `SkyAuthConfig.usesLocalDirectory` is set.
+    /// Otherwise the account service creates the user and this stores the returned session.
+    @discardableResult
+    func registerEmail(name: String, password: String, email: String) async throws -> IdentityAuthResult {
+        let accountName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !accountName.isEmpty, !password.isEmpty, !mail.isEmpty else {
+            throw AuthFailure(message: "请填写账号、密码和邮箱")
+        }
+        if SkyAuthConfig.usesLocalDirectory {
+            try register(name: accountName, password: password, email: mail)
+            return try currentIdentityResult(created: true)
+        }
+        return try await catching {
+            let payload = try await SkyAuthClient.register([
+                "type": "email",
+                "email": mail,
+                "password": password,
+                "displayName": accountName,
+            ])
+            return try self.applyRemote(payload)
+        }
+    }
+
+    /// Email and password. A configured API checks the password and stores the session like phone login.
+    @discardableResult
+    func signInEmail(email: String, password: String) async throws -> IdentityAuthResult {
+        let mail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !mail.isEmpty, !password.isEmpty else {
+            throw AuthFailure(message: "请填写邮箱和密码")
+        }
+        if SkyAuthConfig.usesLocalDirectory {
+            try loginByEmail(mail, password: password)
+            return try currentIdentityResult(created: false)
+        }
+        return try await loginRemote([
+            "type": "email",
+            "email": mail,
+            "password": password,
+        ])
     }
 
     func login(name: String, password: String) throws {
@@ -654,6 +706,37 @@ final class PhoneAppState: ObservableObject {
             "clientId": clientId,
             "nonce": nonce,
         ]
+    }
+
+    private func loginByEmail(_ mail: String, password: String) throws {
+        let digest = Self.hash(password)
+        let known = database.accounts.contains {
+            $0.retiredAt == nil && $0.email.lowercased() == mail
+        }
+        guard known else {
+            throw AuthFailure(message: "这个邮箱还没有注册")
+        }
+        guard let match = database.accounts.first(where: {
+            $0.retiredAt == nil
+                && $0.email.lowercased() == mail
+                && !$0.passwordHash.isEmpty
+                && $0.passwordHash == digest
+        }) else {
+            throw AuthFailure(message: "密码不正确")
+        }
+        mutate { database in
+            Self.issueSession(on: &database, accountID: match.id)
+        }
+        banner = ""
+    }
+
+    private func currentIdentityResult(created: Bool) throws -> IdentityAuthResult {
+        guard let account,
+              let token = database.sessionToken,
+              let session = database.authSessions.first(where: { $0.token == token }) else {
+            throw AuthFailure(message: "登录没有完成")
+        }
+        return IdentityAuthResult(account: account, session: session, created: created, merged: false)
     }
 
     private func catching<T>(_ work: () async throws -> T) async throws -> T {

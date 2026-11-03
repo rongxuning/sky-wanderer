@@ -10,12 +10,13 @@ enum IdentityType: String, Codable, Hashable, CaseIterable {
     case phone
     case wechat
     case google
+    case email
 }
 
 struct AuthIdentity: Codable, Hashable, Identifiable {
     var id: UUID
     var type: IdentityType
-    /// E.164 phone, WeChat openid, or Google `sub`.
+    /// E.164 phone, WeChat openid, Google `sub`, or normalized email.
     var providerSubject: String
     var email: String?
     var phone: String?
@@ -306,6 +307,9 @@ private func defaultDisplayName(type: IdentityType, subject: String, email: Stri
         return local.isEmpty ? "Google 用户" : local
     case .phone:
         return "手机 \(subject.suffix(4))"
+    case .email:
+        let local = email.split(separator: "@").first.map { String($0) } ?? ""
+        return local.isEmpty ? "邮箱用户" : local
     }
 }
 
@@ -313,6 +317,11 @@ private func defaultDisplayName(type: IdentityType, subject: String, email: Stri
 /// `13800138000` and `+86 138-0013-8000` are the same subject: `+8613800138000`.
 private func canonicalSubject(type: IdentityType, raw: String) throws -> String {
     let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    if type == .email {
+        let email = trimmed.lowercased()
+        if email.isEmpty || !email.contains("@") { throw IdentityAuthError.invalidSubject }
+        return email
+    }
     if type != .phone {
         if trimmed.isEmpty { throw IdentityAuthError.invalidSubject }
         return trimmed
