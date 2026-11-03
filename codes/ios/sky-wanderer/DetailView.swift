@@ -447,11 +447,11 @@ private struct DetailSplitsCard: View {
 
     private func splitRow(_ cells: [String], header: Bool = false) -> some View {
         HStack(spacing: 4) {
-            ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
+            ForEach(Array(cells.enumerated()), id: \.offset) { column, cell in
                 Text(cell)
                     .font(header ? SkyTheme.Font.caption : SkyTheme.Font.footnote)
                     .fontWeight(header ? .regular : .semibold)
-                    .foregroundStyle(color(header: header, column: index))
+                    .foregroundStyle(color(header: header, column: column))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
@@ -946,7 +946,7 @@ private final class PopEnablerView: UIView, UIGestureRecognizerDelegate {
         gesture.delegate = self
     }
 
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let navigation = enclosingNavigationController(), navigation.viewControllers.count > 1 else {
             return false
         }
