@@ -10,7 +10,7 @@ final class WatchAppState: ObservableObject {
     init() {
         if var loaded = AppFiles.load(filename), loaded.seeded {
             let before = loaded.workouts.count
-            loaded.workouts.removeAll { $0.origin == .sample }
+            loaded.workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
             database = loaded
             if loaded.workouts.count != before {
                 AppFiles.save(loaded, name: filename)
@@ -26,7 +26,7 @@ final class WatchAppState: ObservableObject {
 
     var workouts: [WorkoutRecord] {
         database.workouts
-            .filter { $0.origin != .sample }
+            .filter { !SampleLibrary.isSeededWorkout($0) }
             .filter { $0.sport == .hiking || $0.sport == .running }
             .sorted { $0.start > $1.start }
     }
@@ -58,6 +58,7 @@ final class WatchAppState: ObservableObject {
     }
 
     func add(_ record: WorkoutRecord) {
+        guard !SampleLibrary.isSeededWorkout(record) else { return }
         mutate { database in
             database.workouts.removeAll { $0.id == record.id }
             if let healthID = record.healthKitUUID {

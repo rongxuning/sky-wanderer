@@ -428,7 +428,7 @@ enum CadenceMath {
 
 enum WorkoutImport {
     /// Appends new Health workouts and fills cadence on rows that were imported before cadence was read.
-    /// Drops seeded sample workouts so the records list only keeps real sessions.
+    /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
     static func merge(_ imported: [WorkoutRecord], into workouts: inout [WorkoutRecord]) {
         for record in imported {
             guard let healthID = record.healthKitUUID else { continue }
@@ -440,7 +440,7 @@ enum WorkoutImport {
             }
             workouts.append(record)
         }
-        workouts.removeAll { $0.origin == .sample }
+        workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
         workouts.sort { $0.start > $1.start }
     }
 }

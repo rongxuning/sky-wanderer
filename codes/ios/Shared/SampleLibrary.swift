@@ -1,6 +1,19 @@
 import Foundation
 
 enum SampleLibrary {
+    /// Fixed ids of the old seeded training records. The records list never shows these.
+    static let sampleWorkoutIDs: Set<UUID> = [
+        UUID(uuidString: "10000000-0000-0000-0000-000000000001")!,
+        UUID(uuidString: "10000000-0000-0000-0000-000000000002")!,
+        UUID(uuidString: "10000000-0000-0000-0000-000000000003")!,
+        UUID(uuidString: "10000000-0000-0000-0000-000000000004")!
+    ]
+
+    /// True for a bundled example workout, including one saved before `origin` was `.sample`.
+    static func isSeededWorkout(_ workout: WorkoutRecord) -> Bool {
+        workout.origin == .sample || sampleWorkoutIDs.contains(workout.id)
+    }
+
     static let teammates: [TeammateProfile] = [
         TeammateProfile(id: "aning", name: "阿宁"),
         TeammateProfile(id: "xiaolin", name: "小林"),
@@ -24,6 +37,7 @@ enum SampleLibrary {
         ]
     }
 
+    /// Route geometry for the seeded social posts. Not inserted into the records list.
     static func workouts() -> [WorkoutRecord] {
         [
             make(
