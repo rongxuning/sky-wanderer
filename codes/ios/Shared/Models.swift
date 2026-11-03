@@ -175,6 +175,8 @@ struct Account: Hashable, Identifiable {
     var name: String
     var email: String
     var passwordHash: String
+    /// JPEG in app support. The account service does not store this file.
+    var avatarFilename: String? = nil
     var createdAt: Date = Date()
     /// Set when this account was merged into an earlier one and must not be used.
     var retiredAt: Date?
@@ -186,7 +188,7 @@ struct Account: Hashable, Identifiable {
 
 extension Account: Codable {
     private enum CodingKeys: String, CodingKey {
-        case id, name, email, passwordHash, createdAt, retiredAt, mergedIntoUserID, mergedFromUserIDs
+        case id, name, email, passwordHash, avatarFilename, createdAt, retiredAt, mergedIntoUserID, mergedFromUserIDs
     }
 
     init(from decoder: Decoder) throws {
@@ -195,6 +197,7 @@ extension Account: Codable {
         name = try container.decode(String.self, forKey: .name)
         email = try container.decodeIfPresent(String.self, forKey: .email) ?? ""
         passwordHash = try container.decodeIfPresent(String.self, forKey: .passwordHash) ?? ""
+        avatarFilename = try container.decodeIfPresent(String.self, forKey: .avatarFilename)
         // Stored as a numeric timestamp so two accounts created in the same second
         // still merge toward the earlier one after the JSON file is reloaded.
         // Accounts saved before identities existed have no timestamp and sort first.
@@ -218,6 +221,7 @@ extension Account: Codable {
         try container.encode(name, forKey: .name)
         try container.encode(email, forKey: .email)
         try container.encode(passwordHash, forKey: .passwordHash)
+        try container.encodeIfPresent(avatarFilename, forKey: .avatarFilename)
         try container.encode(createdAt.timeIntervalSince1970, forKey: .createdAt)
         if let retiredAt {
             try container.encode(retiredAt.timeIntervalSince1970, forKey: .retiredAt)

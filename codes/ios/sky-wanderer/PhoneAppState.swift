@@ -358,6 +358,98 @@ final class PhoneAppState: ObservableObject {
         logout(revokeRemote: true)
     }
 
+    /// Writes the display name on this device. There is no account-service profile route,
+    /// so the next server login replaces it with that response's `displayName`.
+    func updateDisplayName(_ raw: String) throws {
+        guard let account else {
+            throw AuthFailure(message: MeProfileError.notSignedIn.message)
+        }
+        let name: String
+        switch MeProfileRules.normalizedName(raw) {
+        case .failure(let error):
+            throw AuthFailure(message: error.message)
+        case .success(let value):
+            name = value
+        }
+        if database.accounts.contains(where: {
+            $0.id != account.id
+                && $0.retiredAt == nil
+                && $0.name.compare(name, options: .caseInsensitive) == .orderedSame
+        }) {
+            throw AuthFailure(message: "这个用户名已经有人使用")
+        }
+        mutate { database in
+            guard let index = database.accounts.firstIndex(where: { $0.id == account.id && $0.retiredAt == nil }) else { return }
+            database.accounts[index].name = name
+        }
+    }
+
+    /// Local directory only. A configured API has no password route, so this refuses instead of
+    /// writing a hash the server will never check.
+    func changePassword(current: String, newPassword: String, confirm: String) throws {
+        guard SkyAuthConfig.usesLocalDirectory else {
+            throw AuthFailure(message: MePasswordMode.remoteUnavailable.screenNote)
+        }
+        guard let account else {
+            throw AuthFailure(message: MeProfileError.notSignedIn.message)
+        }
+        let hasPassword = !account.passwordHash.isEmpty
+        let password: String
+        switch MeProfileRules.validatePasswordChange(
+            current: current,
+            new: newPassword,
+            confirm: confirm,
+            hasExistingPassword: hasPassword
+        ) {
+        case .failure(let error):
+            throw AuthFailure(message: error.message)
+        case .success(let value):
+            password = value
+        }
+        if hasPassword, Self.hash(current) != account.passwordHash {
+            throw AuthFailure(message: "当前密码不正确")
+        }
+        mutate { database in
+            guard let index = database.accounts.firstIndex(where: { $0.id == account.id && $0.retiredAt == nil }) else { return }
+            database.accounts[index].passwordHash = Self.hash(password)
+        }
+    }
+
+    func setAvatarImage(_ data: Data) throws {
+        guard let account else {
+            throw AuthFailure(message: MeProfileError.notSignedIn.message)
+        }
+        guard let filename = storeImage(data) else {
+            throw AuthFailure(message: "这张照片没法保存")
+        }
+        let previous = account.avatarFilename
+        mutate { database in
+            guard let index = database.accounts.firstIndex(where: { $0.id == account.id && $0.retiredAt == nil }) else { return }
+            database.accounts[index].avatarFilename = filename
+        }
+        guard self.account?.avatarFilename == filename else {
+            removeStoredImage(filename)
+            throw AuthFailure(message: MeProfileError.notSignedIn.message)
+        }
+        if let previous, previous != filename {
+            removeStoredImage(previous)
+        }
+    }
+
+    func clearAvatar() {
+        guard let account, let previous = account.avatarFilename else { return }
+        mutate { database in
+            guard let index = database.accounts.firstIndex(where: { $0.id == account.id && $0.retiredAt == nil }) else { return }
+            database.accounts[index].avatarFilename = nil
+        }
+        removeStoredImage(previous)
+    }
+
+    var accountAvatar: UIImage? {
+        guard let filename = account?.avatarFilename else { return nil }
+        return image(named: filename)
+    }
+
     func prepareReset(email: String) throws {
         let mail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard database.accounts.contains(where: { $0.retiredAt == nil && $0.email.lowercased() == mail }) else {
@@ -615,6 +707,7 @@ final class PhoneAppState: ObservableObject {
         mutate { database in
             if let index = database.accounts.firstIndex(where: { $0.id == userId }) {
                 account.passwordHash = database.accounts[index].passwordHash
+                account.avatarFilename = database.accounts[index].avatarFilename
                 database.accounts[index] = account
             } else {
                 database.accounts.append(account)
@@ -658,6 +751,13 @@ final class PhoneAppState: ObservableObject {
             userId: userId,
             createdAt: created
         )
+    }
+
+    private func removeStoredImage(_ name: String) {
+        if database.posts.contains(where: { $0.imageFilename == name }) { return }
+        if database.accounts.contains(where: { $0.avatarFilename == name }) { return }
+        guard let url = try? AppFiles.file(name) else { return }
+        try? FileManager.default.removeItem(at: url)
     }
 
     private func storeImage(_ data: Data?) -> String? {

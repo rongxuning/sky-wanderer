@@ -202,8 +202,21 @@ private enum SkyDestinations {
 
     @ViewBuilder
     static func me(_ route: MeRoute) -> some View {
-        if case .layout = route {
-            LayoutEditor()
+        switch route {
+        case .avatar:
+            MeAvatarScreen()
+        case .username:
+            MeUsernameScreen()
+        case .password:
+            MePasswordScreen()
+        case .health:
+            MeHealthScreen()
+        case .trainingAuthorization:
+            MeTrainingAuthorizationScreen()
+        case .notifications:
+            MeNotificationScreen()
+        case .sdkList:
+            MeSDKListScreen()
         }
     }
 }
@@ -225,29 +238,16 @@ private struct AccountAvatarButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(app.isLoggedIn ? "账号" : "登录")
+        .accessibilityLabel(app.isLoggedIn ? "我的" : "登录")
     }
 
     @ViewBuilder
     private var avatar: some View {
         if app.isLoggedIn {
-            Text(mark)
-                .font(SkyTheme.Font.headline)
-                .foregroundStyle(SkyTheme.Color.onPrimary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(SkyTheme.Color.primary, in: Circle())
-                .overlay {
-                    Circle().stroke(SkyTheme.Color.card, lineWidth: 1.5)
-                }
-                .accessibilityHidden(true)
+            AccountAvatarFace(name: app.account?.name ?? "", image: app.accountAvatar, diameter: Self.artwork)
         } else {
             ScenicAvatar()
         }
-    }
-
-    private var mark: String {
-        guard let name = app.account?.name, !name.isEmpty else { return "我" }
-        return String(name.prefix(1))
     }
 }
 
@@ -452,7 +452,7 @@ struct SkySettingsView: View {
                 }
                 if app.isLoggedIn {
                     NavigationLink(value: HomeRoute.me) {
-                        Text("健康与训练")
+                        Text("我的")
                     }
                 }
             }

@@ -43,6 +43,19 @@ enum AppleHealth {
         try await store.requestAuthorization(toShare: shareTypes, read: readTypes)
     }
 
+    /// Share status for workouts. HealthKit does not tell the app whether reads were allowed.
+    static func workoutShareAuthorization() -> MeTrainingShareState {
+        guard available else { return .unavailable }
+        switch store.authorizationStatus(for: HKObjectType.workoutType()) {
+        case .sharingAuthorized:
+            return .authorized
+        case .sharingDenied:
+            return .denied
+        default:
+            return .notDetermined
+        }
+    }
+
     static func importRunsAndHikes() async throws -> [WorkoutRecord] {
         guard available else { return [] }
         let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
