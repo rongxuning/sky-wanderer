@@ -76,11 +76,10 @@ struct WorkoutDetailView: View {
                     extremeTitle: "最大",
                     digits: 0
                 )
-                // No series on WorkoutRecord. HealthKit runningVerticalOscillation is not imported.
                 seriesCard(
                     title: "垂直振幅（毫米）",
-                    points: [],
-                    average: nil,
+                    points: WorkoutDetailMath.positive(workout.verticalOscillation),
+                    average: WorkoutDetailMath.mean(workout.verticalOscillation),
                     extremeTitle: "最大",
                     digits: 0
                 )

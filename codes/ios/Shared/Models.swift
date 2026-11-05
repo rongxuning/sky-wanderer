@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(CoreLocation)
 import CoreLocation
+#endif
 
 enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     case hiking
@@ -29,9 +31,11 @@ struct GeoPoint: Codable, Hashable {
     var altitude: Double
     var timestamp: Date?
 
+    #if canImport(CoreLocation)
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
+    #endif
 
     func moved(northMeters: Double, eastMeters: Double) -> GeoPoint {
         let lat = latitude + northMeters / 111_320
@@ -120,6 +124,8 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     var elevation: [SeriesPoint]
     var groundContact: [SeriesPoint]
     var power: [SeriesPoint]
+    /// Millimeters. Missing in phone files saved before this series was imported.
+    var verticalOscillation: [SeriesPoint] = []
     var origin: WorkoutOrigin
     var healthKitUUID: String?
 
@@ -276,8 +282,70 @@ struct TeammateLive: Codable, Hashable, Identifiable {
     var paceSecPerKm: Double
     var heartRate: Double
 
+    #if canImport(CoreLocation)
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+    #endif
+}
+
+extension WorkoutRecord {
+    private enum CodingKeys: String, CodingKey {
+        case id, sport, start, end, distanceMeters, energyKilocalories
+        case averageHeartRate, averageCadence, elevationGainMeters
+        case route, splits, heartRate, cadenceSeries, paceSeries
+        case stride, elevation, groundContact, power, verticalOscillation
+        case origin, healthKitUUID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        sport = try container.decode(SportKind.self, forKey: .sport)
+        start = try container.decode(Date.self, forKey: .start)
+        end = try container.decode(Date.self, forKey: .end)
+        distanceMeters = try container.decode(Double.self, forKey: .distanceMeters)
+        energyKilocalories = try container.decode(Double.self, forKey: .energyKilocalories)
+        averageHeartRate = try container.decode(Double.self, forKey: .averageHeartRate)
+        averageCadence = try container.decode(Double.self, forKey: .averageCadence)
+        elevationGainMeters = try container.decode(Double.self, forKey: .elevationGainMeters)
+        route = try container.decode([GeoPoint].self, forKey: .route)
+        splits = try container.decode([KilometerSplit].self, forKey: .splits)
+        heartRate = try container.decode([SeriesPoint].self, forKey: .heartRate)
+        cadenceSeries = try container.decode([SeriesPoint].self, forKey: .cadenceSeries)
+        paceSeries = try container.decode([SeriesPoint].self, forKey: .paceSeries)
+        stride = try container.decode([SeriesPoint].self, forKey: .stride)
+        elevation = try container.decode([SeriesPoint].self, forKey: .elevation)
+        groundContact = try container.decode([SeriesPoint].self, forKey: .groundContact)
+        power = try container.decode([SeriesPoint].self, forKey: .power)
+        verticalOscillation = try container.decodeIfPresent([SeriesPoint].self, forKey: .verticalOscillation) ?? []
+        origin = try container.decode(WorkoutOrigin.self, forKey: .origin)
+        healthKitUUID = try container.decodeIfPresent(String.self, forKey: .healthKitUUID)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sport, forKey: .sport)
+        try container.encode(start, forKey: .start)
+        try container.encode(end, forKey: .end)
+        try container.encode(distanceMeters, forKey: .distanceMeters)
+        try container.encode(energyKilocalories, forKey: .energyKilocalories)
+        try container.encode(averageHeartRate, forKey: .averageHeartRate)
+        try container.encode(averageCadence, forKey: .averageCadence)
+        try container.encode(elevationGainMeters, forKey: .elevationGainMeters)
+        try container.encode(route, forKey: .route)
+        try container.encode(splits, forKey: .splits)
+        try container.encode(heartRate, forKey: .heartRate)
+        try container.encode(cadenceSeries, forKey: .cadenceSeries)
+        try container.encode(paceSeries, forKey: .paceSeries)
+        try container.encode(stride, forKey: .stride)
+        try container.encode(elevation, forKey: .elevation)
+        try container.encode(groundContact, forKey: .groundContact)
+        try container.encode(power, forKey: .power)
+        try container.encode(verticalOscillation, forKey: .verticalOscillation)
+        try container.encode(origin, forKey: .origin)
+        try container.encodeIfPresent(healthKitUUID, forKey: .healthKitUUID)
     }
 }
 
@@ -427,20 +495,42 @@ enum CadenceMath {
 }
 
 enum WorkoutImport {
-    /// Appends new Health workouts and fills cadence on rows that were imported before cadence was read.
+    /// Appends new Health workouts and fills cadence or series an earlier import left empty.
+    /// A later import that only has empty series does not clear a richer row.
     /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
     static func merge(_ imported: [WorkoutRecord], into workouts: inout [WorkoutRecord]) {
         for record in imported {
             guard let healthID = record.healthKitUUID else { continue }
             if let index = workouts.firstIndex(where: { $0.healthKitUUID == healthID }) {
-                if workouts[index].resolvedAverageCadence <= 0, record.averageCadence > 0 {
-                    workouts[index].averageCadence = record.averageCadence
-                }
+                workouts[index] = merging(workouts[index], with: record)
                 continue
             }
             workouts.append(record)
         }
         workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
         workouts.sort { $0.start > $1.start }
+    }
+
+    static func merging(_ existing: WorkoutRecord, with imported: WorkoutRecord) -> WorkoutRecord {
+        var merged = existing
+        if merged.resolvedAverageCadence <= 0, imported.averageCadence > 0 {
+            merged.averageCadence = imported.averageCadence
+        }
+        fill(&merged.splits, imported.splits)
+        fill(&merged.heartRate, imported.heartRate)
+        fill(&merged.cadenceSeries, imported.cadenceSeries)
+        fill(&merged.paceSeries, imported.paceSeries)
+        fill(&merged.stride, imported.stride)
+        fill(&merged.elevation, imported.elevation)
+        fill(&merged.groundContact, imported.groundContact)
+        fill(&merged.power, imported.power)
+        fill(&merged.verticalOscillation, imported.verticalOscillation)
+        return merged
+    }
+
+    private static func fill<T>(_ existing: inout [T], _ incoming: [T]) {
+        if existing.isEmpty, !incoming.isEmpty {
+            existing = incoming
+        }
     }
 }

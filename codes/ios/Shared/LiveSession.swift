@@ -60,10 +60,12 @@ final class LiveSession: ObservableObject {
     private var elevationSeries: [SeriesPoint] = []
     private var contactSeries: [SeriesPoint] = []
     private var powerSeries: [SeriesPoint] = []
+    private var oscillationSeries: [SeriesPoint] = []
     private var stepCount = 0.0
     private var latestPower = 0.0
     private var latestStride = 0.0
     private var latestContact = 0.0
+    private var latestOscillation = 0.0
     private var simHeading = 0.4
     private var simPoint = SampleLibrary.plannedRoutes(around: MapOrigin.fallback)[0].points.first ?? MapOrigin.fallback
     private var sampleTick = 0
@@ -343,6 +345,7 @@ final class LiveSession: ObservableObject {
         if let power = reading.power, power > 0 { latestPower = power }
         if let stride = reading.stride, stride > 0 { latestStride = stride }
         if let contact = reading.groundContactMilliseconds, contact > 0 { latestContact = contact }
+        if let oscillation = reading.verticalOscillationMillimeters, oscillation > 0 { latestOscillation = oscillation }
         refreshDistance()
     }
 
@@ -423,10 +426,12 @@ final class LiveSession: ObservableObject {
         elevationSeries = []
         contactSeries = []
         powerSeries = []
+        oscillationSeries = []
         stepCount = 0
         latestPower = 0
         latestStride = 0
         latestContact = 0
+        latestOscillation = 0
         sampleTick = 0
         startedAt = Date()
         runningSince = Date()
@@ -483,6 +488,10 @@ final class LiveSession: ObservableObject {
             strideSeries.append(SeriesPoint(second: second, value: stride))
             contactSeries.append(SeriesPoint(second: second, value: contact))
             powerSeries.append(SeriesPoint(second: second, value: watts))
+            if sport == .running {
+                let oscillation = 84 + sin(elapsed / 10) * 6
+                oscillationSeries.append(SeriesPoint(second: second, value: oscillation))
+            }
         } else {
             if latestStride > 0 {
                 strideSeries.append(SeriesPoint(second: second, value: latestStride))
@@ -495,6 +504,9 @@ final class LiveSession: ObservableObject {
             }
             if latestPower > 0 {
                 powerSeries.append(SeriesPoint(second: second, value: latestPower))
+            }
+            if latestOscillation > 0 {
+                oscillationSeries.append(SeriesPoint(second: second, value: latestOscillation))
             }
         }
     }
@@ -522,6 +534,7 @@ final class LiveSession: ObservableObject {
             elevation: elevationSeries,
             groundContact: contactSeries,
             power: powerSeries,
+            verticalOscillation: oscillationSeries,
             origin: simulating ? .simulated : .apple,
             healthKitUUID: healthID
         )

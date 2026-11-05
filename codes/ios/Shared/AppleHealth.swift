@@ -37,6 +37,7 @@ enum RecorderError: Error {
 enum AppleHealth {
     static let store = HKHealthStore()
     static var available: Bool { HKHealthStore.isHealthDataAvailable() }
+    private static let beatsPerMinute = HKUnit.count().unitDivided(by: .minute())
 
     static func authorize() async throws {
         guard available else { throw RecorderError.unavailable }
@@ -81,13 +82,7 @@ enum AppleHealth {
         var records: [WorkoutRecord] = []
         for workout in workouts {
             guard let sport = SportKind.from(workout.workoutActivityType) else { continue }
-            async let route = routePoints(for: workout)
-            async let cadence = cadenceStepsPerMinute(for: workout)
-            let resolvedRoute = await route
-            let resolvedCadence = await cadence
-            records.append(
-                record(from: workout, sport: sport, route: resolvedRoute, cadence: resolvedCadence)
-            )
+            records.append(await record(from: workout, sport: sport))
         }
         return records
     }
@@ -136,12 +131,7 @@ enum AppleHealth {
         }
     }
 
-    private static func record(
-        from workout: HKWorkout,
-        sport: SportKind,
-        route: [GeoPoint],
-        cadence: Double
-    ) -> WorkoutRecord {
+    private static func record(from workout: HKWorkout, sport: SportKind) async -> WorkoutRecord {
         // Prefer statistics. Some imported workouts leave statistics(for:) nil and only
         // fill the older totals, which would otherwise be stored as 0.
         // Heart rate has no workout-level total, so it stays on statistics.
@@ -151,33 +141,95 @@ enum AppleHealth {
         let energy = sum(workout, identifier: .activeEnergyBurned, unit: .kilocalorie())
             ?? workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
             ?? 0
-        let heart = average(workout, identifier: .heartRate, unit: HKUnit.count().unitDivided(by: .minute())) ?? 0
+        let heart = average(workout, identifier: .heartRate, unit: beatsPerMinute) ?? 0
         var climb = 0.0
         if let quantity = workout.metadata?[HKMetadataKeyElevationAscended] as? HKQuantity {
             climb = quantity.doubleValue(for: .meter())
         }
+        let windowStart = workout.startDate
+        let windowEnd = workout.endDate
+        async let routeTask = routePoints(for: workout)
+        async let cadenceTask = cadenceStepsPerMinute(for: workout)
+        async let heartSamples = quantitySamples(.heartRate, unit: beatsPerMinute, start: windowStart, end: windowEnd)
+        async let stepSamples = quantitySamples(.stepCount, unit: .count(), start: windowStart, end: windowEnd)
+        async let strideSamples = quantitySamples(.runningStrideLength, unit: .meter(), start: windowStart, end: windowEnd)
+        async let powerSamples = quantitySamples(.runningPower, unit: .watt(), start: windowStart, end: windowEnd)
+        async let contactSamples = quantitySamples(.runningGroundContactTime, unit: .second(), start: windowStart, end: windowEnd)
+        async let oscillationSamples = quantitySamples(.runningVerticalOscillation, unit: .meter(), start: windowStart, end: windowEnd)
+        async let distanceSamples = quantitySamples(.distanceWalkingRunning, unit: .meter(), start: windowStart, end: windowEnd)
+
+        let route = await routeTask
+        let cadence = await cadenceTask
+        let heartRate = HealthSeries.instantaneous(await heartSamples, workoutStart: windowStart, workoutEnd: windowEnd)
+        let cadenceSeries = HealthSeries.cadence(stepSamples: await stepSamples, workoutStart: windowStart, workoutEnd: windowEnd)
+        let stride = HealthSeries.instantaneous(await strideSamples, workoutStart: windowStart, workoutEnd: windowEnd)
+        let power = HealthSeries.instantaneous(await powerSamples, workoutStart: windowStart, workoutEnd: windowEnd)
+        let groundContact = HealthSeries.groundContactMilliseconds(await contactSamples, workoutStart: windowStart, workoutEnd: windowEnd)
+        let verticalOscillation = HealthSeries.verticalOscillationMillimeters(
+            await oscillationSamples,
+            workoutStart: windowStart,
+            workoutEnd: windowEnd
+        )
+        let track = HealthSeries.track(
+            route: route,
+            distanceSamples: await distanceSamples,
+            workoutStart: windowStart,
+            workoutEnd: windowEnd,
+            referenceDistanceMeters: distance,
+            heartRate: heartRate,
+            cadence: cadenceSeries
+        )
         return WorkoutRecord(
             id: UUID(),
             sport: sport,
-            start: workout.startDate,
-            end: workout.endDate,
+            start: windowStart,
+            end: windowEnd,
             distanceMeters: distance,
             energyKilocalories: energy,
             averageHeartRate: heart,
             averageCadence: cadence,
             elevationGainMeters: climb,
             route: route,
-            splits: [],
-            heartRate: [],
-            cadenceSeries: [],
-            paceSeries: [],
-            stride: [],
-            elevation: [],
-            groundContact: [],
-            power: [],
+            splits: track.splits,
+            heartRate: heartRate,
+            cadenceSeries: cadenceSeries,
+            paceSeries: track.pace,
+            stride: stride,
+            elevation: track.elevation,
+            groundContact: groundContact,
+            power: power,
+            verticalOscillation: verticalOscillation,
             origin: .apple,
             healthKitUUID: workout.uuid.uuidString
         )
+    }
+
+    /// Samples that start inside the workout. A failed query returns none.
+    private static func quantitySamples(
+        _ identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        start: Date,
+        end: Date
+    ) async -> [HealthQuantitySample] {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        return await withCheckedContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [sort]
+            ) { _, samples, _ in
+                let mapped = (samples as? [HKQuantitySample] ?? []).compactMap { sample -> HealthQuantitySample? in
+                    let value = sample.quantity.doubleValue(for: unit)
+                    guard value.isFinite else { return nil }
+                    return HealthQuantitySample(start: sample.startDate, end: sample.endDate, value: value)
+                }
+                continuation.resume(returning: mapped)
+            }
+            store.execute(query)
+        }
     }
 
     private static func sum(_ workout: HKWorkout, identifier: HKQuantityTypeIdentifier, unit: HKUnit) -> Double? {
@@ -283,7 +335,8 @@ enum AppleHealth {
         var types: Set<HKObjectType> = [HKObjectType.workoutType(), HKSeriesType.workoutRoute()]
         let quantities: [HKQuantityTypeIdentifier] = [
             .heartRate, .activeEnergyBurned, .distanceWalkingRunning, .stepCount,
-            .runningPower, .runningStrideLength, .runningGroundContactTime, .flightsClimbed
+            .runningPower, .runningStrideLength, .runningGroundContactTime,
+            .runningVerticalOscillation, .flightsClimbed
         ]
         for identifier in quantities {
             if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
@@ -322,6 +375,8 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         var power: Double?
         var stride: Double?
         var groundContactMilliseconds: Double?
+        /// Millimeters, matching the detail chart.
+        var verticalOscillationMillimeters: Double?
     }
 
     var onReading: ((Reading) -> Void)?
@@ -337,7 +392,11 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         configuration.locationType = .outdoor
         let session = try HKWorkoutSession(healthStore: AppleHealth.store, configuration: configuration)
         let builder = session.associatedWorkoutBuilder()
-        builder.dataSource = HKLiveWorkoutDataSource(healthStore: AppleHealth.store, workoutConfiguration: configuration)
+        let dataSource = HKLiveWorkoutDataSource(healthStore: AppleHealth.store, workoutConfiguration: configuration)
+        if let oscillation = HKQuantityType.quantityType(forIdentifier: .runningVerticalOscillation) {
+            dataSource.enableCollection(for: oscillation, predicate: nil)
+        }
+        builder.dataSource = dataSource
         session.delegate = self
         builder.delegate = self
         self.session = session
@@ -437,7 +496,8 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
             energy: sum(builder, .activeEnergyBurned, .kilocalorie()),
             power: recent(builder, .runningPower, .watt()),
             stride: recent(builder, .runningStrideLength, .meter()),
-            groundContactMilliseconds: recent(builder, .runningGroundContactTime, .second()).map { $0 * 1000 }
+            groundContactMilliseconds: recent(builder, .runningGroundContactTime, .second()).map { $0 * 1000 },
+            verticalOscillationMillimeters: recent(builder, .runningVerticalOscillation, .meter()).map { $0 * 1000 }
         )
     }
 
