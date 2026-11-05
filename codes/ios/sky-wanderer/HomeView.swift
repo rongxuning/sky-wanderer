@@ -66,17 +66,18 @@ struct SkyHome: View {
         .background(SkyTheme.Color.grouped.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: showsTabBar ? 8 : 0) {
             if showsTabBar {
-                ZStack(alignment: .leading) {
-                    SkyGlassTabBar(selection: $tab)
-                        .containerRelativeFrame(.horizontal) { length, _ in
-                            SkyTabBarMetrics.width(in: length)
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    HStack(spacing: SkyTheme.Spacing.controlGap) {
+                        AccountAvatarButton {
+                            openAccount()
                         }
-                        .frame(maxWidth: .infinity)
-                    AccountAvatarButton {
-                        openAccount()
+                        SkyGlassTabBar(selection: $tab)
+                            .containerRelativeFrame(.horizontal) { length, _ in
+                                SkyTabBarMetrics.width(in: length)
+                            }
                     }
-                    .fixedSize()
-                    .padding(.leading, SkyTheme.Spacing.screenInset)
+                    Spacer(minLength: 0)
                 }
                 .padding(.bottom, 4)
             }
@@ -371,15 +372,16 @@ private extension View {
     }
 }
 
-/// The bar used to fill the width beside the avatar. It is now 70% of that span and centered.
+/// Capsule width inside the centered avatar + tabs cluster.
+/// 70% of the width left after the avatar, the 8pt gap, and the screen insets, and at least three touch targets.
 private enum SkyTabBarMetrics {
     static func width(in containerWidth: CGFloat) -> CGFloat {
         let avatar = SkyTheme.Spacing.touchMin + 4
-        let previous = containerWidth
+        let besideCluster = containerWidth
             - SkyTheme.Spacing.screenInset * 2
             - avatar
             - SkyTheme.Spacing.controlGap
-        let narrowed = previous * 0.7
+        let narrowed = besideCluster * 0.7
         let minimum = SkyTheme.Spacing.touchMin * 3
         return max(narrowed, minimum)
     }

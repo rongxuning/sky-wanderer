@@ -6,7 +6,7 @@ private enum RecordFeedSection: Hashable {
     case stats
 }
 
-/// Records tab. Short white cards: map thumbnail, then duration and a three-column metric row.
+/// Records tab. Short white cards: map thumbnail, sport, duration, and a three-column metric row.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
     @State private var section: RecordFeedSection = .list
@@ -57,7 +57,7 @@ struct RecordFeedView: View {
                     .zIndex(1)
                     .accessibilityAddTraits(.isHeader)
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
+                    LazyVStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
                         if !app.banner.isEmpty {
                             Text(app.banner)
                                 .font(SkyTheme.Font.footnote)
@@ -322,20 +322,26 @@ private enum RecordCardLayout {
     static let thumbnail: CGFloat = 84
     static let inset: CGFloat = 10
     static let contentGap: CGFloat = 10
+    /// Tightest spacing step, so the sport line stays inside the 84pt thumbnail.
+    static let stackSpacing: CGFloat = 4
 }
 
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(alignment: .center, spacing: RecordCardLayout.contentGap) {
             RecordMapThumbnail(points: workout.route, sport: workout.sport)
-            VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
+            VStack(alignment: .leading, spacing: RecordCardLayout.stackSpacing) {
+                sportLine
                 header
                 metrics
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // The 84pt thumbnail anchors the card at the default type size. Larger Dynamic Type grows the card.
+        .frame(height: dynamicTypeSize <= .large ? RecordCardLayout.thumbnail : nil)
         .padding(RecordCardLayout.inset)
         .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
         .shadow(
@@ -346,6 +352,14 @@ struct RecordSummaryCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityAddTraits(.isButton)
+    }
+
+    private var sportLine: some View {
+        Text(workout.sport.title)
+            .font(SkyTheme.Font.caption)
+            .fontWeight(.semibold)
+            .foregroundStyle(SkyTheme.Color.ink)
+            .lineLimit(1)
     }
 
     private var header: some View {
@@ -473,6 +487,7 @@ struct RecordSummaryCard: View {
     private var accessibilitySummary: String {
         let distance = distanceUnit.map { "\(distanceValue) \($0)" } ?? distanceValue
         return [
+            workout.sport.title,
             "时长 \(RecordCardText.clock(workout.duration))",
             "开始 \(RecordCardText.started(workout.start))",
             "距离 \(distance)",
