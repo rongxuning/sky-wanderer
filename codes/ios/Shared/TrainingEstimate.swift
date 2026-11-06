@@ -47,6 +47,7 @@ enum TrainingEstimate {
 
 enum RecordStats {
     /// 平均配速 = 有距离记录的训练时间 / 总公里，不是各次配速的算术平均。
+    /// 平均心率、平均步频优先用训练时段的序列（暂停空档不计入）。没有可用序列时用存储的平均值。
     /// 平均步幅 = 各次 `averageStrideMeters` 的经过时间加权平均；单次没有步幅序列时，用训练配速和步频推算。
     /// 健康导入经常没有步幅和步频，这时平均步幅为 0，界面显示「—」。
     /// 平均负荷 = 窗口内各次负荷的算术平均，包含负荷为 0 的记录。
@@ -69,11 +70,11 @@ enum RecordStats {
             }
         }
         guard !matched.isEmpty else { return .empty }
-        let heartPool = matched.filter { $0.averageHeartRate > 0 }
+        let heartPool = matched.filter { $0.resolvedAverageHeartRate > 0 }
         let cadencePool = matched.filter { $0.resolvedAverageCadence > 0 }
         let heartDuration = heartPool.reduce(0) { $0 + $1.duration }
         let cadenceDuration = cadencePool.reduce(0) { $0 + $1.duration }
-        let heart = heartDuration > 0 ? heartPool.reduce(0) { $0 + $1.averageHeartRate * $1.duration } / heartDuration : 0
+        let heart = heartDuration > 0 ? heartPool.reduce(0) { $0 + $1.resolvedAverageHeartRate * $1.duration } / heartDuration : 0
         let cadence = cadenceDuration > 0 ? cadencePool.reduce(0) { $0 + $1.resolvedAverageCadence * $1.duration } / cadenceDuration : 0
         let moving = matched.filter { $0.distanceMeters > 1 && $0.trainingDuration > 0 }
         let movingDistance = moving.reduce(0) { $0 + $1.distanceMeters }
@@ -89,7 +90,7 @@ enum RecordStats {
         let scoreDuration = heartPool.reduce(0) { $0 + $1.duration }
         let score = scoreDuration > 0
             ? heartPool.reduce(0) { partial, workout in
-                let intensity = min(100, (workout.averageHeartRate / 180) * 100)
+                let intensity = min(100, (workout.resolvedAverageHeartRate / 180) * 100)
                 return partial + intensity * workout.duration
             } / scoreDuration
             : 0

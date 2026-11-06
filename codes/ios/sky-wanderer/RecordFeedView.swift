@@ -467,7 +467,7 @@ struct RecordSummaryCard: View {
     }
 
     private var heartText: String {
-        let value = Format.integer(workout.averageHeartRate)
+        let value = Format.integer(workout.resolvedAverageHeartRate)
         return value == "—" ? value : "\(value) bpm"
     }
 

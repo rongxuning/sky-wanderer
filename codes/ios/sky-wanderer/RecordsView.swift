@@ -188,7 +188,7 @@ private struct RecordCard: View {
             HStack(spacing: 6) {
                 stat(Format.pace(workout.averagePaceSecPerKm), "配速", coral: false)
                 stat("\(Int(workout.energyKilocalories.rounded()))", "千卡", coral: true)
-                stat(Format.integer(workout.averageHeartRate), "心率", coral: true)
+                stat(Format.integer(workout.resolvedAverageHeartRate), "心率", coral: true)
                 stat("\(workout.sessionLoad)", "负荷", coral: false)
             }
         }

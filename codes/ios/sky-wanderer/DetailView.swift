@@ -11,6 +11,13 @@ struct WorkoutDetailView: View {
     var workoutID: UUID
 
     @State private var fitToken = 0
+    @State private var mapStyle = DetailMapStyle.stored
+    @State private var showShare = false
+    @State private var showStyles = false
+    @State private var exporting = false
+    @State private var saveMessage: String?
+    @State private var viewport = CGSize.zero
+    @State private var topInset: CGFloat = 0
 
     private var workout: WorkoutRecord? {
         app.workouts.first { $0.id == workoutID }
@@ -28,12 +35,48 @@ struct WorkoutDetailView: View {
             }
             .scrollIndicators(.hidden)
             .background(SkyTheme.Color.grouped)
+            .onAppear {
+                viewport = geo.size
+                topInset = top
+            }
+            .onChange(of: geo.size) { _, size in
+                viewport = size
+            }
+            .onChange(of: top) { _, inset in
+                topInset = inset
+            }
         }
         .background(SkyTheme.Color.grouped)
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         .task(id: workoutID) {
             await loadContextIfNeeded()
+        }
+        .sheet(isPresented: $showShare) {
+            shareSheet
+                .presentationDetents([.height(220)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(SkyTheme.Color.background)
+        }
+        .sheet(isPresented: $showStyles) {
+            styleSheet
+                .presentationDetents([.height(280)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(SkyTheme.Color.background)
+        }
+        .alert(saveMessage ?? "", isPresented: saveAlertPresented) {
+            Button("好", role: .cancel) {}
+        }
+        .overlay {
+            if exporting {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(SkyTheme.Color.primary)
+                    .padding(SkyTheme.Spacing.section)
+                    .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
+                    .shadow(color: Color.black.opacity(0.12), radius: 12, y: 4)
+                    .accessibilityLabel("正在生成图片")
+            }
         }
         .background {
             InteractivePopGestureEnabler()
@@ -42,65 +85,81 @@ struct WorkoutDetailView: View {
         }
     }
 
+    private var saveAlertPresented: Binding<Bool> {
+        Binding(
+            get: { saveMessage != nil },
+            set: { if !$0 { saveMessage = nil } }
+        )
+    }
+
     private func detail(_ workout: WorkoutRecord, viewportHeight: CGFloat, topInset: CGFloat) -> some View {
         let mapHeight = viewportHeight * 0.56 + topInset
         return VStack(spacing: 0) {
             mapHeader(workout, height: mapHeight, topInset: topInset)
                 .padding(.top, -topInset)
-            summarySheet(workout)
-            VStack(spacing: SkyTheme.Spacing.section) {
-                DetailSplitsCard(workout: workout)
-                paceCard(workout)
-                heartCard(workout)
-                seriesCard(
-                    title: "步频（步/分）",
-                    points: WorkoutDetailMath.positive(workout.cadenceSeries),
-                    average: WorkoutDetailMath.displayAverage(
-                        stored: workout.resolvedAverageCadence,
-                        points: workout.cadenceSeries
-                    ),
-                    extremeTitle: "最大",
-                    digits: 0
-                )
-                seriesCard(
-                    title: "步幅（米/步）",
-                    points: WorkoutDetailMath.positive(workout.stride),
-                    average: WorkoutDetailMath.displayAverage(
-                        stored: workout.averageStrideMeters,
-                        points: workout.stride
-                    ),
-                    extremeTitle: "最大",
-                    digits: 2
-                )
-                seriesCard(
-                    title: "功率（瓦）",
-                    points: WorkoutDetailMath.positive(workout.power),
-                    average: WorkoutDetailMath.mean(workout.power),
-                    extremeTitle: "最大",
-                    digits: 0
-                )
-                seriesCard(
-                    title: "垂直振幅（毫米）",
-                    points: WorkoutDetailMath.positive(workout.verticalOscillation),
-                    average: WorkoutDetailMath.mean(workout.verticalOscillation),
-                    extremeTitle: "最大",
-                    digits: 0
-                )
-                seriesCard(
-                    title: "触地时间（毫秒）",
-                    points: WorkoutDetailMath.positive(workout.groundContact),
-                    average: WorkoutDetailMath.mean(workout.groundContact),
-                    extremeTitle: "最大",
-                    digits: 0
-                )
-                elevationCard(workout)
-            }
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
-            .padding(.top, SkyTheme.Spacing.section)
-            .padding(.bottom, SkyTheme.Spacing.section + SkyTheme.Spacing.related)
-            .frame(maxWidth: .infinity)
-            .background(SkyTheme.Color.grouped)
+            recordColumn(workout, showsCharts: true, overlapsMap: true)
         }
+    }
+
+    private func recordColumn(_ workout: WorkoutRecord, showsCharts: Bool, overlapsMap: Bool) -> some View {
+        VStack(spacing: 0) {
+            summarySheet(workout, overlapsMap: overlapsMap)
+            if showsCharts {
+                charts(workout)
+            }
+        }
+    }
+
+    private func charts(_ workout: WorkoutRecord) -> some View {
+        VStack(spacing: SkyTheme.Spacing.section) {
+            DetailSplitsCard(workout: workout)
+            paceCard(workout)
+            heartCard(workout)
+            seriesCard(
+                title: "步频（步/分）",
+                points: WorkoutDetailMath.positive(workout.cadenceSeries),
+                average: workout.resolvedAverageCadence > 0 ? workout.resolvedAverageCadence : nil,
+                extremeTitle: "最大",
+                digits: 0
+            )
+            seriesCard(
+                title: "步幅（米/步）",
+                points: WorkoutDetailMath.positive(workout.stride),
+                average: WorkoutDetailMath.displayAverage(
+                    stored: workout.averageStrideMeters,
+                    points: workout.stride
+                ),
+                extremeTitle: "最大",
+                digits: 2
+            )
+            seriesCard(
+                title: "功率（瓦）",
+                points: WorkoutDetailMath.positive(workout.power),
+                average: WorkoutDetailMath.mean(workout.power),
+                extremeTitle: "最大",
+                digits: 0
+            )
+            seriesCard(
+                title: "垂直振幅（毫米）",
+                points: WorkoutDetailMath.positive(workout.verticalOscillation),
+                average: WorkoutDetailMath.mean(workout.verticalOscillation),
+                extremeTitle: "最大",
+                digits: 0
+            )
+            seriesCard(
+                title: "触地时间（毫秒）",
+                points: WorkoutDetailMath.positive(workout.groundContact),
+                average: WorkoutDetailMath.mean(workout.groundContact),
+                extremeTitle: "最大",
+                digits: 0
+            )
+            elevationCard(workout)
+        }
+        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .padding(.top, SkyTheme.Spacing.section)
+        .padding(.bottom, SkyTheme.Spacing.section + SkyTheme.Spacing.related)
+        .frame(maxWidth: .infinity)
+        .background(SkyTheme.Color.grouped)
     }
 
     private func mapHeader(_ workout: WorkoutRecord, height: CGFloat, topInset: CGFloat) -> some View {
@@ -112,7 +171,8 @@ struct WorkoutDetailView: View {
                 routeLineWidth: 5,
                 showsEndpoints: workout.route.count >= 2,
                 hidesMapControls: true,
-                fitToken: fitToken
+                fitToken: fitToken,
+                style: mapStyle.mapStyle
             )
             .frame(maxWidth: .infinity)
             .frame(height: height)
@@ -132,10 +192,19 @@ struct WorkoutDetailView: View {
                 mapButton(system: "chevron.left", label: "返回") {
                     dismiss()
                 }
-                Spacer()
-                if workout.route.count >= 2 {
-                    mapButton(system: "location.viewfinder", label: "回到轨迹") {
-                        fitToken += 1
+                Spacer(minLength: SkyTheme.Spacing.controlGap)
+                HStack(spacing: SkyTheme.Spacing.controlGap) {
+                    mapButton(system: "square.and.arrow.up", label: "分享") {
+                        showShare = true
+                    }
+                    .disabled(exporting)
+                    mapButton(system: "square.3.layers.3d", label: "地图样式") {
+                        showStyles = true
+                    }
+                    if workout.route.count >= 2 {
+                        mapButton(system: "location.viewfinder", label: "回到轨迹") {
+                            fitToken += 1
+                        }
                     }
                 }
             }
@@ -157,17 +226,37 @@ struct WorkoutDetailView: View {
         .accessibilityLabel(label)
     }
 
-    private func summarySheet(_ workout: WorkoutRecord) -> some View {
+    private func metricRow(_ cells: [MetricCell]) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ForEach(0..<3, id: \.self) { index in
+                if index < cells.count {
+                    cells[index]
+                } else {
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
+    private func summarySheet(_ workout: WorkoutRecord, overlapsMap: Bool) -> some View {
         VStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
             VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
                 HStack(alignment: .center, spacing: 12) {
-                    avatar(for: workout)
+                    profileAvatar
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(headline(workout))
+                        if let name = accountName {
+                            Text(name)
+                                .font(SkyTheme.Font.subheadline)
+                                .foregroundStyle(SkyTheme.Color.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        Text(workout.sport.title)
                             .font(SkyTheme.Font.title3)
                             .foregroundStyle(SkyTheme.Color.ink)
                             .lineLimit(1)
-                        Text(subheadline(workout))
+                        Text(Format.dateSpan(from: workout.start, to: workout.end))
                             .font(SkyTheme.Font.footnote)
                             .foregroundStyle(SkyTheme.Color.secondary)
                             .lineLimit(2)
@@ -184,20 +273,25 @@ struct WorkoutDetailView: View {
                 placeRow(workout)
             }
 
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
-                spacing: SkyTheme.Spacing.screenInset
-            ) {
-                MetricCell(value: distanceText(workout), label: "距离（公里）", prominent: true, hero: true)
-                MetricCell(value: Format.pace(workout.averagePaceSecPerKm), label: "配速", prominent: true, hero: true)
-                MetricCell(value: Format.clock(workout.elapsedDuration), label: "经过时间", prominent: false, hero: true)
-                MetricCell(value: Format.clock(workout.trainingDuration), label: "训练时间", prominent: false, hero: false)
-                MetricCell(value: countText(Double(workout.sessionLoad)), label: "负荷", prominent: false, hero: false)
-                MetricCell(value: Format.integer(workout.averageHeartRate), label: "心率", prominent: false, hero: false)
-                MetricCell(value: climbText(workout), label: "爬升（米）", prominent: false, hero: false)
-                MetricCell(value: strideText(workout.averageStrideMeters), label: "步幅（米）", prominent: false, hero: false)
-                MetricCell(value: Format.integer(workout.resolvedAverageCadence), label: "步频", prominent: false, hero: false)
-                MetricCell(value: countText(workout.energyKilocalories), label: "能量（千卡）", prominent: false, hero: false)
+            VStack(spacing: SkyTheme.Spacing.screenInset) {
+                metricRow([
+                    MetricCell(value: distanceText(workout), label: "距离（公里）", prominent: true, hero: true),
+                    MetricCell(value: Format.pace(workout.averagePaceSecPerKm), label: "配速", prominent: true, hero: true),
+                    MetricCell(value: Format.clock(workout.trainingDuration), label: "训练时间", prominent: true, hero: true)
+                ])
+                metricRow([
+                    MetricCell(value: Format.clock(workout.elapsedDuration), label: "经过时间", prominent: false, hero: false),
+                    MetricCell(value: countText(Double(workout.sessionLoad)), label: "负荷", prominent: false, hero: false),
+                    MetricCell(value: Format.integer(workout.resolvedAverageHeartRate), label: "心率", prominent: false, hero: false)
+                ])
+                metricRow([
+                    MetricCell(value: climbText(workout), label: "爬升（米）", prominent: false, hero: false),
+                    MetricCell(value: strideText(workout.averageStrideMeters), label: "步幅（米）", prominent: false, hero: false),
+                    MetricCell(value: Format.integer(workout.resolvedAverageCadence), label: "步频", prominent: false, hero: false)
+                ])
+                metricRow([
+                    MetricCell(value: countText(workout.energyKilocalories), label: "能量（千卡）", prominent: false, hero: false)
+                ])
             }
             .padding(SkyTheme.Spacing.cardPadding)
             .background(SkyTheme.Color.grouped, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
@@ -217,42 +311,29 @@ struct WorkoutDetailView: View {
             .fill(SkyTheme.Color.background)
             .shadow(color: Color.black.opacity(0.08), radius: 12, y: -2)
         }
-        .padding(.top, -SkyTheme.Radius.sheet)
+        .padding(.top, overlapsMap ? -SkyTheme.Radius.sheet : 0)
     }
 
+    /// Same face as the home tab-bar avatar. Logged out keeps that scenic placeholder and no name.
     @ViewBuilder
-    private func avatar(for workout: WorkoutRecord) -> some View {
+    private var profileAvatar: some View {
+        let diameter = SkyTheme.Spacing.touchMin
         if app.isLoggedIn {
             AccountAvatarFace(
                 name: app.account?.name ?? "",
                 image: app.accountAvatar,
-                diameter: SkyTheme.Spacing.touchMin,
-                ring: SkyTheme.Color.cardBorder
+                diameter: diameter
             )
         } else {
-            Image(systemName: workout.sport == .running ? "figure.run" : "figure.hiking")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(SkyTheme.Color.onPrimary)
-                .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin)
-                .background(SkyTheme.Color.primary, in: Circle())
-                .accessibilityHidden(true)
+            ScenicAvatar()
+                .frame(width: diameter, height: diameter)
         }
     }
 
-    private func headline(_ workout: WorkoutRecord) -> String {
-        if app.isLoggedIn {
-            let name = app.account?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !name.isEmpty { return name }
-        }
-        return workout.sport.title
-    }
-
-    private func subheadline(_ workout: WorkoutRecord) -> String {
-        let when = Format.dateSpan(from: workout.start, to: workout.end)
-        if headline(workout) == workout.sport.title {
-            return when
-        }
-        return "\(workout.sport.title) · \(when)"
+    private var accountName: String? {
+        guard app.isLoggedIn else { return nil }
+        let name = app.account?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? nil : name
     }
 
     private func weatherRow(_ workout: WorkoutRecord) -> some View {
@@ -366,23 +447,21 @@ struct WorkoutDetailView: View {
             trailing: stat("最佳", Format.pace(WorkoutDetailMath.extreme(points, fastest: true) ?? 0)),
             kind: .pace,
             zones: points.count >= 2 ? WorkoutDetailMath.shares(points: points, bands: WorkoutDetailMath.paceBands) : [],
-            zoneTitle: "配速区间",
-            footnote: points.count >= 2 ? "草稿区间，不是医疗标准。" : nil
+            zoneTitle: "配速区间"
         )
     }
 
     private func heartCard(_ workout: WorkoutRecord) -> some View {
         let points = WorkoutDetailMath.positive(workout.heartRate)
-        let average = WorkoutDetailMath.displayAverage(stored: workout.averageHeartRate, points: points)
+        let average = workout.resolvedAverageHeartRate
         return DetailChartCard(
             title: "心率（次/分）",
             points: points,
-            leading: stat("平均", Format.integer(average ?? 0)),
+            leading: stat("平均", Format.integer(average)),
             trailing: stat("最大", Format.integer(WorkoutDetailMath.extreme(points, fastest: false) ?? 0)),
             kind: .line,
             zones: points.count >= 2 ? WorkoutDetailMath.shares(points: points, bands: WorkoutDetailMath.heartBands) : [],
-            zoneTitle: "心率区间",
-            footnote: points.count >= 2 ? "草稿区间，不是医疗标准。" : nil
+            zoneTitle: "心率区间"
         )
     }
 
@@ -420,6 +499,117 @@ struct WorkoutDetailView: View {
     private func stat(_ title: String, _ value: String) -> String? {
         guard value != "—" else { return nil }
         return "\(title) \(value)"
+    }
+
+    private var shareSheet: some View {
+        VStack(spacing: 0) {
+            shareChoice(title: "首屏", subtitle: "地图和这次的主要数据", kind: .screen)
+            shareChoice(title: "全数据长图", subtitle: "地图、主要数据，以及下面的分段和图表", kind: .full)
+        }
+        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .padding(.top, SkyTheme.Spacing.related)
+        .padding(.bottom, SkyTheme.Spacing.screenInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SkyTheme.Color.background)
+    }
+
+    private func shareChoice(title: String, subtitle: String, kind: DetailShareKind) -> some View {
+        Button {
+            Task { await export(kind) }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(SkyTheme.Font.headline)
+                    .foregroundStyle(SkyTheme.Color.ink)
+                Text(subtitle)
+                    .font(SkyTheme.Font.footnote)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: SkyTheme.Spacing.listRowMin)
+        }
+        .buttonStyle(.plain)
+        .disabled(exporting)
+        .accessibilityLabel(title)
+    }
+
+    private var styleSheet: some View {
+        VStack(spacing: 0) {
+            ForEach(DetailMapStyle.allCases) { style in
+                Button {
+                    mapStyle = style
+                    style.save()
+                } label: {
+                    HStack(spacing: SkyTheme.Spacing.related) {
+                        Text(style.title)
+                            .font(SkyTheme.Font.headline)
+                            .foregroundStyle(SkyTheme.Color.ink)
+                        Spacer(minLength: SkyTheme.Spacing.related)
+                        if mapStyle == style {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(SkyTheme.Color.primary)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .frame(minHeight: SkyTheme.Spacing.listRowMin)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mapStyle == style ? "\(style.title)，已选择" : style.title)
+            }
+        }
+        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .padding(.top, SkyTheme.Spacing.related)
+        .padding(.bottom, SkyTheme.Spacing.screenInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SkyTheme.Color.background)
+    }
+
+    @MainActor
+    private func export(_ kind: DetailShareKind) async {
+        guard let workout, !exporting else { return }
+        exporting = true
+        showShare = false
+        defer { exporting = false }
+        let width = viewport.width > 1 ? viewport.width : 390
+        let mapHeight = max(220, (viewport.height > 1 ? viewport.height : 844) * 0.56 + topInset)
+        let summary = DetailShareImage.render(
+            summarySheet(workout, overlapsMap: false),
+            width: width
+        )
+        let chartImage = kind == .full
+            ? DetailShareImage.render(charts(workout), width: width)
+            : nil
+        guard let summary else {
+            saveMessage = "图片没有生成"
+            return
+        }
+        if kind == .full, chartImage == nil {
+            saveMessage = "图片没有生成"
+            return
+        }
+        guard let map = await DetailShareImage.mapImage(
+            route: workout.route,
+            style: mapStyle,
+            size: CGSize(width: width, height: mapHeight)
+        ) else {
+            saveMessage = "图片没有生成"
+            return
+        }
+        let image = DetailShareImage.assemble(
+            map: map,
+            summary: summary,
+            charts: chartImage,
+            overlap: SkyTheme.Radius.sheet
+        )
+        switch await DetailPhotoLibrary.save(image) {
+        case .saved:
+            saveMessage = "已保存到相册"
+        case .denied:
+            saveMessage = "没有相册权限"
+        case .failed:
+            saveMessage = "图片没有保存"
+        }
     }
 
     private func missing(viewportHeight: CGFloat) -> some View {
@@ -502,7 +692,7 @@ private struct DetailSplitsCard: View {
                     Format.clock(workout.trainingDuration),
                     Format.kilometers(workout.distanceMeters),
                     Format.pace(workout.averagePaceSecPerKm),
-                    Format.integer(workout.averageHeartRate),
+                    Format.integer(workout.resolvedAverageHeartRate),
                     Format.integer(workout.resolvedAverageCadence)
                 ])
             }
@@ -541,7 +731,6 @@ private struct DetailChartCard: View {
     var kind: Kind
     var zones: [ZoneShare] = []
     var zoneTitle: String?
-    var footnote: String?
     var valueDigits: Int = 0
 
     enum Kind {
@@ -577,11 +766,6 @@ private struct DetailChartCard: View {
                     .accessibilityLabel(chartLabel)
                 if let zoneTitle, !zones.isEmpty {
                     zoneBlock(zoneTitle)
-                }
-                if let footnote {
-                    Text(footnote)
-                        .font(SkyTheme.Font.caption)
-                        .foregroundStyle(SkyTheme.Color.secondary)
                 }
             } else {
                 if let leading {
@@ -851,7 +1035,7 @@ private enum WorkoutDetailMath {
         if ordered.count >= 2 {
             for index in 1..<ordered.count {
                 let dt = ordered[index].second - ordered[index - 1].second
-                guard dt > 0, dt <= 30 else { continue }
+                guard dt > 0, dt <= TrainingSeriesMath.pauseGapSeconds else { continue }
                 let value = ordered[index - 1].value
                 guard let band = bands.firstIndex(where: { $0.contains(value) }) else { continue }
                 seconds[band] += dt

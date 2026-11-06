@@ -293,7 +293,7 @@ struct WatchDetailView: View {
                 }
                 Text("\(Format.pace(workout.averagePaceSecPerKm)) 每公里")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("心率 \(Format.integer(workout.averageHeartRate))")
+                Text("心率 \(Format.integer(workout.resolvedAverageHeartRate))")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.omniCoral)
                 RouteMap(route: workout.route, cornerRadius: 12)

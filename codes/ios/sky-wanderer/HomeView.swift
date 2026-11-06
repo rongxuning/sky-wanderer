@@ -256,8 +256,8 @@ private struct AccountAvatarButton: View {
     }
 }
 
-/// Circular landscape stand-in for the home avatar in the approved mockup.
-private struct ScenicAvatar: View {
+/// Circular landscape stand-in for the logged-out avatar. Home tab bar and workout detail share it.
+struct ScenicAvatar: View {
     var body: some View {
         GeometryReader { geo in
             let width = geo.size.width

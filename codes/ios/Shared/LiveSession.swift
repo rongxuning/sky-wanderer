@@ -527,7 +527,8 @@ final class LiveSession: ObservableObject {
         let wall = max(0, end.timeIntervalSince(startedAt))
         let moving = min(max(0, elapsed), wall)
         let hearts = heartSeries.map(\.value)
-        let cadences = cadenceSeries.map(\.value)
+        // `moving` excludes pauses. Samples are taken only while running, so the series
+        // average is training time. The step total is the fallback when that series is empty.
         return WorkoutRecord(
             id: UUID(),
             sport: sport,
@@ -535,8 +536,11 @@ final class LiveSession: ObservableObject {
             end: end,
             distanceMeters: distanceMeters,
             energyKilocalories: energyKilocalories,
-            averageHeartRate: mean(hearts),
-            averageCadence: storedCadence(seriesMean: mean(cadences)),
+            averageHeartRate: TrainingSeriesMath.displayAverage(stored: mean(hearts), points: heartSeries),
+            averageCadence: TrainingSeriesMath.displayAverage(
+                stored: CadenceMath.stepsPerMinute(steps: stepCount, duration: max(moving, 1)),
+                points: cadenceSeries
+            ),
             elevationGainMeters: elevationGainMeters,
             route: recordedRoute,
             splits: splits,
@@ -558,12 +562,6 @@ final class LiveSession: ObservableObject {
         let usable = values.filter { $0 > 0 }
         guard !usable.isEmpty else { return 0 }
         return usable.reduce(0, +) / Double(usable.count)
-    }
-
-    /// Pedometer cadence when it arrived. Otherwise steps over the session, which is the same average.
-    private func storedCadence(seriesMean: Double) -> Double {
-        if seriesMean > 0 { return seriesMean }
-        return CadenceMath.stepsPerMinute(steps: stepCount, duration: max(elapsed, 1))
     }
 }
 

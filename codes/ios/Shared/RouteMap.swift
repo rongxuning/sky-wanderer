@@ -17,6 +17,8 @@ struct RouteMap: View {
     var hidesMapControls: Bool = false
     /// Increment to fit the camera back to the route.
     var fitToken: Int = 0
+    /// Detail can switch styles. Other screens keep the standard map.
+    var style: MapStyle = .standard
 
     @State private var position: MapCameraPosition = .automatic
     @State private var framedUser = false
@@ -66,7 +68,7 @@ struct RouteMap: View {
                 }
             }
         }
-        .mapStyle(.standard)
+        .mapStyle(style)
         .modifier(RouteMapControlModifier(hidden: hidesMapControls))
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onAppear {

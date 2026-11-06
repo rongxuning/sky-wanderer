@@ -400,6 +400,91 @@ do {
     check(false, "legacy workout failed to decode: \(error)")
 }
 
+let steps = 1_500.0
+let elapsedSpan = 900.0
+let movingSpan = 600.0
+near(
+    CadenceMath.stepsPerMinute(steps: steps, duration: elapsedSpan),
+    100,
+    tolerance: 0.01,
+    "steps over elapsed minutes"
+)
+near(
+    CadenceMath.stepsPerMinute(
+        steps: steps,
+        duration: CadenceMath.trainingDuration(moving: movingSpan, elapsed: elapsedSpan)
+    ),
+    150,
+    tolerance: 0.01,
+    "steps over training minutes"
+)
+check(CadenceMath.trainingDuration(moving: movingSpan, elapsed: elapsedSpan) == movingSpan, "moving time is the cadence divisor")
+check(CadenceMath.trainingDuration(moving: 0, elapsed: elapsedSpan) == elapsedSpan, "missing moving time falls back to elapsed")
+
+var stale = makeWorkout(averageCadence: 100)
+stale.distanceMeters = 1000
+stale.trainingDurationSeconds = movingSpan
+stale.averageHeartRate = 120
+stale.heartRate = [
+    SeriesPoint(second: 0, value: 150),
+    SeriesPoint(second: 10, value: 150),
+    SeriesPoint(second: 20, value: 150),
+    SeriesPoint(second: 200, value: 150),
+    SeriesPoint(second: 210, value: 150)
+]
+stale.cadenceSeries = [
+    SeriesPoint(second: 0, value: 180),
+    SeriesPoint(second: 10, value: 180),
+    SeriesPoint(second: 20, value: 180),
+    SeriesPoint(second: 200, value: 160),
+    SeriesPoint(second: 210, value: 160)
+]
+stale.stride = []
+near(stale.resolvedAverageCadence, 5200.0 / 30.0, tolerance: 0.01, "cadence skips the pause gap instead of the stored elapsed mean")
+check(abs(stale.resolvedAverageCadence - 100) > 1, "stale elapsed cadence is not what the detail shows")
+near(stale.resolvedAverageHeartRate, 150, tolerance: 0.01, "heart rate uses the training-interval series")
+check(abs(stale.resolvedAverageHeartRate - 120) > 1, "stale stored heart rate is not what the detail shows")
+let derivedStride = (1000.0 / movingSpan) / (stale.resolvedAverageCadence / 60)
+near(stale.averageStrideMeters, derivedStride, tolerance: 0.001, "derived stride follows the training cadence")
+let elapsedStride = (1000.0 / movingSpan) / (100.0 / 60)
+check(abs(stale.averageStrideMeters - elapsedStride) > 0.1, "derived stride does not follow the elapsed cadence")
+
+var bare = makeWorkout(averageCadence: 158)
+bare.averageHeartRate = 142
+bare.heartRate = []
+bare.cadenceSeries = []
+check(bare.resolvedAverageCadence == 158, "empty cadence series keeps the stored average")
+check(bare.resolvedAverageHeartRate == 142, "empty heart series keeps the stored average")
+
+var zeros = makeWorkout(
+    averageCadence: 158,
+    cadenceSeries: [SeriesPoint(second: 1, value: 0), SeriesPoint(second: 5, value: -3)]
+)
+check(zeros.resolvedAverageCadence == 158, "non-positive cadence samples are not a series average")
+
+var sparse = makeWorkout(
+    averageCadence: 100,
+    cadenceSeries: [SeriesPoint(second: 0, value: 170), SeriesPoint(second: 120, value: 190)]
+)
+near(sparse.resolvedAverageCadence, 180, tolerance: 0.01, "pause-separated samples are not replaced by the stored mean")
+
+var oneSample = makeWorkout(averageCadence: 100, cadenceSeries: [SeriesPoint(second: 4, value: 172)])
+near(oneSample.resolvedAverageCadence, 172, tolerance: 0.01, "one training sample replaces a stale stored mean")
+
+var elapsedOnly = makeWorkout(averageCadence: 100)
+var retrained = makeWorkout(averageCadence: 150)
+let replacedCadence = WorkoutImport.merging(elapsedOnly, with: retrained)
+check(replacedCadence.averageCadence == 150, "re-import replaces elapsed cadence when no series can correct it")
+
+let corrected = RecordStats.make(workouts: [stale], window: .all, now: stale.start)
+near(corrected.averageCadence, stale.resolvedAverageCadence, tolerance: 0.01, "stats cadence uses the training-interval series")
+near(corrected.averageHeartRate, stale.resolvedAverageHeartRate, tolerance: 0.01, "stats heart rate uses the training-interval series")
+near(corrected.averageStrideMeters, stale.averageStrideMeters, tolerance: 0.001, "stats stride follows the corrected cadence")
+check(
+    corrected.totalSessionLoad == Double(stale.sessionLoad),
+    "stats load uses the training-interval heart rate"
+)
+
 if failures.isEmpty {
     print("health-series-check ok")
 } else {

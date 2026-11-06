@@ -233,7 +233,11 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     }
 
     var sessionLoad: Int {
-        TrainingEstimate.sessionLoad(duration: trainingDuration, averageHeartRate: averageHeartRate, sport: sport)
+        TrainingEstimate.sessionLoad(
+            duration: trainingDuration,
+            averageHeartRate: resolvedAverageHeartRate,
+            sport: sport
+        )
     }
 
     /// First route point when it is a finite WGS84 coordinate.
@@ -246,15 +250,14 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
         return first
     }
 
-    /// Steps per minute for the record card.
-    /// Prefers the stored average, then a mean of the cadence series, then split cadence.
-    /// Health imports often leave `averageCadence` at 0 even when a series or later import has steps.
+    /// Steps per minute for the record card, detail grid, and stats.
+    /// A cadence series is averaged over training intervals and wins over the stored mean.
+    /// Health imports used to store steps divided by elapsed wall-clock time, so that scalar
+    /// stays stale until a re-import. With no usable series, the stored average remains,
+    /// then the mean of split cadence.
     var resolvedAverageCadence: Double {
-        if averageCadence > 0 { return averageCadence }
-        let series = cadenceSeries.map(\.value).filter { $0 > 0 }
-        if !series.isEmpty {
-            return series.reduce(0, +) / Double(series.count)
-        }
+        let trained = TrainingSeriesMath.displayAverage(stored: averageCadence, points: cadenceSeries)
+        if trained > 0 { return trained }
         let fromSplits = splits.map(\.cadence).filter { $0 > 0 }
         if !fromSplits.isEmpty {
             return fromSplits.reduce(0, +) / Double(fromSplits.count)
@@ -262,10 +265,18 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
         return 0
     }
 
+    /// Beats per minute for the detail grid, charts, and stats.
+    /// Uses the same training-interval average as cadence when a heart-rate series exists.
+    /// Otherwise the stored workout average.
+    var resolvedAverageHeartRate: Double {
+        TrainingSeriesMath.displayAverage(stored: averageHeartRate, points: heartRate)
+    }
+
     /// Meters per step.
     /// Uses a time-weighted mean of `stride` when that series has samples.
     /// Otherwise derives stride from speed and cadence: (1000 / pace) / (cadence / 60).
-    /// That pace is `averagePaceSecPerKm`, so it uses training time.
+    /// Pace is `averagePaceSecPerKm` (training time) and cadence is `resolvedAverageCadence`,
+    /// so a corrected training-time cadence updates this derived stride.
     /// Returns 0 when neither source exists, or the result is outside 0.30–2.20 m
     /// (HealthKit imports often store an empty stride series and cadence 0).
     var averageStrideMeters: Double {
@@ -605,11 +616,74 @@ enum CadenceMath {
         guard steps > 0, duration > 0 else { return 0 }
         return stepsPerMinute(from: steps / (duration / 60))
     }
+
+    /// Seconds used to turn a step total into steps per minute.
+    /// Moving time (`HKWorkout.duration`, stored as `trainingDurationSeconds`) is the divisor.
+    /// Elapsed wall-clock time is only the fallback when moving time was not recorded.
+    static func trainingDuration(moving: TimeInterval, elapsed: TimeInterval) -> TimeInterval {
+        if moving.isFinite, moving > 0 { return moving }
+        guard elapsed.isFinite, elapsed > 0 else { return 0 }
+        return elapsed
+    }
+}
+
+/// Training-interval means for heart rate and cadence.
+/// Samples are time-weighted while the athlete is moving. A gap longer than
+/// `pauseGapSeconds` is a pause (the same cutoff the detail zone shares use)
+/// and is left out, so it does not dilute the mean the way elapsed time does.
+enum TrainingSeriesMath {
+    static let pauseGapSeconds = 30.0
+
+    /// Trapezoid over consecutive samples at most `pauseGapSeconds` apart.
+    /// Samples separated only by a pause are averaged as observations, not stretched across the gap.
+    /// Nil when the series has no positive finite sample.
+    static func trainingAverage(_ points: [SeriesPoint]) -> Double? {
+        let samples = positiveUnique(points)
+        guard !samples.isEmpty else { return nil }
+        var area = 0.0
+        var span = 0.0
+        if samples.count >= 2 {
+            for index in 1..<samples.count {
+                let dt = samples[index].second - samples[index - 1].second
+                guard dt > 0, dt <= pauseGapSeconds else { continue }
+                area += (samples[index].value + samples[index - 1].value) / 2 * dt
+                span += dt
+            }
+        }
+        if span > 0 { return area / span }
+        return samples.reduce(0) { $0 + $1.value } / Double(samples.count)
+    }
+
+    /// Series training average when it exists. Otherwise a positive stored mean.
+    static func displayAverage(stored: Double, points: [SeriesPoint]) -> Double {
+        if let trained = trainingAverage(points), trained > 0 { return trained }
+        guard stored.isFinite, stored > 0 else { return 0 }
+        return stored
+    }
+
+    private static func positiveUnique(_ points: [SeriesPoint]) -> [SeriesPoint] {
+        var result: [SeriesPoint] = []
+        for point in points.sorted(by: { $0.second < $1.second }) {
+            guard point.second.isFinite, point.value.isFinite, point.value > 0 else { continue }
+            if let previous = result.last {
+                if point.second < previous.second { continue }
+                if point.second == previous.second {
+                    result[result.count - 1] = point
+                    continue
+                }
+            }
+            result.append(point)
+        }
+        return result
+    }
 }
 
 enum WorkoutImport {
     /// Appends new Health workouts and fills cadence or series an earlier import left empty.
     /// A later import that only has empty series does not clear a richer row.
+    /// When this row has no cadence series, a positive imported cadence replaces the stored one,
+    /// so a re-import can correct steps that were divided by elapsed time.
+    /// A row that already has a series keeps its scalar; the open detail page averages the series.
     /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
     static func merge(_ imported: [WorkoutRecord], into workouts: inout [WorkoutRecord]) {
         for record in imported {
@@ -626,7 +700,7 @@ enum WorkoutImport {
 
     static func merging(_ existing: WorkoutRecord, with imported: WorkoutRecord) -> WorkoutRecord {
         var merged = existing
-        if merged.resolvedAverageCadence <= 0, imported.averageCadence > 0 {
+        if merged.cadenceSeries.isEmpty, imported.averageCadence > 0 {
             merged.averageCadence = imported.averageCadence
         }
         let elapsed = max(merged.elapsedDuration, 0)
