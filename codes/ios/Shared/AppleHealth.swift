@@ -95,12 +95,17 @@ enum AppleHealth {
         return await DayHealth(heartRate: heart, sleepHours: sleep, steps: steps)
     }
 
-    /// Steps per minute from the workout's step count.
+    /// Steps per minute from the workout's step count, divided by moving time.
+    /// `HKWorkout.duration` excludes pauses and is the same value stored as `trainingDurationSeconds`.
+    /// Elapsed wall-clock time is only the fallback when that duration was not recorded.
     /// A time-range step query is only the fallback when the workout did not store that statistic.
     /// watchOS 26.5 has no `HKQuantityTypeIdentifier.runningCadence` member, and Apple does not
     /// document that identifier, so both targets use step count.
     private static func cadenceStepsPerMinute(for workout: HKWorkout) async -> Double {
-        let duration = workout.endDate.timeIntervalSince(workout.startDate)
+        let duration = CadenceMath.trainingDuration(
+            moving: workout.duration,
+            elapsed: workout.endDate.timeIntervalSince(workout.startDate)
+        )
         if let steps = sum(workout, identifier: .stepCount, unit: .count()) {
             let normalized = CadenceMath.stepsPerMinute(steps: steps, duration: duration)
             if normalized > 0 { return normalized }
@@ -159,7 +164,7 @@ enum AppleHealth {
         async let distanceSamples = quantitySamples(.distanceWalkingRunning, unit: .meter(), start: windowStart, end: windowEnd)
 
         let route = await routeTask
-        let cadence = await cadenceTask
+        let stepCadence = await cadenceTask
         let heartRate = HealthSeries.instantaneous(await heartSamples, workoutStart: windowStart, workoutEnd: windowEnd)
         let cadenceSeries = HealthSeries.cadence(stepSamples: await stepSamples, workoutStart: windowStart, workoutEnd: windowEnd)
         let stride = HealthSeries.instantaneous(await strideSamples, workoutStart: windowStart, workoutEnd: windowEnd)
@@ -188,8 +193,8 @@ enum AppleHealth {
             end: windowEnd,
             distanceMeters: distance,
             energyKilocalories: energy,
-            averageHeartRate: heart,
-            averageCadence: cadence,
+            averageHeartRate: TrainingSeriesMath.displayAverage(stored: heart, points: heartRate),
+            averageCadence: TrainingSeriesMath.displayAverage(stored: stepCadence, points: cadenceSeries),
             elevationGainMeters: climb,
             route: route,
             splits: track.splits,

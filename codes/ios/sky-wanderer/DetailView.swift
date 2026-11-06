@@ -55,10 +55,7 @@ struct WorkoutDetailView: View {
                 seriesCard(
                     title: "步频（步/分）",
                     points: WorkoutDetailMath.positive(workout.cadenceSeries),
-                    average: WorkoutDetailMath.displayAverage(
-                        stored: workout.resolvedAverageCadence,
-                        points: workout.cadenceSeries
-                    ),
+                    average: workout.resolvedAverageCadence > 0 ? workout.resolvedAverageCadence : nil,
                     extremeTitle: "最大",
                     digits: 0
                 )
@@ -161,13 +158,20 @@ struct WorkoutDetailView: View {
         VStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
             VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
                 HStack(alignment: .center, spacing: 12) {
-                    avatar(for: workout)
+                    profileAvatar
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(headline(workout))
+                        if let name = accountName {
+                            Text(name)
+                                .font(SkyTheme.Font.subheadline)
+                                .foregroundStyle(SkyTheme.Color.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        Text(workout.sport.title)
                             .font(SkyTheme.Font.title3)
                             .foregroundStyle(SkyTheme.Color.ink)
                             .lineLimit(1)
-                        Text(subheadline(workout))
+                        Text(Format.dateSpan(from: workout.start, to: workout.end))
                             .font(SkyTheme.Font.footnote)
                             .foregroundStyle(SkyTheme.Color.secondary)
                             .lineLimit(2)
@@ -190,10 +194,10 @@ struct WorkoutDetailView: View {
             ) {
                 MetricCell(value: distanceText(workout), label: "距离（公里）", prominent: true, hero: true)
                 MetricCell(value: Format.pace(workout.averagePaceSecPerKm), label: "配速", prominent: true, hero: true)
-                MetricCell(value: Format.clock(workout.elapsedDuration), label: "经过时间", prominent: false, hero: true)
-                MetricCell(value: Format.clock(workout.trainingDuration), label: "训练时间", prominent: false, hero: false)
+                MetricCell(value: Format.clock(workout.trainingDuration), label: "训练时间", prominent: true, hero: true)
+                MetricCell(value: Format.clock(workout.elapsedDuration), label: "经过时间", prominent: false, hero: false)
                 MetricCell(value: countText(Double(workout.sessionLoad)), label: "负荷", prominent: false, hero: false)
-                MetricCell(value: Format.integer(workout.averageHeartRate), label: "心率", prominent: false, hero: false)
+                MetricCell(value: Format.integer(workout.resolvedAverageHeartRate), label: "心率", prominent: false, hero: false)
                 MetricCell(value: climbText(workout), label: "爬升（米）", prominent: false, hero: false)
                 MetricCell(value: strideText(workout.averageStrideMeters), label: "步幅（米）", prominent: false, hero: false)
                 MetricCell(value: Format.integer(workout.resolvedAverageCadence), label: "步频", prominent: false, hero: false)
@@ -220,39 +224,26 @@ struct WorkoutDetailView: View {
         .padding(.top, -SkyTheme.Radius.sheet)
     }
 
+    /// Same face as the home tab-bar avatar. Logged out keeps that scenic placeholder and no name.
     @ViewBuilder
-    private func avatar(for workout: WorkoutRecord) -> some View {
+    private var profileAvatar: some View {
+        let diameter = SkyTheme.Spacing.touchMin
         if app.isLoggedIn {
             AccountAvatarFace(
                 name: app.account?.name ?? "",
                 image: app.accountAvatar,
-                diameter: SkyTheme.Spacing.touchMin,
-                ring: SkyTheme.Color.cardBorder
+                diameter: diameter
             )
         } else {
-            Image(systemName: workout.sport == .running ? "figure.run" : "figure.hiking")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(SkyTheme.Color.onPrimary)
-                .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin)
-                .background(SkyTheme.Color.primary, in: Circle())
-                .accessibilityHidden(true)
+            ScenicAvatar()
+                .frame(width: diameter, height: diameter)
         }
     }
 
-    private func headline(_ workout: WorkoutRecord) -> String {
-        if app.isLoggedIn {
-            let name = app.account?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !name.isEmpty { return name }
-        }
-        return workout.sport.title
-    }
-
-    private func subheadline(_ workout: WorkoutRecord) -> String {
-        let when = Format.dateSpan(from: workout.start, to: workout.end)
-        if headline(workout) == workout.sport.title {
-            return when
-        }
-        return "\(workout.sport.title) · \(when)"
+    private var accountName: String? {
+        guard app.isLoggedIn else { return nil }
+        let name = app.account?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? nil : name
     }
 
     private func weatherRow(_ workout: WorkoutRecord) -> some View {
@@ -366,23 +357,21 @@ struct WorkoutDetailView: View {
             trailing: stat("最佳", Format.pace(WorkoutDetailMath.extreme(points, fastest: true) ?? 0)),
             kind: .pace,
             zones: points.count >= 2 ? WorkoutDetailMath.shares(points: points, bands: WorkoutDetailMath.paceBands) : [],
-            zoneTitle: "配速区间",
-            footnote: points.count >= 2 ? "草稿区间，不是医疗标准。" : nil
+            zoneTitle: "配速区间"
         )
     }
 
     private func heartCard(_ workout: WorkoutRecord) -> some View {
         let points = WorkoutDetailMath.positive(workout.heartRate)
-        let average = WorkoutDetailMath.displayAverage(stored: workout.averageHeartRate, points: points)
+        let average = workout.resolvedAverageHeartRate
         return DetailChartCard(
             title: "心率（次/分）",
             points: points,
-            leading: stat("平均", Format.integer(average ?? 0)),
+            leading: stat("平均", Format.integer(average)),
             trailing: stat("最大", Format.integer(WorkoutDetailMath.extreme(points, fastest: false) ?? 0)),
             kind: .line,
             zones: points.count >= 2 ? WorkoutDetailMath.shares(points: points, bands: WorkoutDetailMath.heartBands) : [],
-            zoneTitle: "心率区间",
-            footnote: points.count >= 2 ? "草稿区间，不是医疗标准。" : nil
+            zoneTitle: "心率区间"
         )
     }
 
@@ -502,7 +491,7 @@ private struct DetailSplitsCard: View {
                     Format.clock(workout.trainingDuration),
                     Format.kilometers(workout.distanceMeters),
                     Format.pace(workout.averagePaceSecPerKm),
-                    Format.integer(workout.averageHeartRate),
+                    Format.integer(workout.resolvedAverageHeartRate),
                     Format.integer(workout.resolvedAverageCadence)
                 ])
             }
@@ -541,7 +530,6 @@ private struct DetailChartCard: View {
     var kind: Kind
     var zones: [ZoneShare] = []
     var zoneTitle: String?
-    var footnote: String?
     var valueDigits: Int = 0
 
     enum Kind {
@@ -577,11 +565,6 @@ private struct DetailChartCard: View {
                     .accessibilityLabel(chartLabel)
                 if let zoneTitle, !zones.isEmpty {
                     zoneBlock(zoneTitle)
-                }
-                if let footnote {
-                    Text(footnote)
-                        .font(SkyTheme.Font.caption)
-                        .foregroundStyle(SkyTheme.Color.secondary)
                 }
             } else {
                 if let leading {
@@ -851,7 +834,7 @@ private enum WorkoutDetailMath {
         if ordered.count >= 2 {
             for index in 1..<ordered.count {
                 let dt = ordered[index].second - ordered[index - 1].second
-                guard dt > 0, dt <= 30 else { continue }
+                guard dt > 0, dt <= TrainingSeriesMath.pauseGapSeconds else { continue }
                 let value = ordered[index - 1].value
                 guard let band = bands.firstIndex(where: { $0.contains(value) }) else { continue }
                 seconds[band] += dt
