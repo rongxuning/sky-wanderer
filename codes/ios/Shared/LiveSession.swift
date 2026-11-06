@@ -26,6 +26,11 @@ final class LiveSession: ObservableObject {
     @Published var cadence: Double = 0
     @Published var energyKilocalories: Double = 0
     @Published var elevationGainMeters: Double = 0
+    @Published var elevationLossMeters: Double = 0
+    /// Heart-rate samples taken while moving. The live sheet plots these.
+    @Published private(set) var heartSeries: [SeriesPoint] = []
+    /// Cadence samples taken while moving, in steps per minute.
+    @Published private(set) var cadenceSeries: [SeriesPoint] = []
     /// Downsampled for the map. The saved record and the HealthKit route use `recordedRoute`.
     @Published var route: [GeoPoint] = []
     @Published var splits: [KilometerSplit] = []
@@ -51,10 +56,9 @@ final class LiveSession: ObservableObject {
     private var resumeAnchorDate = Date.distantPast
     private var splitStartDistance = 0.0
     private var splitStartElapsed: TimeInterval = 0
+    private var splitStartEnergy = 0.0
     private var splitHearts: [Double] = []
     private var splitCadences: [Double] = []
-    private var heartSeries: [SeriesPoint] = []
-    private var cadenceSeries: [SeriesPoint] = []
     private var paceSeries: [SeriesPoint] = []
     private var strideSeries: [SeriesPoint] = []
     private var elevationSeries: [SeriesPoint] = []
@@ -91,8 +95,16 @@ final class LiveSession: ObservableObject {
             paceSecPerKm: pace,
             cadence: mean(splitCadences),
             heartRate: mean(splitHearts),
-            partial: true
+            partial: true,
+            energyKilocalories: burnedThisSplit
         )
+    }
+
+    /// Active kilocalories since the current kilometer started.
+    private var burnedThisSplit: Double {
+        let burned = energyKilocalories - splitStartEnergy
+        guard burned.isFinite, burned > 0 else { return 0 }
+        return burned
     }
 
     func start() async {
@@ -415,6 +427,7 @@ final class LiveSession: ObservableObject {
         cadence = 0
         energyKilocalories = 0
         elevationGainMeters = 0
+        elevationLossMeters = 0
         lastLocation = nil
         lastAltitude = nil
         ignoreNextLocation = false
@@ -422,6 +435,7 @@ final class LiveSession: ObservableObject {
         splits = []
         splitStartDistance = 0
         splitStartElapsed = 0
+        splitStartEnergy = 0
         splitHearts = []
         splitCadences = []
         heartSeries = []
@@ -452,31 +466,45 @@ final class LiveSession: ObservableObject {
     }
 
     private func noteAltitude(_ altitude: Double) {
-        if let lastAltitude, altitude > lastAltitude {
-            elevationGainMeters += altitude - lastAltitude
+        guard altitude.isFinite else { return }
+        if let lastAltitude {
+            let delta = altitude - lastAltitude
+            if delta > 0 {
+                elevationGainMeters += delta
+            } else if delta < 0 {
+                elevationLossMeters -= delta
+            }
         }
         lastAltitude = altitude
     }
 
     private func noteSplitProgress() {
-        while distanceMeters - splitStartDistance >= 1000 {
-            closeSplit(distance: 1000, partial: false)
+        let span = distanceMeters - splitStartDistance
+        guard span.isFinite, span >= 1000, span < 400_000 else { return }
+        let pendingKilometers = Int(span / 1000)
+        guard pendingKilometers > 0 else { return }
+        let energyEach = burnedThisSplit / Double(pendingKilometers)
+        for _ in 0..<pendingKilometers {
+            closeSplit(distance: 1000, partial: false, energy: energyEach)
             splitStartDistance += 1000
             splitStartElapsed = elapsed
             splitHearts = []
             splitCadences = []
         }
+        splitStartEnergy = energyKilocalories
     }
 
-    private func closeSplit(distance: Double, partial: Bool) {
+    private func closeSplit(distance: Double, partial: Bool, energy: Double? = nil) {
         let deltaTime = max(1, elapsed - splitStartElapsed)
         let pace = deltaTime / (distance / 1000)
+        let burned = energy ?? burnedThisSplit
         splits.append(KilometerSplit(
             index: splits.count + 1,
             paceSecPerKm: pace,
             cadence: mean(splitCadences),
             heartRate: mean(splitHearts),
-            partial: partial
+            partial: partial,
+            energyKilocalories: burned.isFinite && burned > 0 ? burned : 0
         ))
     }
 

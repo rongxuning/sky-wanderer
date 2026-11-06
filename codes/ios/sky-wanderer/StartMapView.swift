@@ -79,7 +79,7 @@ struct StartMapView: View {
         .sheet(item: $sheet) { item in
             switch item {
             case .type: TypeSheet().presentationDetents([.height(280)])
-            case .settings: StartSettingsSheet(path: $path, sheet: $sheet).presentationDetents([.medium])
+            case .settings: StartSettingsSheet().presentationDetents([.medium])
             }
         }
     }
@@ -206,8 +206,6 @@ struct TypeSheet: View {
 struct StartSettingsSheet: View {
     @EnvironmentObject private var app: PhoneAppState
     @EnvironmentObject private var draft: WorkoutDraft
-    @Binding var path: NavigationPath
-    @Binding var sheet: StartSheet?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -224,15 +222,6 @@ struct StartSettingsSheet: View {
             Text("有健康数据权限时，这次徒步或跑步会写入 Apple 健康。写不进去时，运动页会标明本地模拟。组队位置来自本机模拟，没有服务器。")
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.omniMuted)
-            Button {
-                sheet = nil
-                path.append(TrainRoute.layout)
-            } label: {
-                Text("调整展示位置")
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniCobalt)
-            }
-            .buttonStyle(.plain)
             Spacer()
         }
         .padding(20)
