@@ -73,9 +73,9 @@ private struct LiveBody: View {
                     cornerRadius: 0,
                     routeColor: SkyTheme.Color.primary,
                     plannedColor: SkyTheme.Color.chartNeutral,
-                    hidesMapControls: true,
                     bottomInset: total / 3,
-                    obscuredBottomFraction: 1.0 / 3.0
+                    obscuredBottomFraction: 1.0 / 3.0,
+                    hidesMapControls: true
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
