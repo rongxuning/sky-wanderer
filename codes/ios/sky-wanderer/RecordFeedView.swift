@@ -1,38 +1,18 @@
 import MapKit
 import SwiftUI
 
-private enum RecordFeedSection: Hashable {
-    case list
-    case stats
-}
-
 /// Records tab. Short white cards: map thumbnail, sport, duration, and a three-column metric row.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
-    @State private var section: RecordFeedSection = .list
     @State private var topWorkoutID: UUID?
 
     var body: some View {
-        VStack(spacing: 0) {
-            RecordSectionControl(selection: $section)
-                .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                .padding(.top, SkyTheme.Spacing.related)
-                .padding(.bottom, SkyTheme.Spacing.related)
-                .frame(maxWidth: .infinity)
-                .background(SkyTheme.Color.grouped)
-                .zIndex(1)
-            switch section {
-            case .list:
-                recordList
-            case .stats:
-                RecordStatsPage()
+        recordList
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(SkyTheme.Color.grouped)
+            .task {
+                await app.importFromApple()
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SkyTheme.Color.grouped)
-        .task {
-            await app.importFromApple()
-        }
     }
 
     private var monthLabel: String {
@@ -52,6 +32,7 @@ struct RecordFeedView: View {
                     .foregroundStyle(SkyTheme.Color.ink)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                    .padding(.top, SkyTheme.Spacing.related)
                     .padding(.bottom, SkyTheme.Spacing.related)
                     .background(SkyTheme.Color.grouped)
                     .zIndex(1)
@@ -144,39 +125,17 @@ struct RecordFeedView: View {
     }
 }
 
-private struct RecordSectionControl: View {
-    @Binding var selection: RecordFeedSection
+/// Analysis tab. Same summary the records segment used to show, with no page title.
+struct AnalysisPage: View {
+    @EnvironmentObject private var app: PhoneAppState
 
     var body: some View {
-        HStack(spacing: 4) {
-            segment(.list, title: "记录列表")
-            segment(.stats, title: "统计数据")
-        }
-        .padding(4)
-        .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous))
-        .animation(.easeInOut(duration: 0.18), value: selection)
-    }
-
-    private func segment(_ section: RecordFeedSection, title: String) -> some View {
-        let selected = selection == section
-        return Button {
-            selection = section
-        } label: {
-            Text(title)
-                .font(SkyTheme.Font.subheadline)
-                .fontWeight(.semibold)
-                .foregroundStyle(selected ? SkyTheme.Color.onPrimary : SkyTheme.Color.secondary)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 36)
-                .background {
-                    if selected {
-                        Capsule().fill(SkyTheme.Color.primary)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        RecordStatsPage()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(SkyTheme.Color.grouped)
+            .task {
+                await app.importFromApple()
+            }
     }
 }
 
@@ -192,6 +151,7 @@ private struct RecordStatsPage: View {
         VStack(spacing: 0) {
             periodSwitcher
                 .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                .padding(.top, SkyTheme.Spacing.related)
                 .padding(.bottom, SkyTheme.Spacing.screenInset)
                 .frame(maxWidth: .infinity)
                 .background(SkyTheme.Color.grouped)
