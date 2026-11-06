@@ -32,6 +32,9 @@ struct WorkoutDetailView: View {
         .background(SkyTheme.Color.grouped)
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
+        .task(id: workoutID) {
+            await loadContextIfNeeded()
+        }
         .background {
             InteractivePopGestureEnabler()
                 .frame(width: 0, height: 0)
@@ -156,31 +159,29 @@ struct WorkoutDetailView: View {
 
     private func summarySheet(_ workout: WorkoutRecord) -> some View {
         VStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
-            Capsule()
-                .fill(SkyTheme.Color.tertiary)
-                .frame(width: 36, height: 4)
-                .frame(maxWidth: .infinity)
-                .accessibilityHidden(true)
-
-            HStack(alignment: .center, spacing: 12) {
-                avatar(for: workout)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(headline(workout))
-                        .font(SkyTheme.Font.title3)
-                        .foregroundStyle(SkyTheme.Color.ink)
-                        .lineLimit(1)
-                    Text(subheadline(workout))
-                        .font(SkyTheme.Font.footnote)
-                        .foregroundStyle(SkyTheme.Color.secondary)
-                        .lineLimit(2)
+            VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
+                HStack(alignment: .center, spacing: 12) {
+                    avatar(for: workout)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(headline(workout))
+                            .font(SkyTheme.Font.title3)
+                            .foregroundStyle(SkyTheme.Color.ink)
+                            .lineLimit(1)
+                        Text(subheadline(workout))
+                            .font(SkyTheme.Font.footnote)
+                            .foregroundStyle(SkyTheme.Color.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: SkyTheme.Spacing.related)
+                    if let badge = originBadge(workout) {
+                        Text(badge)
+                            .font(SkyTheme.Font.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(SkyTheme.Color.primary)
+                    }
                 }
-                Spacer(minLength: SkyTheme.Spacing.related)
-                if let badge = originBadge(workout) {
-                    Text(badge)
-                        .font(SkyTheme.Font.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(SkyTheme.Color.primary)
-                }
+                weatherRow(workout)
+                placeRow(workout)
             }
 
             LazyVGrid(
@@ -189,7 +190,8 @@ struct WorkoutDetailView: View {
             ) {
                 MetricCell(value: distanceText(workout), label: "距离（公里）", prominent: true, hero: true)
                 MetricCell(value: Format.pace(workout.averagePaceSecPerKm), label: "配速", prominent: true, hero: true)
-                MetricCell(value: Format.clock(workout.duration), label: "时长", prominent: false, hero: true)
+                MetricCell(value: Format.clock(workout.elapsedDuration), label: "经过时间", prominent: false, hero: true)
+                MetricCell(value: Format.clock(workout.trainingDuration), label: "训练时间", prominent: false, hero: false)
                 MetricCell(value: countText(Double(workout.sessionLoad)), label: "负荷", prominent: false, hero: false)
                 MetricCell(value: Format.integer(workout.averageHeartRate), label: "心率", prominent: false, hero: false)
                 MetricCell(value: climbText(workout), label: "爬升（米）", prominent: false, hero: false)
@@ -199,14 +201,9 @@ struct WorkoutDetailView: View {
             }
             .padding(SkyTheme.Spacing.cardPadding)
             .background(SkyTheme.Color.grouped, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
-
-            Text("上滑查看分段与图表")
-                .font(SkyTheme.Font.caption)
-                .foregroundStyle(SkyTheme.Color.secondary)
-                .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .padding(.top, 12)
+        .padding(.top, SkyTheme.Spacing.screenInset)
         .padding(.bottom, SkyTheme.Spacing.section)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
@@ -251,11 +248,80 @@ struct WorkoutDetailView: View {
     }
 
     private func subheadline(_ workout: WorkoutRecord) -> String {
-        let when = "\(Format.dayTime(workout.start))–\(Format.time(workout.end))"
+        let when = Format.dateSpan(from: workout.start, to: workout.end)
         if headline(workout) == workout.sport.title {
             return when
         }
         return "\(workout.sport.title) · \(when)"
+    }
+
+    private func weatherRow(_ workout: WorkoutRecord) -> some View {
+        let conditions = workout.conditions
+        return HStack(spacing: 14) {
+            contextItem(
+                system: "thermometer.medium",
+                text: Format.celsius(conditions?.temperatureCelsius),
+                label: "气温"
+            )
+            contextItem(
+                system: "humidity.fill",
+                text: Format.humidity(conditions?.relativeHumidityPercent),
+                label: "湿度"
+            )
+            contextItem(
+                system: "aqi.medium",
+                text: Format.airQuality(index: conditions?.airQualityIndex, grade: conditions?.airQualityGrade),
+                label: "空气质量"
+            )
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func placeRow(_ workout: WorkoutRecord) -> some View {
+        let line = Format.startPoint(
+            name: workout.startPlace?.name,
+            latitude: workout.startCoordinate?.latitude,
+            longitude: workout.startCoordinate?.longitude
+        )
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "mappin.and.ellipse")
+                .font(.system(size: 12, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(line)
+                .font(SkyTheme.Font.footnote)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(SkyTheme.Color.secondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("起点 \(line)")
+    }
+
+    private func contextItem(system: String, text: String, label: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: system)
+                .font(.system(size: 12, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(text)
+                .font(SkyTheme.Font.footnote)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .foregroundStyle(SkyTheme.Color.secondary)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label) \(text)")
+    }
+
+    private func loadContextIfNeeded() async {
+        guard let workout else { return }
+        let workoutID = workout.id
+        let patch = await WorkoutContext.load(workout)
+        app.storeWorkoutContext(
+            workoutID: workoutID,
+            conditions: patch.conditions,
+            startPlace: patch.startPlace
+        )
     }
 
     private func originBadge(_ workout: WorkoutRecord) -> String? {
@@ -433,7 +499,7 @@ private struct DetailSplitsCard: View {
                     .padding(.vertical, 4)
                     splitRow([
                     "总计",
-                    Format.clock(workout.duration),
+                    Format.clock(workout.trainingDuration),
                     Format.kilometers(workout.distanceMeters),
                     Format.pace(workout.averagePaceSecPerKm),
                     Format.integer(workout.averageHeartRate),

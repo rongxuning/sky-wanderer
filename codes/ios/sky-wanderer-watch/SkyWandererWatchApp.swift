@@ -280,7 +280,7 @@ struct WatchDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(workout.sport.title)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
-                Text("\(Format.dayTime(workout.start)) · \(Format.duration(workout.duration))")
+                Text("\(Format.dayTime(workout.start)) · \(Format.duration(workout.trainingDuration))")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.omniMuted)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {

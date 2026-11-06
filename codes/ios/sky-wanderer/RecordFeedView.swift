@@ -364,7 +364,7 @@ struct RecordSummaryCard: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
-            Text(RecordCardText.clock(workout.duration))
+            Text(RecordCardText.clock(workout.trainingDuration))
                 .font(SkyTheme.Font.headline)
                 .fontWeight(.bold)
                 .foregroundStyle(SkyTheme.Color.ink)
@@ -488,7 +488,7 @@ struct RecordSummaryCard: View {
         let distance = distanceUnit.map { "\(distanceValue) \($0)" } ?? distanceValue
         return [
             workout.sport.title,
-            "时长 \(RecordCardText.clock(workout.duration))",
+            "训练时间 \(RecordCardText.clock(workout.trainingDuration))",
             "开始 \(RecordCardText.started(workout.start))",
             "距离 \(distance)",
             "配速 \(RecordCardText.pace(workout.averagePaceSecPerKm))",

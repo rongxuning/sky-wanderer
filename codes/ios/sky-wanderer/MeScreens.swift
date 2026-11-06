@@ -328,7 +328,7 @@ struct MeHealthScreen: View {
                         estimate("体能储备", "\(app.estimate.reserve)")
                         estimate("训练负荷", "\(app.estimate.recentLoad)")
                         estimate("休息时间建议", app.estimate.restHint)
-                        Text("近 7 日负荷来自每次的时长和平均心率。")
+                        Text("近 7 日负荷来自每次的训练时间和平均心率。")
                             .font(SkyTheme.Font.footnote)
                             .foregroundStyle(SkyTheme.Color.secondary)
                             .fixedSize(horizontal: false, vertical: true)

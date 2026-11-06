@@ -179,6 +179,8 @@ enum AppleHealth {
             heartRate: heartRate,
             cadence: cadenceSeries
         )
+        let moving = workout.duration
+        let training = moving.isFinite && moving > 0 ? moving : 0
         return WorkoutRecord(
             id: UUID(),
             sport: sport,
@@ -200,7 +202,8 @@ enum AppleHealth {
             power: power,
             verticalOscillation: verticalOscillation,
             origin: .apple,
-            healthKitUUID: workout.uuid.uuidString
+            healthKitUUID: workout.uuid.uuidString,
+            trainingDurationSeconds: training
         )
     }
 

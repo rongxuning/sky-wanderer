@@ -146,6 +146,8 @@ final class LiveSession: ObservableObject {
 
     func pause() {
         guard phase == .running, !paused else { return }
+        let now = Date()
+        elapsed = movingTime(at: now)
         banked = elapsed
         runningSince = nil
         paused = true
@@ -169,10 +171,15 @@ final class LiveSession: ObservableObject {
     }
 
     func stop() async -> WorkoutRecord {
+        let stoppedAt: Date
         if phase == .running {
+            let now = Date()
+            elapsed = movingTime(at: now)
             banked = elapsed
             runningSince = nil
-            elapsed = banked
+            stoppedAt = now
+        } else {
+            stoppedAt = startedAt.addingTimeInterval(max(0, elapsed))
         }
         phase = .finished
         timer?.invalidate()
@@ -194,7 +201,7 @@ final class LiveSession: ObservableObject {
         }
         usedApple = false
         sync.stop()
-        return makeRecord(healthID: healthID)
+        return makeRecord(healthID: healthID, stoppedAt: stoppedAt)
     }
 
     /// Drops the Apple session without saving it, then records only simulated points.
@@ -287,9 +294,7 @@ final class LiveSession: ObservableObject {
 
     private func tick() {
         guard phase == .running, !paused, !leavingApple else { return }
-        if let runningSince {
-            elapsed = banked + Date().timeIntervalSince(runningSince)
-        }
+        elapsed = movingTime(at: Date())
         if simulating {
             advanceSimulation()
         }
@@ -511,8 +516,16 @@ final class LiveSession: ObservableObject {
         }
     }
 
-    private func makeRecord(healthID: String?) -> WorkoutRecord {
-        let end = startedAt.addingTimeInterval(max(elapsed, 1))
+    /// Moving time already banked, plus the current unpaused segment.
+    private func movingTime(at date: Date) -> TimeInterval {
+        guard !paused, let runningSince else { return max(banked, elapsed) }
+        return banked + max(0, date.timeIntervalSince(runningSince))
+    }
+
+    private func makeRecord(healthID: String?, stoppedAt: Date) -> WorkoutRecord {
+        let end = max(stoppedAt, startedAt)
+        let wall = max(0, end.timeIntervalSince(startedAt))
+        let moving = min(max(0, elapsed), wall)
         let hearts = heartSeries.map(\.value)
         let cadences = cadenceSeries.map(\.value)
         return WorkoutRecord(
@@ -536,7 +549,8 @@ final class LiveSession: ObservableObject {
             power: powerSeries,
             verticalOscillation: oscillationSeries,
             origin: simulating ? .simulated : .apple,
-            healthKitUUID: healthID
+            healthKitUUID: healthID,
+            trainingDurationSeconds: moving
         )
     }
 

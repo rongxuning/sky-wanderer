@@ -571,6 +571,23 @@ final class PhoneAppState: ObservableObject {
         }
     }
 
+    /// Writes cached weather or a start-place name onto one record. Other fields stay.
+    func storeWorkoutContext(workoutID: UUID, conditions: WorkoutConditions?, startPlace: WorkoutStartPlace?) {
+        guard conditions != nil || startPlace != nil else { return }
+        mutate { database in
+            guard let index = database.workouts.firstIndex(where: { $0.id == workoutID }) else { return }
+            if let conditions {
+                database.workouts[index].conditions = WorkoutConditions.merging(
+                    database.workouts[index].conditions,
+                    with: conditions
+                )
+            }
+            if let startPlace {
+                database.workouts[index].startPlace = startPlace
+            }
+        }
+    }
+
     func importFromApple() async {
         let source = AppleActivitySource()
         do {
@@ -593,7 +610,7 @@ final class PhoneAppState: ObservableObject {
             createdAt: Date(),
             sport: record.sport,
             distanceMeters: record.distanceMeters,
-            duration: record.duration,
+            duration: record.trainingDuration,
             paceSecPerKm: record.averagePaceSecPerKm,
             energyKilocalories: record.energyKilocalories,
             text: text.trimmingCharacters(in: .whitespacesAndNewlines),

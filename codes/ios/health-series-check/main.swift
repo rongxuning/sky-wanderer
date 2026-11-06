@@ -292,6 +292,56 @@ check(
 check(rows.allSatisfy { !SampleLibrary.isSeededWorkout($0) }, "merge still drops seeded workouts")
 check(!rows.contains { $0.id == imported.id }, "existing uuid is updated in place")
 
+var knownTraining = makeWorkout(averageCadence: 180)
+knownTraining.distanceMeters = 1000
+knownTraining.trainingDurationSeconds = 300
+near(knownTraining.trainingDuration, 300, tolerance: 0.001, "stored training duration is used")
+near(knownTraining.averagePaceSecPerKm, 300, tolerance: 0.001, "pace uses training time")
+near(
+    knownTraining.averageStrideMeters,
+    (1000 / 300) / (180 / 60),
+    tolerance: 0.001,
+    "derived stride uses training pace"
+)
+check(
+    knownTraining.sessionLoad == TrainingEstimate.sessionLoad(duration: 300, averageHeartRate: 150, sport: .running),
+    "load uses training time"
+)
+check(
+    knownTraining.sessionLoad != TrainingEstimate.sessionLoad(duration: knownTraining.elapsedDuration, averageHeartRate: 150, sport: .running),
+    "load is not the elapsed load"
+)
+var tooLong = makeWorkout()
+tooLong.trainingDurationSeconds = 10_000
+check(tooLong.trainingDuration == tooLong.elapsedDuration, "training longer than elapsed falls back")
+var unknownTraining = makeWorkout()
+check(unknownTraining.trainingDurationSeconds == 0, "new records default training duration to unknown")
+check(unknownTraining.trainingDuration == 900, "unknown training duration falls back to elapsed")
+near(unknownTraining.averagePaceSecPerKm, 360, tolerance: 0.001, "unknown training time keeps elapsed pace")
+
+var keptTraining = makeWorkout()
+keptTraining.trainingDurationSeconds = 400
+keptTraining.conditions = WorkoutConditions(temperatureCelsius: 10, weatherReady: true)
+var importedTraining = makeWorkout()
+importedTraining.trainingDurationSeconds = 800
+let keptDuration = WorkoutImport.merging(keptTraining, with: importedTraining)
+check(keptDuration.trainingDurationSeconds == 400, "merge does not replace training duration")
+check(keptDuration.conditions?.temperatureCelsius == 10, "merge keeps cached weather")
+let filledDuration = WorkoutImport.merging(makeWorkout(), with: importedTraining)
+check(filledDuration.trainingDurationSeconds == 800, "merge fills an unknown training duration")
+var tooLongImport = makeWorkout()
+tooLongImport.trainingDurationSeconds = 10_000
+let ignored = WorkoutImport.merging(makeWorkout(), with: tooLongImport)
+check(ignored.trainingDurationSeconds == 0, "merge skips a training duration longer than elapsed")
+var blankTraining = makeWorkout()
+blankTraining.trainingDurationSeconds = 0
+let notCleared = WorkoutImport.merging(keptTraining, with: blankTraining)
+check(notCleared.trainingDurationSeconds == 400, "blank import does not clear training duration")
+
+let paced = RecordStats.make(workouts: [knownTraining], window: .all, now: knownTraining.start)
+near(paced.averagePaceSecPerKm, 300, tolerance: 0.001, "stats pace uses training time")
+check(paced.totalSessionLoad == Double(knownTraining.sessionLoad), "stats load uses training load")
+
 let legacy = """
 {"id":"11111111-1111-1111-1111-111111111111","sport":"running","start":"2026-01-01T00:00:00Z","end":"2026-01-01T00:10:00Z","distanceMeters":1000,"energyKilocalories":50,"averageHeartRate":140,"averageCadence":170,"elevationGainMeters":12,"route":[],"splits":[],"heartRate":[{"second":1,"value":140},{"second":2,"value":142}],"cadenceSeries":[],"paceSeries":[],"stride":[],"elevation":[],"groundContact":[],"power":[],"origin":"apple","healthKitUUID":"abc"}
 """
@@ -302,13 +352,40 @@ do {
     check(legacyRecord.verticalOscillation.isEmpty, "missing verticalOscillation decodes as []")
     check(legacyRecord.heartRate.count == 2, "legacy heart series still decodes")
     check(legacyRecord.healthKitUUID == "abc", "legacy health id decodes")
+    check(legacyRecord.trainingDurationSeconds == 0, "missing training duration is unknown")
+    check(legacyRecord.elapsedDuration == 600, "legacy elapsed is end minus start")
+    check(legacyRecord.trainingDuration == 600, "unknown training duration falls back to elapsed")
+    check(legacyRecord.conditions == nil && legacyRecord.startPlace == nil, "missing context stays empty")
+
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+
+    var enriched = legacyRecord
+    enriched.trainingDurationSeconds = 480
+    enriched.conditions = WorkoutConditions(
+        temperatureCelsius: 18.7,
+        relativeHumidityPercent: 71,
+        airQualityIndex: 84,
+        airQualityGrade: "良",
+        weatherReady: true,
+        airReady: true
+    )
+    enriched.startPlace = WorkoutStartPlace(name: "上海长风公园")
+    let enrichedData = try encoder.encode(enriched)
+    let decodedEnriched = try decoder.decode(WorkoutRecord.self, from: enrichedData)
+    check(decodedEnriched.trainingDurationSeconds == 480, "training duration round-trips")
+    check(decodedEnriched.trainingDuration == 480, "stored training duration within elapsed is used")
+    check(decodedEnriched.conditions?.temperatureCelsius == 18.7, "temperature round-trips")
+    check(decodedEnriched.conditions?.airQualityGrade == "良", "air grade round-trips")
+    check(decodedEnriched.conditions?.weatherReady == true && decodedEnriched.conditions?.airReady == true, "ready flags round-trip")
+    check(decodedEnriched.startPlace?.name == "上海长风公园", "place name round-trips")
+    enriched.trainingDurationSeconds = 10_000
+    check(enriched.trainingDuration == 600, "a stored duration past elapsed falls back")
 
     let legacyDatabase = try decoder.decode(Database.self, from: Data("{\"workouts\":[\(legacy)]}".utf8))
     check(legacyDatabase.workouts.count == 1, "phone file without the new key still loads")
     check(legacyDatabase.workouts[0].verticalOscillation.isEmpty, "loaded workout defaults the new series")
 
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
     let encoded = try encoder.encode(imported)
     var object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] ?? [:]
     check(object["verticalOscillation"] != nil, "encoder writes verticalOscillation")
