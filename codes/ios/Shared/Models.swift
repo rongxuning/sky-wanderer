@@ -105,6 +105,79 @@ struct KilometerSplit: Codable, Hashable, Identifiable {
     var id: Int { index }
 }
 
+/// Historical weather cached for one workout. A ready flag means that source
+/// answered for the start hour, even when the hour itself had no number.
+struct WorkoutConditions: Codable, Hashable {
+    var temperatureCelsius: Double?
+    var relativeHumidityPercent: Double?
+    var airQualityIndex: Int?
+    var airQualityGrade: String?
+    var weatherReady: Bool
+    var airReady: Bool
+
+    init(
+        temperatureCelsius: Double? = nil,
+        relativeHumidityPercent: Double? = nil,
+        airQualityIndex: Int? = nil,
+        airQualityGrade: String? = nil,
+        weatherReady: Bool = false,
+        airReady: Bool = false
+    ) {
+        self.temperatureCelsius = temperatureCelsius
+        self.relativeHumidityPercent = relativeHumidityPercent
+        self.airQualityIndex = airQualityIndex
+        self.airQualityGrade = airQualityGrade
+        self.weatherReady = weatherReady
+        self.airReady = airReady
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case temperatureCelsius, relativeHumidityPercent, airQualityIndex, airQualityGrade
+        case weatherReady, airReady
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        temperatureCelsius = try container.decodeIfPresent(Double.self, forKey: .temperatureCelsius)
+        relativeHumidityPercent = try container.decodeIfPresent(Double.self, forKey: .relativeHumidityPercent)
+        airQualityIndex = try container.decodeIfPresent(Int.self, forKey: .airQualityIndex)
+        airQualityGrade = try container.decodeIfPresent(String.self, forKey: .airQualityGrade)
+        weatherReady = try container.decodeIfPresent(Bool.self, forKey: .weatherReady) ?? false
+        airReady = try container.decodeIfPresent(Bool.self, forKey: .airReady) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(temperatureCelsius, forKey: .temperatureCelsius)
+        try container.encodeIfPresent(relativeHumidityPercent, forKey: .relativeHumidityPercent)
+        try container.encodeIfPresent(airQualityIndex, forKey: .airQualityIndex)
+        try container.encodeIfPresent(airQualityGrade, forKey: .airQualityGrade)
+        try container.encode(weatherReady, forKey: .weatherReady)
+        try container.encode(airReady, forKey: .airReady)
+    }
+
+    /// Fills only the sources the update actually fetched.
+    static func merging(_ base: WorkoutConditions?, with update: WorkoutConditions) -> WorkoutConditions {
+        var result = base ?? WorkoutConditions()
+        if update.weatherReady {
+            result.temperatureCelsius = update.temperatureCelsius
+            result.relativeHumidityPercent = update.relativeHumidityPercent
+            result.weatherReady = true
+        }
+        if update.airReady {
+            result.airQualityIndex = update.airQualityIndex
+            result.airQualityGrade = update.airQualityGrade
+            result.airReady = true
+        }
+        return result
+    }
+}
+
+/// Cached reverse-geocode of the first route point. Presence means the lookup finished.
+struct WorkoutStartPlace: Codable, Hashable {
+    var name: String?
+}
+
 struct WorkoutRecord: Codable, Hashable, Identifiable {
     var id: UUID
     var sport: SportKind
@@ -128,16 +201,49 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     var verticalOscillation: [SeriesPoint] = []
     var origin: WorkoutOrigin
     var healthKitUUID: String?
+    /// Moving seconds, excluding pauses. `0` or a missing key means unknown.
+    var trainingDurationSeconds: TimeInterval = 0
+    var conditions: WorkoutConditions?
+    var startPlace: WorkoutStartPlace?
 
-    var duration: TimeInterval { end.timeIntervalSince(start) }
+    /// Wall-clock span from `start` to `end`, including any pauses.
+    var elapsedDuration: TimeInterval { end.timeIntervalSince(start) }
+
+    /// Moving time. Unknown or implausible stored values fall back to elapsed time,
+    /// so records saved before this field existed keep their old pace and load.
+    var trainingDuration: TimeInterval {
+        let elapsed = elapsedDuration
+        guard trainingDurationSeconds.isFinite,
+              trainingDurationSeconds > 0,
+              elapsed.isFinite,
+              trainingDurationSeconds <= elapsed else {
+            return elapsed
+        }
+        return trainingDurationSeconds
+    }
+
+    /// Elapsed wall-clock time. Pace, load, and list cards use `trainingDuration`.
+    var duration: TimeInterval { elapsedDuration }
 
     var averagePaceSecPerKm: Double {
         guard distanceMeters > 1 else { return 0 }
-        return duration / (distanceMeters / 1000)
+        let moving = trainingDuration
+        guard moving > 0 else { return 0 }
+        return moving / (distanceMeters / 1000)
     }
 
     var sessionLoad: Int {
-        TrainingEstimate.sessionLoad(duration: duration, averageHeartRate: averageHeartRate, sport: sport)
+        TrainingEstimate.sessionLoad(duration: trainingDuration, averageHeartRate: averageHeartRate, sport: sport)
+    }
+
+    /// First route point when it is a finite WGS84 coordinate.
+    var startCoordinate: GeoPoint? {
+        guard let first = route.first,
+              first.latitude.isFinite,
+              first.longitude.isFinite,
+              (-90...90).contains(first.latitude),
+              (-180...180).contains(first.longitude) else { return nil }
+        return first
     }
 
     /// Steps per minute for the record card.
@@ -159,6 +265,7 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     /// Meters per step.
     /// Uses a time-weighted mean of `stride` when that series has samples.
     /// Otherwise derives stride from speed and cadence: (1000 / pace) / (cadence / 60).
+    /// That pace is `averagePaceSecPerKm`, so it uses training time.
     /// Returns 0 when neither source exists, or the result is outside 0.30–2.20 m
     /// (HealthKit imports often store an empty stride series and cadence 0).
     var averageStrideMeters: Double {
@@ -295,7 +402,7 @@ extension WorkoutRecord {
         case averageHeartRate, averageCadence, elevationGainMeters
         case route, splits, heartRate, cadenceSeries, paceSeries
         case stride, elevation, groundContact, power, verticalOscillation
-        case origin, healthKitUUID
+        case origin, healthKitUUID, trainingDurationSeconds, conditions, startPlace
     }
 
     init(from decoder: Decoder) throws {
@@ -321,6 +428,9 @@ extension WorkoutRecord {
         verticalOscillation = try container.decodeIfPresent([SeriesPoint].self, forKey: .verticalOscillation) ?? []
         origin = try container.decode(WorkoutOrigin.self, forKey: .origin)
         healthKitUUID = try container.decodeIfPresent(String.self, forKey: .healthKitUUID)
+        trainingDurationSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .trainingDurationSeconds) ?? 0
+        conditions = try container.decodeIfPresent(WorkoutConditions.self, forKey: .conditions)
+        startPlace = try container.decodeIfPresent(WorkoutStartPlace.self, forKey: .startPlace)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -346,6 +456,9 @@ extension WorkoutRecord {
         try container.encode(verticalOscillation, forKey: .verticalOscillation)
         try container.encode(origin, forKey: .origin)
         try container.encodeIfPresent(healthKitUUID, forKey: .healthKitUUID)
+        try container.encode(trainingDurationSeconds, forKey: .trainingDurationSeconds)
+        try container.encodeIfPresent(conditions, forKey: .conditions)
+        try container.encodeIfPresent(startPlace, forKey: .startPlace)
     }
 }
 
@@ -515,6 +628,12 @@ enum WorkoutImport {
         var merged = existing
         if merged.resolvedAverageCadence <= 0, imported.averageCadence > 0 {
             merged.averageCadence = imported.averageCadence
+        }
+        let elapsed = max(merged.elapsedDuration, 0)
+        if merged.trainingDurationSeconds <= 0,
+           imported.trainingDurationSeconds > 0,
+           imported.trainingDurationSeconds <= elapsed {
+            merged.trainingDurationSeconds = imported.trainingDurationSeconds
         }
         fill(&merged.splits, imported.splits)
         fill(&merged.heartRate, imported.heartRate)

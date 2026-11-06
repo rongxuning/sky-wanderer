@@ -162,7 +162,7 @@ struct ShareComposer: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("分享到社交")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                    Text("\(record.sport.title) · \(Format.kilometers(record.distanceMeters)) 公里 · \(Format.pace(record.averagePaceSecPerKm)) · \(Format.duration(record.duration))")
+                    Text("\(record.sport.title) · \(Format.kilometers(record.distanceMeters)) 公里 · \(Format.pace(record.averagePaceSecPerKm)) · \(Format.duration(record.trainingDuration))")
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.omniMuted)
                     if let notice {

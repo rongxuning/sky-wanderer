@@ -84,4 +84,68 @@ enum Format {
         guard value > 0 else { return "—" }
         return String(Int(value.rounded()))
     }
+
+    /// Detail sheet. Home cards keep `dayTime` and `relativeDayTime`, which omit the year.
+    static func dateSpan(from start: Date, to end: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy年M月d日"
+        return "\(formatter.string(from: start)) \(time(start))–\(time(end))"
+    }
+
+    static func celsius(_ value: Double?) -> String {
+        guard let value, value.isFinite else { return "—" }
+        return String(format: "%.1f°C", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    static func humidity(_ value: Double?) -> String {
+        guard let value, value.isFinite, value >= 0, value <= 100 else { return "—" }
+        return "\(Int(value.rounded()))%"
+    }
+
+    /// Chinese grades for an AQI number. Bands match the familiar 优/良 scale.
+    static func airQualityGrade(_ index: Int) -> String {
+        switch index {
+        case ..<0:
+            return ""
+        case 0...50:
+            return "优"
+        case 51...100:
+            return "良"
+        case 101...150:
+            return "轻度"
+        case 151...200:
+            return "中度"
+        case 201...300:
+            return "重度"
+        default:
+            return "严重"
+        }
+    }
+
+    static func airQuality(index: Int?, grade: String?) -> String {
+        guard let index, index >= 0 else { return "—" }
+        let stored = grade?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let label = stored.isEmpty ? airQualityGrade(index) : stored
+        if label.isEmpty { return "\(index)" }
+        return "\(index) \(label)"
+    }
+
+    /// Place name plus the start coordinate. No coordinate → 「—」.
+    static func startPoint(name: String?, latitude: Double?, longitude: Double?) -> String {
+        guard let latitude, let longitude,
+              latitude.isFinite, longitude.isFinite,
+              (-90...90).contains(latitude),
+              (-180...180).contains(longitude) else { return "—" }
+        let numbers = String(
+            format: "%.6f, %.6f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            latitude,
+            longitude
+        )
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty { return numbers }
+        return "\(trimmed) · \(numbers)"
+    }
 }
