@@ -67,7 +67,8 @@ final class PhoneAppState: ObservableObject {
                 points: track.points,
                 kind: .gpx,
                 importedAt: Date(),
-                creator: track.creator
+                creator: track.creator,
+                waypoints: track.waypoints
             )
         )
         database.sampleRouteSeeded = true
@@ -117,7 +118,8 @@ final class PhoneAppState: ObservableObject {
         }
     }
 
-    func addGPXRoutes(_ imported: [GPXTrack]) -> [String] {
+    /// Saves each track as its own route. `source` is the original GPX; every created route gets its own copy.
+    func addGPXRoutes(_ imported: [GPXTrack], source: Data) -> [String] {
         var identifiers: [String] = []
         var fresh: [[GeoPoint]] = []
         mutate { database in
@@ -132,6 +134,7 @@ final class PhoneAppState: ObservableObject {
                     suffix += 1
                 }
                 let creator = item.creator.trimmingCharacters(in: .whitespacesAndNewlines)
+                let filename = RouteGPXStore.save(source, routeID: identifier)
                 database.routes.append(
                     SavedRoute(
                         id: identifier,
@@ -139,7 +142,9 @@ final class PhoneAppState: ObservableObject {
                         points: item.points,
                         kind: .gpx,
                         importedAt: Date(),
-                        creator: creator
+                        creator: creator,
+                        waypoints: item.waypoints,
+                        gpxFilename: filename
                     )
                 )
                 identifiers.append(identifier)
@@ -154,9 +159,11 @@ final class PhoneAppState: ObservableObject {
 
     func deleteRoute(id: String) {
         guard id != SavedRoute.presetRunningID else { return }
+        let filename = database.routes.first(where: { $0.id == id && $0.kind == .gpx })?.gpxFilename
         mutate { database in
             database.routes.removeAll { $0.id == id && $0.kind == .gpx }
         }
+        RouteGPXStore.delete(filename: filename)
     }
 
     var metricOrder: [LiveBlock] {

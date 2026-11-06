@@ -495,6 +495,15 @@ struct PlannedRoute: Identifiable, Hashable {
     static let free = PlannedRoute(id: "free", name: "自由", points: [])
 }
 
+/// A named point from a GPX file. `elevation` is the GPX `<ele>` in meters.
+/// Old saves have no waypoint list and decode as an empty array.
+struct RouteWaypoint: Codable, Hashable {
+    var name: String
+    var latitude: Double
+    var longitude: Double
+    var elevation: Double?
+}
+
 /// A route kept on this device. There is no server.
 struct SavedRoute: Codable, Hashable, Identifiable {
     var id: String
@@ -505,6 +514,11 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     var importedAt: Date?
     /// Person named in the GPX. Empty when the file does not say.
     var creator: String
+    /// Checkpoints parsed at import. Empty when the file has none.
+    /// Routes saved before checkpoints existed also decode as empty and stay empty until the file is imported again.
+    var waypoints: [RouteWaypoint]
+    /// Original GPX relative to Application Support, `gpx/<id>.gpx`. Nil when this route has no stored file.
+    var gpxFilename: String?
 
     enum Kind: String, Codable {
         /// The one running route the phone editor can change.
@@ -521,7 +535,9 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         points: [GeoPoint],
         kind: Kind,
         importedAt: Date? = nil,
-        creator: String = ""
+        creator: String = "",
+        waypoints: [RouteWaypoint] = [],
+        gpxFilename: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -529,6 +545,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         self.kind = kind
         self.importedAt = importedAt
         self.creator = creator
+        self.waypoints = waypoints
+        self.gpxFilename = gpxFilename
     }
 
     var creatorLabel: String {
@@ -537,7 +555,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, points, kind, importedAt, creator
+        case id, name, points, kind, importedAt, creator, waypoints, gpxFilename
     }
 
     init(from decoder: Decoder) throws {
@@ -548,6 +566,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         kind = try container.decode(Kind.self, forKey: .kind)
         importedAt = try container.decodeIfPresent(Date.self, forKey: .importedAt)
         creator = try container.decodeIfPresent(String.self, forKey: .creator) ?? ""
+        waypoints = try container.decodeIfPresent([RouteWaypoint].self, forKey: .waypoints) ?? []
+        gpxFilename = try container.decodeIfPresent(String.self, forKey: .gpxFilename)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -558,6 +578,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         try container.encode(kind, forKey: .kind)
         try container.encodeIfPresent(importedAt, forKey: .importedAt)
         try container.encode(creator, forKey: .creator)
+        try container.encode(waypoints, forKey: .waypoints)
+        try container.encodeIfPresent(gpxFilename, forKey: .gpxFilename)
     }
 }
 
