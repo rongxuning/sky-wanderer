@@ -346,6 +346,7 @@ final class RouteMapContainer: UIView {
 struct OfflineRouteMap: UIViewRepresentable {
     var routeID: String
     var points: [GeoPoint]
+    var checkpoints: [RouteCheckpointMark]
     var zoomMultiplier: Double
     var zoomArmed: Bool
     var tileEpoch: Int
@@ -384,9 +385,13 @@ struct OfflineRouteMap: UIViewRepresentable {
         map.isZoomEnabled = !zoomArmed
         map.isRotateEnabled = false
         map.isPitchEnabled = false
+        let checkpointKey = checkpoints.map { "\($0.id):\($0.name):\($0.latitude):\($0.longitude)" }.joined(separator: "|")
         if coordinator.routeID != routeID {
-            coordinator.install(routeID: routeID, points: points, tileEpoch: tileEpoch, map: map)
+            coordinator.install(routeID: routeID, points: points, checkpoints: checkpoints, tileEpoch: tileEpoch, map: map)
             return
+        }
+        if coordinator.checkpointKey != checkpointKey {
+            coordinator.replaceCheckpoints(checkpoints, on: map)
         }
         if coordinator.tileEpoch != tileEpoch {
             coordinator.tileEpoch = tileEpoch
@@ -407,6 +412,7 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     var onZoomChanged: ((Double) -> Void)?
     var onZoomDrag: ((ZoomDragPhase) -> Void)?
     var routeID = ""
+    var checkpointKey = ""
     var zoomArmed = false
     var tileEpoch = -1
     var appliedMultiplier = 1.0
@@ -419,12 +425,14 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     private var tileOverlay: MKTileOverlay?
     private var halo: MKPolyline?
     private var polyline: MKPolyline?
+    private var checkpointAnnotations: [CheckpointAnnotation] = []
 
-    func install(routeID: String, points: [GeoPoint], tileEpoch: Int, map: MKMapView) {
+    func install(routeID: String, points: [GeoPoint], checkpoints: [RouteCheckpointMark], tileEpoch: Int, map: MKMapView) {
         self.routeID = routeID
         self.tileEpoch = tileEpoch
         fitted = GeoFit.region(points.map(\.coordinate))
         replacePolyline(points, on: map)
+        replaceCheckpoints(checkpoints, on: map)
         replaceTiles(on: map)
         guard let fitted else { return }
         lockingFit = true
@@ -489,6 +497,15 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
         onZoomChanged?(next)
     }
 
+    func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+        guard let mark = annotation as? CheckpointAnnotation else { return nil }
+        let view = mapView.dequeueReusableAnnotationView(withIdentifier: CheckpointMarkerView.reuseID) as? CheckpointMarkerView
+            ?? CheckpointMarkerView(annotation: mark, reuseIdentifier: CheckpointMarkerView.reuseID)
+        view.annotation = mark
+        view.apply(name: mark.title ?? "")
+        return view
+    }
+
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         if let tiles = overlay as? MKTileOverlay {
             return MKTileOverlayRenderer(tileOverlay: tiles)
@@ -538,6 +555,22 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
         polyline = line
     }
 
+    func replaceCheckpoints(_ marks: [RouteCheckpointMark], on map: MKMapView) {
+        if !checkpointAnnotations.isEmpty {
+            map.removeAnnotations(checkpointAnnotations)
+        }
+        let notes = marks.compactMap { mark -> CheckpointAnnotation? in
+            guard mark.latitude.isFinite, mark.longitude.isFinite else { return nil }
+            return CheckpointAnnotation(
+                name: mark.name,
+                coordinate: CLLocationCoordinate2D(latitude: mark.latitude, longitude: mark.longitude)
+            )
+        }
+        checkpointAnnotations = notes
+        checkpointKey = marks.map { "\($0.id):\($0.name):\($0.latitude):\($0.longitude)" }.joined(separator: "|")
+        map.addAnnotations(notes)
+    }
+
     private func liftLines(on map: MKMapView) {
         if let halo {
             map.removeOverlay(halo)
@@ -547,5 +580,65 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
             map.removeOverlay(polyline)
             map.addOverlay(polyline)
         }
+    }
+}
+
+final class CheckpointAnnotation: NSObject, MKAnnotation {
+    let title: String?
+    let coordinate: CLLocationCoordinate2D
+
+    init(name: String, coordinate: CLLocationCoordinate2D) {
+        title = name
+        self.coordinate = coordinate
+        super.init()
+    }
+}
+
+/// Small circle with the checkpoint name. The circle, not the label, sits on the coordinate.
+final class CheckpointMarkerView: MKAnnotationView {
+    static let reuseID = "route-checkpoint"
+
+    private let dot = UIView()
+    private let nameLabel = UILabel()
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        dot.backgroundColor = UIColor(red: 2 / 255, green: 132 / 255, blue: 199 / 255, alpha: 1)
+        dot.layer.borderColor = UIColor.white.cgColor
+        dot.layer.borderWidth = 1.5
+        dot.isUserInteractionEnabled = false
+        nameLabel.font = .systemFont(ofSize: 11, weight: .bold)
+        nameLabel.textColor = UIColor(red: 15 / 255, green: 23 / 255, blue: 42 / 255, alpha: 1)
+        nameLabel.backgroundColor = UIColor.white.withAlphaComponent(0.92)
+        nameLabel.layer.cornerRadius = 4
+        nameLabel.clipsToBounds = true
+        nameLabel.textAlignment = .center
+        nameLabel.isUserInteractionEnabled = false
+        addSubview(dot)
+        addSubview(nameLabel)
+        canShowCallout = false
+        isEnabled = false
+        isUserInteractionEnabled = false
+        displayPriority = .required
+        backgroundColor = .clear
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func apply(name: String) {
+        nameLabel.text = name
+        let textWidth = nameLabel.sizeThatFits(CGSize(width: 160, height: 16)).width
+        let labelWidth = min(160, max(18, textWidth + 8))
+        let labelHeight: CGFloat = 16
+        let dotSide: CGFloat = 10
+        nameLabel.frame = CGRect(x: dotSide + 3, y: 0, width: labelWidth, height: labelHeight)
+        dot.frame = CGRect(x: 0, y: (labelHeight - dotSide) / 2, width: dotSide, height: dotSide)
+        dot.layer.cornerRadius = dotSide / 2
+        bounds = CGRect(x: 0, y: 0, width: nameLabel.frame.maxX, height: labelHeight)
+        centerOffset = CGPoint(x: bounds.midX - dot.frame.midX, y: bounds.midY - dot.frame.midY)
+        isAccessibilityElement = true
+        accessibilityLabel = name
     }
 }
