@@ -148,7 +148,7 @@ struct RoutesLibraryView: View {
                 importError = "这个文件里没有路线点。"
                 return
             }
-            let identifiers = app.addGPXRoutes(parsed)
+            let identifiers = app.addGPXRoutes(parsed, source: data)
             if identifiers.isEmpty {
                 importError = "这个文件里没有路线点。"
             }
@@ -277,10 +277,12 @@ struct RouteDetailView: View {
     }
 
     private func detail(_ route: SavedRoute) -> some View {
-        ZStack {
+        let layout = RouteCheckpoints.layout(waypoints: route.waypoints, points: route.points)
+        return ZStack {
             OfflineRouteMap(
                 routeID: route.id,
                 points: route.points,
+                checkpoints: layout.marks,
                 zoomMultiplier: multiplier,
                 zoomArmed: zoomArmed,
                 tileEpoch: tileStatus.revision,
@@ -328,21 +330,20 @@ struct RouteDetailView: View {
             .padding(.top, 8)
         }
         .overlay(alignment: .bottom) {
-            Group {
-                if showsChart {
-                    ElevationChangeChart(points: route.points)
-                } else {
-                    infoPanel(route)
+            // Equal 12pt side insets. Tools sit above the card and do not narrow it.
+            VStack(alignment: .trailing, spacing: 10) {
+                toolColumn
+                Group {
+                    if showsChart {
+                        ElevationChangeChart(points: route.points, layout: layout)
+                    } else {
+                        infoPanel(route)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12)
             .padding(.bottom, 12)
-            .padding(.trailing, 62)
-        }
-        .overlay(alignment: .trailing) {
-            toolColumn
-                .padding(.trailing, 12)
-                .padding(.bottom, 48)
         }
         .onAppear { tileStatus.refresh(for: route.points) }
         .task(id: route.id) {
@@ -482,10 +483,15 @@ struct RouteDetailView: View {
 
 private struct ElevationChangeChart: View {
     var points: [GeoPoint]
+    var layout: RouteCheckpointLayout
 
     private var samples: [ElevationSample] {
         RouteStats.profile(points)
     }
+
+    private var marks: [RouteCheckpointMark] { layout.marks }
+
+    private var segments: [RouteSegmentSummary] { layout.segments }
 
     private var flat: Bool {
         let values = samples.map(\.changeMeters)
@@ -495,7 +501,7 @@ private struct ElevationChangeChart: View {
     }
 
     private var yDomain: ClosedRange<Double> {
-        let values = samples.map(\.changeMeters)
+        let values = samples.map(\.changeMeters) + marks.map(\.changeMeters)
         let low = values.min() ?? 0
         let high = values.max() ?? 0
         if high - low < 1 {
@@ -513,6 +519,11 @@ private struct ElevationChangeChart: View {
             Text(flat ? "海拔几乎没有变化" : "横轴是距离，纵轴是相对起点的升降")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.omniMuted)
+            if marks.isEmpty {
+                Text("这条路线没有检查点")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.omniMuted)
+            }
             if samples.count < 2 {
                 Text("点数不够，画不出曲线")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -537,15 +548,58 @@ private struct ElevationChangeChart: View {
                     RuleMark(y: .value("起点", 0))
                         .foregroundStyle(Color.omniIdle)
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    ForEach(marks) { mark in
+                        RuleMark(x: .value("距离", mark.distanceKilometers))
+                            .foregroundStyle(Color.omniIdle)
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                        PointMark(
+                            x: .value("距离", mark.distanceKilometers),
+                            y: .value("海拔变化", mark.changeMeters)
+                        )
+                        .foregroundStyle(Color.omniInk)
+                        .symbolSize(40)
+                        .annotation(position: .top, spacing: 2) {
+                            Text(mark.name)
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color.omniInk)
+                                .lineLimit(1)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(Color.white.opacity(0.92), in: Capsule())
+                        }
+                    }
                 }
                 .chartYScale(domain: yDomain)
                 .chartXAxisLabel("距离 (公里)")
                 .chartYAxisLabel("海拔变化 (米)")
                 .chartLegend(.hidden)
                 .frame(height: 150)
-                .accessibilityLabel("海拔变化图")
+                .accessibilityLabel(marks.isEmpty ? "海拔变化图，没有检查点" : "海拔变化图")
+            }
+            if !segments.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(segments) { segment in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(segment.title)
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color.omniInk)
+                                    .lineLimit(1)
+                                Text("距离 \(routeKilometers(segment.distanceMeters)) · 爬升 \(routeMeters(segment.ascentMeters)) · 下降 \(routeMeters(segment.descentMeters))")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(Color.omniMuted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                }
+                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+                .frame(height: min(CGFloat(segments.count) * 44, 160))
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .glass(radius: 22)
     }
