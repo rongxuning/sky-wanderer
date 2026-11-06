@@ -10,7 +10,13 @@ struct RouteMap: View {
     var cornerRadius: CGFloat = 0
     /// Recorded-route stroke. Other screens keep the historical cobalt default.
     var routeColor: Color = Color.omniCobalt
+    /// Planned-route stroke. Other screens keep the historical ice default.
+    var plannedColor: Color = Color.omniIce
     var routeLineWidth: CGFloat = 4
+    /// Pushes the legal label above a bottom sheet. `0` leaves the map's own safe area.
+    var bottomInset: CGFloat = 0
+    /// Fraction of the map covered from the bottom. Shifts the camera so the track stays visible.
+    var obscuredBottomFraction: Double = 0
     /// Start dot and end square. Off unless a detail screen asks for them.
     var showsEndpoints: Bool = false
     /// Hides the compass and other Map controls. The legal label stays.
@@ -34,7 +40,7 @@ struct RouteMap: View {
             }
             if planned.count >= 2 {
                 MapPolyline(coordinates: planned.map(\.coordinate))
-                    .stroke(Color.omniIce, lineWidth: 4)
+                    .stroke(plannedColor, lineWidth: 4)
             }
             if route.count >= 2 {
                 MapPolyline(coordinates: route.map(\.coordinate))
@@ -70,6 +76,7 @@ struct RouteMap: View {
         }
         .mapStyle(style)
         .modifier(RouteMapControlModifier(hidden: hidesMapControls))
+        .modifier(RouteMapBottomInset(length: bottomInset))
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onAppear {
             frameCamera()
@@ -128,7 +135,32 @@ struct RouteMap: View {
             }
             return
         }
-        position = .region(region)
+        position = .region(biased(region))
+    }
+
+    /// Moves the fitted region up so a bottom sheet does not cover the track.
+    private func biased(_ region: MKCoordinateRegion) -> MKCoordinateRegion {
+        let fraction = obscuredBottomFraction
+        guard fraction > 0.05, fraction < 0.85 else { return region }
+        let visible = 1 - fraction
+        guard visible > 0.1 else { return region }
+        var shifted = region
+        shifted.span.latitudeDelta = region.span.latitudeDelta / visible
+        shifted.center.latitude = region.center.latitude - shifted.span.latitudeDelta * fraction / 2
+        return shifted
+    }
+}
+
+private struct RouteMapBottomInset: ViewModifier {
+    var length: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if length > 0 {
+            content.safeAreaPadding(.bottom, length)
+        } else {
+            content
+        }
     }
 }
 

@@ -101,8 +101,51 @@ struct KilometerSplit: Codable, Hashable, Identifiable {
     var cadence: Double
     var heartRate: Double
     var partial: Bool
+    /// Active energy for this kilometer, in kilocalories. `0` when that split was saved
+    /// before the live screen recorded energy, or when the session had none.
+    var energyKilocalories: Double
 
     var id: Int { index }
+
+    init(
+        index: Int,
+        paceSecPerKm: Double,
+        cadence: Double,
+        heartRate: Double,
+        partial: Bool,
+        energyKilocalories: Double = 0
+    ) {
+        self.index = index
+        self.paceSecPerKm = paceSecPerKm
+        self.cadence = cadence
+        self.heartRate = heartRate
+        self.partial = partial
+        self.energyKilocalories = energyKilocalories
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case index, paceSecPerKm, cadence, heartRate, partial, energyKilocalories
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        index = try container.decode(Int.self, forKey: .index)
+        paceSecPerKm = try container.decode(Double.self, forKey: .paceSecPerKm)
+        cadence = try container.decode(Double.self, forKey: .cadence)
+        heartRate = try container.decode(Double.self, forKey: .heartRate)
+        partial = try container.decode(Bool.self, forKey: .partial)
+        energyKilocalories = try container.decodeIfPresent(Double.self, forKey: .energyKilocalories) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(index, forKey: .index)
+        try container.encode(paceSecPerKm, forKey: .paceSecPerKm)
+        try container.encode(cadence, forKey: .cadence)
+        try container.encode(heartRate, forKey: .heartRate)
+        try container.encode(partial, forKey: .partial)
+        try container.encode(energyKilocalories, forKey: .energyKilocalories)
+    }
 }
 
 /// Historical weather cached for one workout. A ready flag means that source

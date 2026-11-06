@@ -485,6 +485,26 @@ check(
     "stats load uses the training-interval heart rate"
 )
 
+do {
+    let legacy = Data(#"{"index":1,"paceSecPerKm":300,"cadence":170,"heartRate":150,"partial":false}"#.utf8)
+    let decoded = try JSONDecoder().decode(KilometerSplit.self, from: legacy)
+    check(decoded.energyKilocalories == 0, "old splits decode without per-km energy")
+    check(decoded.index == 1 && decoded.paceSecPerKm == 300 && decoded.partial == false, "old split fields stay")
+    let stamped = KilometerSplit(
+        index: 2,
+        paceSecPerKm: 310,
+        cadence: 168,
+        heartRate: 148,
+        partial: true,
+        energyKilocalories: 42
+    )
+    let round = try JSONDecoder().decode(KilometerSplit.self, from: JSONEncoder().encode(stamped))
+    near(round.energyKilocalories, 42, tolerance: 0.01, "split energy round-trips")
+    check(round.partial && round.heartRate == 148 && round.cadence == 168, "split energy coding keeps the other fields")
+} catch {
+    check(false, "split energy coding failed: \(error)")
+}
+
 if failures.isEmpty {
     print("health-series-check ok")
 } else {
