@@ -10,6 +10,8 @@
 	<string>Sky 用当前位置判断当地日出和日落，并在开始和进行运动时显示位置和路线。</string>
 	<key>NSMotionUsageDescription</key>
 	<string>sky-wanderer 用步数估算运动中的步频。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Sky 把分享出去的运动图片保存到相册，只写入这一张图，不读取相册里的其他照片。</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
