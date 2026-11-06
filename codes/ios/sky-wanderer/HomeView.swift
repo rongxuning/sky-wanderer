@@ -11,6 +11,7 @@ enum HomeRoute: Hashable {
 
 private enum SkyTab: Hashable {
     case records
+    case analysis
     case training
     case routes
 }
@@ -19,6 +20,7 @@ struct SkyHome: View {
     @EnvironmentObject private var app: PhoneAppState
     @State private var tab: SkyTab = .records
     @State private var recordsPath = NavigationPath()
+    @State private var analysisPath = NavigationPath()
     @State private var trainingPath = NavigationPath()
     @State private var routesPath = NavigationPath()
     @State private var showLogin = false
@@ -26,6 +28,7 @@ struct SkyHome: View {
     private var showsTabBar: Bool {
         switch tab {
         case .records: recordsPath.isEmpty
+        case .analysis: analysisPath.isEmpty
         case .training: trainingPath.isEmpty
         case .routes: routesPath.isEmpty
         }
@@ -42,6 +45,16 @@ struct SkyHome: View {
             .zIndex(tab == .records ? 1 : 0)
             .allowsHitTesting(tab == .records)
             .accessibilityHidden(tab != .records)
+
+            stack(path: $analysisPath) {
+                tabScreen {
+                    AnalysisPage()
+                }
+            }
+            .opacity(tab == .analysis ? 1 : 0)
+            .zIndex(tab == .analysis ? 1 : 0)
+            .allowsHitTesting(tab == .analysis)
+            .accessibilityHidden(tab != .analysis)
 
             stack(path: $trainingPath) {
                 tabScreen {
@@ -84,18 +97,12 @@ struct SkyHome: View {
         }
         .onChange(of: app.finishedToken) { _, token in
             guard token > 0 else { return }
-            recordsPath = NavigationPath()
-            trainingPath = NavigationPath()
-            routesPath = NavigationPath()
-            tab = .records
+            returnToRecords()
         }
         .onChange(of: app.isLoggedIn) { _, loggedIn in
             showLogin = false
             guard !loggedIn else { return }
-            recordsPath = NavigationPath()
-            trainingPath = NavigationPath()
-            routesPath = NavigationPath()
-            tab = .records
+            returnToRecords()
         }
         .fullScreenCover(isPresented: $showLogin) {
             AuthFlow()
@@ -141,6 +148,8 @@ struct SkyHome: View {
             switch tab {
             case .records:
                 recordsPath.append(HomeRoute.me)
+            case .analysis:
+                analysisPath.append(HomeRoute.me)
             case .training:
                 trainingPath.append(HomeRoute.me)
             case .routes:
@@ -149,6 +158,15 @@ struct SkyHome: View {
         } else {
             showLogin = true
         }
+    }
+
+    /// Finished workouts and logout both land on an empty records stack.
+    private func returnToRecords() {
+        recordsPath = NavigationPath()
+        analysisPath = NavigationPath()
+        trainingPath = NavigationPath()
+        routesPath = NavigationPath()
+        tab = .records
     }
 }
 
@@ -373,16 +391,22 @@ private extension View {
 }
 
 /// Capsule width inside the centered avatar + tabs cluster.
-/// 70% of the width left after the avatar, the 8pt gap, and the screen insets, and at least three touch targets.
+/// Four tabs, still under the design-system ceiling of five.
+/// Three tabs used 70% of the width left after the avatar, the gap, and the screen insets.
+/// Four two-character labels keep that per-tab width (70% × 4/3). That share is capped at the leftover width.
+/// The capsule is also at least four touch targets.
 private enum SkyTabBarMetrics {
+    static let tabCount: CGFloat = 4
+
     static func width(in containerWidth: CGFloat) -> CGFloat {
         let avatar = SkyTheme.Spacing.touchMin + 4
         let besideCluster = containerWidth
             - SkyTheme.Spacing.screenInset * 2
             - avatar
             - SkyTheme.Spacing.controlGap
-        let narrowed = besideCluster * 0.7
-        let minimum = SkyTheme.Spacing.touchMin * 3
+        let fraction = min(0.7 * tabCount / 3, 1)
+        let narrowed = besideCluster * fraction
+        let minimum = SkyTheme.Spacing.touchMin * tabCount
         return max(narrowed, minimum)
     }
 }
@@ -393,6 +417,7 @@ private struct SkyGlassTabBar: View {
     var body: some View {
         HStack(spacing: 0) {
             item(.records, symbol: "book", title: "记录")
+            item(.analysis, symbol: "chart.bar", title: "分析")
             item(.training, symbol: "figure.run", title: "训练")
             item(.routes, symbol: "map", title: "路线")
         }
@@ -432,6 +457,7 @@ private struct SkyGlassTabBar: View {
     private func filled(_ symbol: String) -> String {
         switch symbol {
         case "book": return "book.fill"
+        case "chart.bar": return "chart.bar.fill"
         case "map": return "map.fill"
         default: return symbol
         }
