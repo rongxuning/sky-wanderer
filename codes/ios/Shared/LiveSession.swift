@@ -96,7 +96,9 @@ final class LiveSession: ObservableObject {
             cadence: mean(splitCadences),
             heartRate: mean(splitHearts),
             partial: true,
-            energyKilocalories: burnedThisSplit
+            energyKilocalories: burnedThisSplit,
+            distanceMeters: deltaDistance,
+            durationSeconds: deltaTime
         )
     }
 
@@ -504,7 +506,9 @@ final class LiveSession: ObservableObject {
             cadence: mean(splitCadences),
             heartRate: mean(splitHearts),
             partial: partial,
-            energyKilocalories: burned.isFinite && burned > 0 ? burned : 0
+            energyKilocalories: burned.isFinite && burned > 0 ? burned : 0,
+            distanceMeters: distance,
+            durationSeconds: deltaTime
         ))
     }
 
@@ -555,8 +559,8 @@ final class LiveSession: ObservableObject {
         let wall = max(0, end.timeIntervalSince(startedAt))
         let moving = min(max(0, elapsed), wall)
         let hearts = heartSeries.map(\.value)
-        // `moving` excludes pauses. Samples are taken only while running, so the series
-        // average is training time. The step total is the fallback when that series is empty.
+        // Headline cadence is total steps ÷ moving minutes. The series stays on the chart.
+        let stepCadence = CadenceMath.stepsPerMinute(steps: stepCount, duration: max(moving, 1))
         return WorkoutRecord(
             id: UUID(),
             sport: sport,
@@ -565,10 +569,9 @@ final class LiveSession: ObservableObject {
             distanceMeters: distanceMeters,
             energyKilocalories: energyKilocalories,
             averageHeartRate: TrainingSeriesMath.displayAverage(stored: mean(hearts), points: heartSeries),
-            averageCadence: TrainingSeriesMath.displayAverage(
-                stored: CadenceMath.stepsPerMinute(steps: stepCount, duration: max(moving, 1)),
-                points: cadenceSeries
-            ),
+            averageCadence: stepCadence > 0
+                ? stepCadence
+                : TrainingSeriesMath.displayAverage(stored: 0, points: cadenceSeries),
             elevationGainMeters: elevationGainMeters,
             route: recordedRoute,
             splits: splits,

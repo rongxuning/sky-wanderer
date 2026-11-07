@@ -170,13 +170,19 @@ enum SampleLibrary {
         let distance = kilometers * 1000
         let route = routeLine(start: start, meters: distance, lat: originLat, lon: originLon, climb: climb)
         let fullCount = Int(kilometers)
+        let remainder = distance - Double(fullCount) * 1000
         let splits: [KilometerSplit] = paces.enumerated().map { index, pace in
-            KilometerSplit(
+            let partial = index >= fullCount
+            let meters = partial ? remainder : 1000
+            return KilometerSplit(
                 index: index + 1,
                 paceSecPerKm: pace,
                 cadence: cadence + Double((index % 5) - 2),
                 heartRate: heart + Double((index % 4) - 1),
-                partial: index >= fullCount
+                partial: partial,
+                energyKilocalories: 0,
+                distanceMeters: meters,
+                durationSeconds: pace * (meters / 1000)
             )
         }
         return WorkoutRecord(

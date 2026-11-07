@@ -118,17 +118,14 @@ struct WorkoutDetailView: View {
             seriesCard(
                 title: "步频（步/分）",
                 points: WorkoutDetailMath.positive(workout.cadenceSeries),
-                average: workout.resolvedAverageCadence > 0 ? workout.resolvedAverageCadence : nil,
+                average: TrainingSeriesMath.trainingAverage(workout.cadenceSeries),
                 extremeTitle: "最大",
                 digits: 0
             )
             seriesCard(
                 title: "步幅（米/步）",
                 points: WorkoutDetailMath.positive(workout.stride),
-                average: WorkoutDetailMath.displayAverage(
-                    stored: workout.averageStrideMeters,
-                    points: workout.stride
-                ),
+                average: TrainingSeriesMath.spanAverage(workout.stride),
                 extremeTitle: "最大",
                 digits: 2
             )
@@ -663,9 +660,10 @@ private struct DetailSplitsCard: View {
     var workout: WorkoutRecord
 
     var body: some View {
+        let splits = workout.resolvedSplits
         VStack(alignment: .leading, spacing: 12) {
-            DetailSectionTitle(title: "分段信息", trailing: workout.splits.isEmpty ? nil : "每公里")
-            if workout.splits.isEmpty {
+            DetailSectionTitle(title: "分段信息", trailing: splits.isEmpty ? nil : "每公里")
+            if splits.isEmpty {
                 Text("这次没有每公里数据")
                     .font(SkyTheme.Font.subheadline)
                     .foregroundStyle(SkyTheme.Color.secondary)
@@ -673,11 +671,11 @@ private struct DetailSplitsCard: View {
                     .padding(.vertical, SkyTheme.Spacing.related)
             } else {
                 splitRow(["圈数", "时间", "距离", "配速", "心率", "步频"], header: true)
-                ForEach(workout.splits) { split in
+                ForEach(splits) { split in
                     splitRow([
                         "\(split.index)",
-                        split.partial ? "—" : Format.clock(split.paceSecPerKm),
-                        split.partial ? "未满" : "1.00",
+                        split.listedTimeText,
+                        split.listedDistanceText,
                         Format.pace(split.paceSecPerKm),
                         Format.integer(split.heartRate),
                         Format.integer(split.cadence)

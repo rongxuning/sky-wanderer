@@ -74,6 +74,14 @@ enum HealthSeries {
 
     /// Pace and splits prefer a timestamped route. Distance samples are the fallback.
     /// Elevation always comes from route altitudes.
+    ///
+    /// Kilometer cuts use `referenceDistanceMeters` when that official distance is
+    /// trustworthy: the route (or the distance samples) only decides when each meter
+    /// happened, then the timeline is scaled so the last point matches the official
+    /// total. Split durations use moving time. A gap longer than
+    /// `TrainingSeriesMath.pauseGapSeconds` whose speed is under 0.5 m/s is a pause
+    /// or a GPS hole and adds no time. When `trainingDuration` is the workout's
+    /// moving time, split durations are scaled so they sum to it.
     static func track(
         route: [GeoPoint],
         distanceSamples: [HealthQuantitySample],
@@ -81,7 +89,8 @@ enum HealthSeries {
         workoutEnd: Date,
         referenceDistanceMeters: Double,
         heartRate: [SeriesPoint],
-        cadence: [SeriesPoint]
+        cadence: [SeriesPoint],
+        trainingDuration: TimeInterval = 0
     ) -> Track {
         let followed = routeTimeline(route, workoutStart: workoutStart, workoutEnd: workoutEnd)
         let routeMeters = followed.last?.meters ?? 0
@@ -96,16 +105,52 @@ enum HealthSeries {
                 referenceDistanceMeters: referenceDistanceMeters
             )
         }
+        let aligned = alignedToOfficialDistance(movement, officialMeters: referenceDistanceMeters)
         return Track(
             pace: pace(from: movement),
-            splits: splits(from: movement, heartRate: heartRate, cadence: cadence),
+            splits: splits(
+                from: aligned,
+                heartRate: heartRate,
+                cadence: cadence,
+                trainingDuration: trainingDuration
+            ),
             elevation: elevation(route, workoutStart: workoutStart, workoutEnd: workoutEnd)
         )
     }
 
     private struct TimedDistance {
+        /// Seconds after the workout start, on the wall clock. Heart rate and cadence
+        /// samples use this axis.
         var second: Double
+        /// Moving seconds, with pauses and long GPS holes removed.
+        var movingSecond: Double
         var meters: Double
+    }
+
+    /// Official workout distance is trustworthy when both totals are real and within
+    /// a factor of two. A mountain GPS trace often lands a little short of HealthKit;
+    /// a trace that is half or twice the official distance is left alone.
+    private static func alignedToOfficialDistance(
+        _ timeline: [TimedDistance],
+        officialMeters: Double
+    ) -> [TimedDistance] {
+        guard let last = timeline.last, last.meters >= 50,
+              officialMeters.isFinite, officialMeters >= 50 else { return timeline }
+        let ratio = officialMeters / last.meters
+        guard ratio >= 0.5, ratio <= 2 else { return timeline }
+        guard abs(last.meters - officialMeters) > 0.5 else { return timeline }
+        return timeline.map {
+            TimedDistance(second: $0.second, movingSecond: $0.movingSecond, meters: $0.meters * ratio)
+        }
+    }
+
+    /// Time credited to one movement segment. Long, near-stopped gaps are pauses.
+    private static func movingCredit(dt: Double, meters: Double) -> Double {
+        guard dt.isFinite, dt > 0, meters.isFinite, meters > 0 else { return 0 }
+        if dt > TrainingSeriesMath.pauseGapSeconds, meters / dt < 0.5 {
+            return 0
+        }
+        return dt
     }
 
     static func second(_ date: Date, start: Date, end: Date) -> Double {
@@ -161,7 +206,7 @@ enum HealthSeries {
             )
         }.sorted { $0.second < $1.second }
         guard let first = stamped.first else { return [] }
-        var timeline = [TimedDistance(second: first.second, meters: 0)]
+        var timeline = [TimedDistance(second: first.second, movingSecond: 0, meters: 0)]
         var traveled = 0.0
         var anchor = first
         for point in stamped.dropFirst() {
@@ -178,7 +223,8 @@ enum HealthSeries {
                 continue
             }
             traveled += meters
-            timeline.append(TimedDistance(second: point.second, meters: traveled))
+            let moving = timeline[timeline.count - 1].movingSecond + movingCredit(dt: dt, meters: meters)
+            timeline.append(TimedDistance(second: point.second, movingSecond: moving, meters: traveled))
             anchor = point
         }
         return timeline
@@ -209,14 +255,17 @@ enum HealthSeries {
             let startSecond = second(sample.start, start: workoutStart, end: workoutEnd)
             let endSecond = second(sample.end, start: workoutStart, end: workoutEnd)
             if timeline.isEmpty {
-                timeline.append(TimedDistance(second: startSecond, meters: 0))
+                timeline.append(TimedDistance(second: startSecond, movingSecond: 0, meters: 0))
             }
             traveled += delta
-            let pointSecond = max(endSecond, timeline[timeline.count - 1].second)
-            if pointSecond == timeline[timeline.count - 1].second {
-                timeline[timeline.count - 1] = TimedDistance(second: pointSecond, meters: traveled)
+            let previous = timeline[timeline.count - 1]
+            let pointSecond = max(endSecond, previous.second)
+            let sampleDt = max(0, endSecond - startSecond)
+            let moving = previous.movingSecond + movingCredit(dt: sampleDt, meters: delta)
+            if pointSecond == previous.second {
+                timeline[timeline.count - 1] = TimedDistance(second: pointSecond, movingSecond: moving, meters: traveled)
             } else {
-                timeline.append(TimedDistance(second: pointSecond, meters: traveled))
+                timeline.append(TimedDistance(second: pointSecond, movingSecond: moving, meters: traveled))
             }
         }
         return timeline
@@ -246,14 +295,16 @@ enum HealthSeries {
     private static func splits(
         from timeline: [TimedDistance],
         heartRate: [SeriesPoint],
-        cadence: [SeriesPoint]
+        cadence: [SeriesPoint],
+        trainingDuration: TimeInterval
     ) -> [KilometerSplit] {
         guard let first = timeline.first, let last = timeline.last, last.meters > 30 else { return [] }
         var splits: [KilometerSplit] = []
-        var splitStart = first.second
+        var splitStartWall = first.second
+        var splitStartMoving = first.movingSecond
         var nextKilometer = 1
         var cursor = 1
-        while cursor < timeline.count, nextKilometer <= 300 {
+        while cursor < timeline.count, nextKilometer <= 500 {
             let previous = timeline[cursor - 1]
             let current = timeline[cursor]
             let target = Double(nextKilometer) * 1000
@@ -262,32 +313,56 @@ enum HealthSeries {
                 continue
             }
             let fraction = (target - previous.meters) / (current.meters - previous.meters)
-            let crossed = previous.second + (current.second - previous.second) * fraction
-            let dt = crossed - splitStart
-            if dt > 0 {
-                splits.append(KilometerSplit(
-                    index: splits.count + 1,
-                    paceSecPerKm: dt,
-                    cadence: mean(cadence, from: splitStart, to: crossed, includingEnd: false),
-                    heartRate: mean(heartRate, from: splitStart, to: crossed, includingEnd: false),
-                    partial: false
-                ))
-                splitStart = crossed
-            }
+            let crossedWall = previous.second + (current.second - previous.second) * fraction
+            let crossedMoving = previous.movingSecond + (current.movingSecond - previous.movingSecond) * fraction
+            let dt = max(0, crossedMoving - splitStartMoving)
+            splits.append(KilometerSplit(
+                index: splits.count + 1,
+                paceSecPerKm: dt,
+                cadence: mean(cadence, from: splitStartWall, to: crossedWall, includingEnd: false),
+                heartRate: mean(heartRate, from: splitStartWall, to: crossedWall, includingEnd: false),
+                partial: false,
+                energyKilocalories: 0,
+                distanceMeters: 1000,
+                durationSeconds: dt
+            ))
+            splitStartWall = crossedWall
+            splitStartMoving = crossedMoving
             nextKilometer += 1
         }
         let leftover = last.meters - Double(nextKilometer - 1) * 1000
-        let dt = last.second - splitStart
+        let dt = max(0, last.movingSecond - splitStartMoving)
         if leftover > 30, dt > 0 {
             splits.append(KilometerSplit(
                 index: splits.count + 1,
                 paceSecPerKm: dt / (leftover / 1000),
-                cadence: mean(cadence, from: splitStart, to: last.second, includingEnd: true),
-                heartRate: mean(heartRate, from: splitStart, to: last.second, includingEnd: true),
-                partial: true
+                cadence: mean(cadence, from: splitStartWall, to: last.second, includingEnd: true),
+                heartRate: mean(heartRate, from: splitStartWall, to: last.second, includingEnd: true),
+                partial: true,
+                energyKilocalories: 0,
+                distanceMeters: leftover,
+                durationSeconds: dt
             ))
         }
-        return splits
+        return fitted(splits, to: trainingDuration)
+    }
+
+    /// Scales split durations so they add up to the workout's training time.
+    private static func fitted(_ splits: [KilometerSplit], to trainingDuration: TimeInterval) -> [KilometerSplit] {
+        guard trainingDuration.isFinite, trainingDuration > 0 else { return splits }
+        let sum = splits.reduce(0.0) { $0 + max(0, $1.durationSeconds) }
+        guard sum > 0 else { return splits }
+        let factor = trainingDuration / sum
+        guard abs(factor - 1) > 0.0001 else { return splits }
+        return splits.map { split in
+            var copy = split
+            copy.durationSeconds = split.durationSeconds * factor
+            let kilometers = split.distanceMeters / 1000
+            if kilometers > 0 {
+                copy.paceSecPerKm = copy.durationSeconds / kilometers
+            }
+            return copy
+        }
     }
 
     private static func mean(
@@ -339,5 +414,58 @@ enum HealthSeries {
         let dLon = (lon2 - lon1) * .pi / 180
         let a = sin(dLat / 2) * sin(dLat / 2) + cos(p1) * cos(p2) * sin(dLon / 2) * sin(dLon / 2)
         return 2 * radius * asin(min(1, sqrt(max(0, a))))
+    }
+}
+
+extension WorkoutRecord {
+    /// Kilometer rows for the detail table and the share image.
+    /// Stored splits from an older import were cut on the raw GPS length and have no
+    /// leftover distance, so they are rebuilt from the saved route, official distance,
+    /// and training time. A record that already matches that distance keeps its splits.
+    var resolvedSplits: [KilometerSplit] {
+        guard distanceMeters > 30 else { return splits }
+        if splitsMatchOfficialDistance() { return splits }
+        let rebuilt = HealthSeries.track(
+            route: route,
+            distanceSamples: [],
+            workoutStart: start,
+            workoutEnd: end,
+            referenceDistanceMeters: distanceMeters,
+            heartRate: heartRate,
+            cadence: cadenceSeries,
+            trainingDuration: storedTrainingDuration
+        ).splits
+        return rebuilt.isEmpty ? splits : rebuilt
+    }
+
+    /// Moving time actually stored on the record. `0` when the file only has elapsed time.
+    private var storedTrainingDuration: TimeInterval {
+        guard trainingDurationSeconds.isFinite,
+              trainingDurationSeconds > 0,
+              elapsedDuration.isFinite,
+              trainingDurationSeconds <= elapsedDuration else { return 0 }
+        return trainingDurationSeconds
+    }
+
+    /// True when the saved rows already use the official distance, including a measured leftover.
+    private func splitsMatchOfficialDistance() -> Bool {
+        guard distanceMeters >= 50, !splits.isEmpty else { return false }
+        guard splits.allSatisfy({ $0.durationSeconds > 0 }) else { return false }
+        let full = Int(distanceMeters / 1000)
+        let remainder = distanceMeters - Double(full) * 1000
+        let completed = splits.filter { !$0.partial }
+        guard completed.count == full else { return false }
+        guard completed.allSatisfy({ abs($0.distanceMeters - 1000) < 5 }) else { return false }
+        if remainder > 30 {
+            guard let last = splits.last, last.partial, last.distanceMeters > 0 else { return false }
+            guard abs(last.distanceMeters - remainder) < 15 else { return false }
+        } else if splits.contains(where: \.partial) {
+            return false
+        }
+        if storedTrainingDuration > 0 {
+            let sum = splits.reduce(0.0) { $0 + max(0, $1.durationSeconds) }
+            guard sum > 0, abs(sum - storedTrainingDuration) / storedTrainingDuration <= 0.03 else { return false }
+        }
+        return true
     }
 }
