@@ -104,6 +104,12 @@ struct KilometerSplit: Codable, Hashable, Identifiable {
     /// Active energy for this kilometer, in kilocalories. `0` when that split was saved
     /// before the live screen recorded energy, or when the session had none.
     var energyKilocalories: Double
+    /// Meters in this row. `0` on splits saved before leftover distance was stored.
+    /// A full kilometer is 1000. A short last kilometer is the real remainder.
+    var distanceMeters: Double
+    /// Moving seconds in this row. `0` on splits saved before duration was stored.
+    /// For a full kilometer this is the same number as `paceSecPerKm`.
+    var durationSeconds: Double
 
     var id: Int { index }
 
@@ -113,7 +119,9 @@ struct KilometerSplit: Codable, Hashable, Identifiable {
         cadence: Double,
         heartRate: Double,
         partial: Bool,
-        energyKilocalories: Double = 0
+        energyKilocalories: Double = 0,
+        distanceMeters: Double = 0,
+        durationSeconds: Double = 0
     ) {
         self.index = index
         self.paceSecPerKm = paceSecPerKm
@@ -121,10 +129,13 @@ struct KilometerSplit: Codable, Hashable, Identifiable {
         self.heartRate = heartRate
         self.partial = partial
         self.energyKilocalories = energyKilocalories
+        self.distanceMeters = distanceMeters
+        self.durationSeconds = durationSeconds
     }
 
     private enum CodingKeys: String, CodingKey {
         case index, paceSecPerKm, cadence, heartRate, partial, energyKilocalories
+        case distanceMeters, durationSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -135,6 +146,8 @@ struct KilometerSplit: Codable, Hashable, Identifiable {
         heartRate = try container.decode(Double.self, forKey: .heartRate)
         partial = try container.decode(Bool.self, forKey: .partial)
         energyKilocalories = try container.decodeIfPresent(Double.self, forKey: .energyKilocalories) ?? 0
+        distanceMeters = try container.decodeIfPresent(Double.self, forKey: .distanceMeters) ?? 0
+        durationSeconds = try container.decodeIfPresent(Double.self, forKey: .durationSeconds) ?? 0
     }
 
     func encode(to encoder: Encoder) throws {
@@ -145,6 +158,8 @@ struct KilometerSplit: Codable, Hashable, Identifiable {
         try container.encode(heartRate, forKey: .heartRate)
         try container.encode(partial, forKey: .partial)
         try container.encode(energyKilocalories, forKey: .energyKilocalories)
+        try container.encode(distanceMeters, forKey: .distanceMeters)
+        try container.encode(durationSeconds, forKey: .durationSeconds)
     }
 }
 
@@ -293,14 +308,30 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
         return first
     }
 
-    /// Steps per minute for the record card, detail grid, and stats.
-    /// A cadence series is averaged over training intervals and wins over the stored mean.
-    /// Health imports used to store steps divided by elapsed wall-clock time, so that scalar
-    /// stays stale until a re-import. With no usable series, the stored average remains,
-    /// then the mean of split cadence.
+    /// Steps per minute for the record card, detail grid, splits footer, and stats.
+    /// This is total steps ÷ training minutes, stored as `averageCadence` when import
+    /// kept the step-count quotient. The cadence series is the chart: its time-weighted
+    /// mean drops gaps longer than 30 seconds and pulls toward the sampled sections,
+    /// so it is not this headline. When the saved scalar is that series mean (an older
+    /// import overwrote the step quotient), the steps are rebuilt from the series and
+    /// divided by training minutes. With no step total, the mean of split cadence remains.
     var resolvedAverageCadence: Double {
-        let trained = TrainingSeriesMath.displayAverage(stored: averageCadence, points: cadenceSeries)
-        if trained > 0 { return trained }
+        let stored = averageCadence.isFinite && averageCadence > 0 ? averageCadence : 0
+        if let seriesMean = TrainingSeriesMath.trainingAverage(cadenceSeries), seriesMean > 0 {
+            let independent = stored > 0 && abs(stored - seriesMean) > max(1, seriesMean * 0.02)
+            if independent { return stored }
+            // The saved scalar is the series mean. Rebuild steps ÷ training minutes, and
+            // only use it when gaps pull that total down. A higher result would be the
+            // series stretched across a shorter training window, which is not a step total.
+            if let rebuilt = TrainingSeriesMath.stepsPerTrainingMinute(
+                cadenceSeries,
+                trainingSeconds: trainingDurationSeconds,
+                elapsedSeconds: elapsedDuration
+            ), rebuilt > 0, stored <= 0 || rebuilt <= stored + 0.5 {
+                return rebuilt
+            }
+        }
+        if stored > 0 { return stored }
         let fromSplits = splits.map(\.cadence).filter { $0 > 0 }
         if !fromSplits.isEmpty {
             return fromSplits.reduce(0, +) / Double(fromSplits.count)
@@ -309,46 +340,26 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     }
 
     /// Beats per minute for the detail grid, charts, and stats.
-    /// Uses the same training-interval average as cadence when a heart-rate series exists.
+    /// Uses the training-interval series when heart-rate samples exist.
     /// Otherwise the stored workout average.
     var resolvedAverageHeartRate: Double {
         TrainingSeriesMath.displayAverage(stored: averageHeartRate, points: heartRate)
     }
 
-    /// Meters per step.
-    /// Uses a time-weighted mean of `stride` when that series has samples.
-    /// Otherwise derives stride from speed and cadence: (1000 / pace) / (cadence / 60).
-    /// Pace is `averagePaceSecPerKm` (training time) and cadence is `resolvedAverageCadence`,
-    /// so a corrected training-time cadence updates this derived stride.
-    /// Returns 0 when neither source exists, or the result is outside 0.30–2.20 m
-    /// (HealthKit imports often store an empty stride series and cadence 0).
+    /// Meters per step for the same headlines as cadence.
+    /// Total steps = `resolvedAverageCadence` × training minutes, and stride = distance ÷ those steps.
+    /// That is the same identity as speed ÷ (cadence / 60), so stride × (cadence / 60) matches
+    /// 1000 / average pace. The stride series stays on the chart; Watch often records
+    /// `runningStrideLength` only while the workout is classified as running.
+    /// Returns 0 when the step total is missing, or the result is outside 0.30–2.20 m.
     var averageStrideMeters: Double {
-        let samples = stride.filter { $0.value > 0 }.sorted { $0.second < $1.second }
-        let measured: Double
-        if samples.count >= 2 {
-            var area = 0.0
-            var span = 0.0
-            for index in 1..<samples.count {
-                let dt = samples[index].second - samples[index - 1].second
-                guard dt > 0 else { continue }
-                area += (samples[index].value + samples[index - 1].value) / 2 * dt
-                span += dt
-            }
-            if span > 0 {
-                measured = area / span
-            } else {
-                measured = samples.reduce(0) { $0 + $1.value } / Double(samples.count)
-            }
-        } else if let only = samples.first {
-            measured = only.value
-        } else {
-            let pace = averagePaceSecPerKm
-            let cadence = resolvedAverageCadence
-            guard cadence > 30, pace > 0, pace < 3_600 else { return 0 }
-            let metersPerSecond = 1000 / pace
-            measured = metersPerSecond / (cadence / 60)
-        }
-        guard measured >= 0.30, measured <= 2.20 else { return 0 }
+        let cadence = resolvedAverageCadence
+        let moving = trainingDuration
+        guard cadence > 30, moving > 0, distanceMeters > 1 else { return 0 }
+        let steps = cadence * (moving / 60)
+        guard steps > 0 else { return 0 }
+        let measured = distanceMeters / steps
+        guard measured.isFinite, measured >= 0.30, measured <= 2.20 else { return 0 }
         return measured
     }
 }
@@ -720,10 +731,55 @@ enum TrainingSeriesMath {
     }
 
     /// Series training average when it exists. Otherwise a positive stored mean.
+    /// Heart rate still uses this. Headline cadence does not: that number is total steps
+    /// divided by training minutes.
     static func displayAverage(stored: Double, points: [SeriesPoint]) -> Double {
         if let trained = trainingAverage(points), trained > 0 { return trained }
         guard stored.isFinite, stored > 0 else { return 0 }
         return stored
+    }
+
+    /// Time-weighted mean that keeps long gaps. The stride chart uses this so its
+    /// average still describes the plotted series, not the headline stride.
+    static func spanAverage(_ points: [SeriesPoint]) -> Double? {
+        let samples = positiveUnique(points)
+        guard !samples.isEmpty else { return nil }
+        if samples.count >= 2 {
+            var area = 0.0
+            var span = 0.0
+            for index in 1..<samples.count {
+                let dt = samples[index].second - samples[index - 1].second
+                guard dt > 0 else { continue }
+                area += (samples[index].value + samples[index - 1].value) / 2 * dt
+                span += dt
+            }
+            if span > 0 { return area / span }
+        }
+        return samples.reduce(0) { $0 + $1.value } / Double(samples.count)
+    }
+
+    /// Steps implied by the cadence series, divided by stored training minutes.
+    /// Gaps longer than a pause add no steps. Returns nil when training time was not
+    /// stored, or the samples cover less than half of that time.
+    static func stepsPerTrainingMinute(
+        _ points: [SeriesPoint],
+        trainingSeconds: TimeInterval,
+        elapsedSeconds: TimeInterval
+    ) -> Double? {
+        guard trainingSeconds.isFinite, trainingSeconds > 0,
+              elapsedSeconds.isFinite, trainingSeconds <= elapsedSeconds else { return nil }
+        let samples = positiveUnique(points)
+        guard samples.count >= 2 else { return nil }
+        var steps = 0.0
+        var covered = 0.0
+        for index in 1..<samples.count {
+            let dt = samples[index].second - samples[index - 1].second
+            guard dt > 0, dt <= pauseGapSeconds else { continue }
+            steps += (samples[index].value + samples[index - 1].value) / 2 / 60 * dt
+            covered += dt
+        }
+        guard covered >= trainingSeconds * 0.5, steps > 0 else { return nil }
+        return steps / (trainingSeconds / 60)
     }
 
     private static func positiveUnique(_ points: [SeriesPoint]) -> [SeriesPoint] {
@@ -817,7 +873,9 @@ enum WorkoutImport {
     /// A later import that only has empty series does not clear a richer row.
     /// When this row has no cadence series, a positive imported cadence replaces the stored one,
     /// so a re-import can correct steps that were divided by elapsed time.
-    /// A row that already has a series keeps its scalar; the open detail page averages the series.
+    /// A row that already has a series keeps its scalar. The detail page reads that step total;
+    /// it does not replace the scalar with a series average. Splits stay as stored here and are
+    /// rebuilt at display time when they do not match the official distance.
     /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
     /// `denylist` keeps user-deleted Health workouts from being appended or refreshed.
     static func merge(

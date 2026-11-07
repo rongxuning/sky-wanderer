@@ -149,3 +149,36 @@ enum Format {
         return "\(trimmed) · \(numbers)"
     }
 }
+
+extension KilometerSplit {
+    /// Meters shown in the splits table. A full kilometer is 1000 when an older row
+    /// did not store distance. A short last kilometer uses the stored remainder.
+    var listedDistanceMeters: Double {
+        if distanceMeters > 0 { return distanceMeters }
+        return partial ? 0 : 1_000
+    }
+
+    /// Moving seconds shown in the time column. A full kilometer saved before
+    /// duration existed used `paceSecPerKm` as that time.
+    var listedDuration: TimeInterval {
+        if durationSeconds > 0 { return durationSeconds }
+        if !partial, paceSecPerKm > 0 { return paceSecPerKm }
+        if listedDistanceMeters > 0, paceSecPerKm > 0 {
+            return paceSecPerKm * (listedDistanceMeters / 1_000)
+        }
+        return 0
+    }
+
+    /// Clock time for this row. The leftover kilometer uses its own duration, not a dash.
+    var listedTimeText: String {
+        Format.clock(listedDuration)
+    }
+
+    /// `1.00` for a full kilometer. The leftover row is its real distance, never 「未满」.
+    var listedDistanceText: String {
+        if partial {
+            return Format.kilometers(listedDistanceMeters)
+        }
+        return "1.00"
+    }
+}

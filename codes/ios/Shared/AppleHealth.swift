@@ -175,6 +175,8 @@ enum AppleHealth {
             workoutStart: windowStart,
             workoutEnd: windowEnd
         )
+        let moving = workout.duration
+        let training = moving.isFinite && moving > 0 ? moving : 0
         let track = HealthSeries.track(
             route: route,
             distanceSamples: await distanceSamples,
@@ -182,10 +184,9 @@ enum AppleHealth {
             workoutEnd: windowEnd,
             referenceDistanceMeters: distance,
             heartRate: heartRate,
-            cadence: cadenceSeries
+            cadence: cadenceSeries,
+            trainingDuration: training
         )
-        let moving = workout.duration
-        let training = moving.isFinite && moving > 0 ? moving : 0
         return WorkoutRecord(
             id: UUID(),
             sport: sport,
@@ -194,7 +195,7 @@ enum AppleHealth {
             distanceMeters: distance,
             energyKilocalories: energy,
             averageHeartRate: TrainingSeriesMath.displayAverage(stored: heart, points: heartRate),
-            averageCadence: TrainingSeriesMath.displayAverage(stored: stepCadence, points: cadenceSeries),
+            averageCadence: stepCadence,
             elevationGainMeters: climb,
             route: route,
             splits: track.splits,

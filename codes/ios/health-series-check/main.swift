@@ -2,7 +2,8 @@ import Foundation
 
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/TrainingEstimate.swift \
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/HealthSeries.swift \
-//   codes/ios/Shared/Database.swift codes/ios/Shared/AccountIdentity.swift \
+//   codes/ios/Shared/Formatting.swift codes/ios/Shared/Database.swift \
+//   codes/ios/Shared/AccountIdentity.swift \
 //   codes/ios/health-series-check/main.swift -o /tmp/health-series-check && /tmp/health-series-check
 
 /// SampleLibrary's preset route names this. The check does not compile LiveSession.
@@ -117,6 +118,10 @@ check(tracked.pace[0].second > 20, "pace second is after the workout start")
 check(tracked.splits.count == 3, "two full kilometers and a partial, got \(tracked.splits.count)")
 check(tracked.splits.dropLast().allSatisfy { !$0.partial }, "full splits are not partial")
 check(tracked.splits.last?.partial == true, "last split is partial")
+near(tracked.splits.last?.distanceMeters ?? 0, 500, tolerance: 5, "partial split stores the leftover distance")
+check((tracked.splits.last?.durationSeconds ?? 0) > 30, "partial split stores a duration")
+check(tracked.splits.last?.listedDistanceText != "未满", "partial distance is not 未满")
+check(tracked.splits.last?.listedTimeText != "—", "partial time is not a dash")
 near(tracked.splits[0].paceSecPerKm, 300, tolerance: 2, "first split pace")
 near(tracked.splits[0].heartRate, 155, tolerance: 0.01, "first split heart")
 near(tracked.splits[0].cadence, 170, tolerance: 0.01, "first split cadence")
@@ -439,15 +444,22 @@ stale.cadenceSeries = [
     SeriesPoint(second: 200, value: 160),
     SeriesPoint(second: 210, value: 160)
 ]
-stale.stride = []
-near(stale.resolvedAverageCadence, 5200.0 / 30.0, tolerance: 0.01, "cadence skips the pause gap instead of the stored elapsed mean")
-check(abs(stale.resolvedAverageCadence - 100) > 1, "stale elapsed cadence is not what the detail shows")
+stale.stride = [
+    SeriesPoint(second: 0, value: 0.86),
+    SeriesPoint(second: 210, value: 0.86)
+]
+near(stale.resolvedAverageCadence, 100, tolerance: 0.01, "headline cadence is the stored step total")
+check(abs(stale.resolvedAverageCadence - (5200.0 / 30.0)) > 1, "series mean is not the headline cadence")
 near(stale.resolvedAverageHeartRate, 150, tolerance: 0.01, "heart rate uses the training-interval series")
 check(abs(stale.resolvedAverageHeartRate - 120) > 1, "stale stored heart rate is not what the detail shows")
-let derivedStride = (1000.0 / movingSpan) / (stale.resolvedAverageCadence / 60)
-near(stale.averageStrideMeters, derivedStride, tolerance: 0.001, "derived stride follows the training cadence")
-let elapsedStride = (1000.0 / movingSpan) / (100.0 / 60)
-check(abs(stale.averageStrideMeters - elapsedStride) > 0.1, "derived stride does not follow the elapsed cadence")
+near(stale.averageStrideMeters, 1, tolerance: 0.001, "stride is distance divided by total steps")
+check(abs(stale.averageStrideMeters - 0.86) > 0.05, "running-stride series is not the headline stride")
+near(
+    stale.averageStrideMeters * (stale.resolvedAverageCadence / 60),
+    1000 / stale.averagePaceSecPerKm,
+    tolerance: 0.001,
+    "stride × cadence/60 matches 1000/pace"
+)
 
 var bare = makeWorkout(averageCadence: 158)
 bare.averageHeartRate = 142
@@ -466,10 +478,26 @@ var sparse = makeWorkout(
     averageCadence: 100,
     cadenceSeries: [SeriesPoint(second: 0, value: 170), SeriesPoint(second: 120, value: 190)]
 )
-near(sparse.resolvedAverageCadence, 180, tolerance: 0.01, "pause-separated samples are not replaced by the stored mean")
+near(sparse.resolvedAverageCadence, 100, tolerance: 0.01, "a stored step total wins over pause-separated samples")
 
 var oneSample = makeWorkout(averageCadence: 100, cadenceSeries: [SeriesPoint(second: 4, value: 172)])
-near(oneSample.resolvedAverageCadence, 172, tolerance: 0.01, "one training sample replaces a stale stored mean")
+near(oneSample.resolvedAverageCadence, 100, tolerance: 0.01, "one cadence sample does not replace the step total")
+
+var coveredHalf = makeWorkout(averageCadence: 160)
+coveredHalf.distanceMeters = 1000
+coveredHalf.trainingDurationSeconds = 600
+var halfSeries: [SeriesPoint] = []
+for second in stride(from: 0, through: 300, by: 10) {
+    halfSeries.append(SeriesPoint(second: Double(second), value: 160))
+}
+coveredHalf.cadenceSeries = halfSeries
+near(coveredHalf.resolvedAverageCadence, 80, tolerance: 0.5, "gaps inside training time are not dropped from the step total")
+near(
+    coveredHalf.averageStrideMeters * (coveredHalf.resolvedAverageCadence / 60),
+    1000 / coveredHalf.averagePaceSecPerKm,
+    tolerance: 0.02,
+    "rebuilt cadence still matches pace"
+)
 
 var elapsedOnly = makeWorkout(averageCadence: 100)
 var retrained = makeWorkout(averageCadence: 150)
@@ -489,21 +517,102 @@ do {
     let legacy = Data(#"{"index":1,"paceSecPerKm":300,"cadence":170,"heartRate":150,"partial":false}"#.utf8)
     let decoded = try JSONDecoder().decode(KilometerSplit.self, from: legacy)
     check(decoded.energyKilocalories == 0, "old splits decode without per-km energy")
+    check(decoded.distanceMeters == 0 && decoded.durationSeconds == 0, "old splits decode without distance or duration")
     check(decoded.index == 1 && decoded.paceSecPerKm == 300 && decoded.partial == false, "old split fields stay")
+    check(decoded.listedDistanceText == "1.00", "a legacy full kilometer still lists 1.00")
+    check(decoded.listedTimeText == "05:00", "a legacy full kilometer lists its pace as the time")
     let stamped = KilometerSplit(
         index: 2,
         paceSecPerKm: 310,
         cadence: 168,
         heartRate: 148,
         partial: true,
-        energyKilocalories: 42
+        energyKilocalories: 42,
+        distanceMeters: 550,
+        durationSeconds: 170.5
     )
     let round = try JSONDecoder().decode(KilometerSplit.self, from: JSONEncoder().encode(stamped))
     near(round.energyKilocalories, 42, tolerance: 0.01, "split energy round-trips")
-    check(round.partial && round.heartRate == 148 && round.cadence == 168, "split energy coding keeps the other fields")
+    near(round.distanceMeters, 550, tolerance: 0.01, "split distance round-trips")
+    near(round.durationSeconds, 170.5, tolerance: 0.01, "split duration round-trips")
+    check(round.partial && round.heartRate == 148 && round.cadence == 168, "split distance coding keeps the other fields")
+    check(round.listedDistanceText == "0.55", "leftover distance is the real kilometers")
+    check(round.listedTimeText == "02:50", "leftover time is the real duration")
+    check(round.listedDistanceText != "未满" && round.listedTimeText != "—", "leftover row has no dash and no 未满")
 } catch {
     check(false, "split energy coding failed: \(error)")
 }
+
+func lineRoute(points: Int, pauseAt: Int, pauseSeconds: Double) -> [GeoPoint] {
+    var rows: [GeoPoint] = []
+    var elapsed = 0.0
+    for index in 0..<points {
+        if index == pauseAt {
+            elapsed += pauseSeconds
+        }
+        rows.append(GeoPoint(
+            latitude: 31.24 + (Double(index) * 100) / 111_320,
+            longitude: 121.49,
+            altitude: 20,
+            timestamp: start.addingTimeInterval(elapsed)
+        ))
+        elapsed += 30
+    }
+    return rows
+}
+
+let officialEnd = start.addingTimeInterval(3_000)
+let official = HealthSeries.track(
+    route: lineRoute(points: 26, pauseAt: 10, pauseSeconds: 1_200),
+    distanceSamples: [],
+    workoutStart: start,
+    workoutEnd: officialEnd,
+    referenceDistanceMeters: 3_550,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 800
+)
+check(official.splits.filter { !$0.partial }.count == 3, "official 3.55 km is three full kilometers, got \(official.splits.count)")
+check(official.splits.count == 4, "3.55 km keeps a leftover row, got \(official.splits.count)")
+check(official.splits.dropLast().allSatisfy { abs($0.distanceMeters - 1000) < 1 && !$0.partial }, "full rows are 1 km")
+near(official.splits.last?.distanceMeters ?? 0, 550, tolerance: 1, "leftover is 0.55 km")
+check(official.splits.last?.partial == true, "leftover row is partial")
+check((official.splits.last?.durationSeconds ?? 0) > 0, "leftover duration is stored")
+check(official.splits.last?.listedDistanceText == "0.55", "leftover lists 0.55, got \(official.splits.last?.listedDistanceText ?? "")")
+check(official.splits.last?.listedTimeText != "—" && official.splits.last?.listedDistanceText != "未满", "leftover hides neither time nor distance")
+let officialSum = official.splits.reduce(0.0) { $0 + $1.durationSeconds }
+near(officialSum, 800, tolerance: 0.5, "split times sum to the training total")
+check(official.splits.allSatisfy { $0.durationSeconds < 500 }, "a 20 minute pause is not dumped into one kilometer")
+check(official.splits.dropLast().allSatisfy { $0.listedDistanceText == "1.00" }, "full kilometers stay 1.00")
+
+let unscaled = HealthSeries.track(
+    route: lineRoute(points: 26, pauseAt: -1, pauseSeconds: 0),
+    distanceSamples: [],
+    workoutStart: start,
+    workoutEnd: officialEnd,
+    referenceDistanceMeters: 20_000,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 0
+)
+check(unscaled.splits.filter { !$0.partial }.count == 2, "a distance far from the route is not scaled, got \(unscaled.splits.count)")
+
+var staleRows = makeWorkout()
+staleRows.distanceMeters = 3_550
+staleRows.trainingDurationSeconds = 800
+staleRows.end = officialEnd
+staleRows.route = lineRoute(points: 26, pauseAt: 10, pauseSeconds: 1_200)
+staleRows.splits = [
+    KilometerSplit(index: 1, paceSecPerKm: 900, cadence: 120, heartRate: 140, partial: false),
+    KilometerSplit(index: 2, paceSecPerKm: 2_200, cadence: 120, heartRate: 150, partial: false),
+    KilometerSplit(index: 3, paceSecPerKm: 355, cadence: 172, heartRate: 174, partial: true)
+]
+let rebuilt = staleRows.resolvedSplits
+check(rebuilt.count == 4, "stored GPS splits are rebuilt from the official distance, got \(rebuilt.count)")
+near(rebuilt.last?.distanceMeters ?? 0, 550, tolerance: 1, "rebuilt leftover distance")
+near(rebuilt.reduce(0.0) { $0 + $1.durationSeconds }, 800, tolerance: 0.5, "rebuilt splits sum to training time")
+check(rebuilt.last?.listedDistanceText == "0.55" && rebuilt.last?.listedTimeText != "—", "rebuilt leftover is shown with real numbers")
+check(staleRows.splits.count == 3, "rebuild does not rewrite the stored array")
 
 if failures.isEmpty {
     print("health-series-check ok")
