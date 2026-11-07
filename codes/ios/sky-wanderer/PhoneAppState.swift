@@ -568,13 +568,15 @@ final class PhoneAppState: ObservableObject {
     func addWorkout(_ record: WorkoutRecord) {
         guard !SampleLibrary.isSeededWorkout(record) else { return }
         mutate { database in
-            if let healthID = record.healthKitUUID,
-               database.workouts.contains(where: { $0.healthKitUUID == healthID }) {
-                return
-            }
-            database.workouts.removeAll { $0.id == record.id }
-            database.workouts.append(record)
-            database.workouts.sort { $0.start > $1.start }
+            _ = database.insertWorkout(record)
+        }
+    }
+
+    /// Removes the workout from this phone and remembers it so Health import cannot restore it.
+    /// Apple Health is left unchanged.
+    func deleteWorkout(id: UUID) {
+        mutate { database in
+            database.deleteWorkout(id: id)
         }
     }
 
@@ -601,7 +603,7 @@ final class PhoneAppState: ObservableObject {
             try await source.prepare()
             let imported = try await source.importRunsAndHikes()
             mutate { database in
-                WorkoutImport.merge(imported, into: &database.workouts)
+                WorkoutImport.merge(imported, into: &database.workouts, skipping: database.deletedWorkouts)
             }
         } catch {
             banner = "暂时读不到 Apple 健康里的锻炼"

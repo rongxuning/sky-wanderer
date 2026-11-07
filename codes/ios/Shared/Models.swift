@@ -743,6 +743,75 @@ enum TrainingSeriesMath {
     }
 }
 
+/// Ids that must not come back from Apple Health or `Database.insertWorkout`.
+/// Remembering an id does not delete the workout from HealthKit.
+struct WorkoutDenylist: Codable, Hashable {
+    var healthKitUUIDs: [String] = []
+    var localWorkoutIDs: [UUID] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case healthKitUUIDs
+        case localWorkoutIDs
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        healthKitUUIDs = try container.decodeIfPresent([String].self, forKey: .healthKitUUIDs) ?? []
+        localWorkoutIDs = try container.decodeIfPresent([UUID].self, forKey: .localWorkoutIDs) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(healthKitUUIDs, forKey: .healthKitUUIDs)
+        try container.encode(localWorkoutIDs, forKey: .localWorkoutIDs)
+    }
+
+    /// A non-empty Health id is the identity. Blank ids are device-only.
+    static func healthIdentity(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    mutating func remember(_ workout: WorkoutRecord) {
+        if let healthID = Self.healthIdentity(workout.healthKitUUID) {
+            if !healthKitUUIDs.contains(healthID) {
+                healthKitUUIDs.append(healthID)
+            }
+        } else if !localWorkoutIDs.contains(workout.id) {
+            localWorkoutIDs.append(workout.id)
+        }
+    }
+
+    func blocks(_ workout: WorkoutRecord) -> Bool {
+        if let healthID = Self.healthIdentity(workout.healthKitUUID) {
+            return healthKitUUIDs.contains(healthID)
+        }
+        return localWorkoutIDs.contains(workout.id)
+    }
+
+    func containsHealthKitUUID(_ raw: String?) -> Bool {
+        guard let healthID = Self.healthIdentity(raw) else { return false }
+        return healthKitUUIDs.contains(healthID)
+    }
+}
+
+/// Resting card offset after a horizontal drag. `0` is closed.
+/// A negative value only means the delete button is visible. Callers must not delete from it.
+enum RecordCardSwipe {
+    static func restingOffset(base: Double, translation: Double, predicted: Double, revealed: Double) -> Double {
+        guard revealed > 0 else { return 0 }
+        let next = base + translation
+        let projected = base + predicted
+        if min(next, projected) < -revealed / 2 {
+            return -revealed
+        }
+        return 0
+    }
+}
+
 enum WorkoutImport {
     /// Appends new Health workouts and fills cadence or series an earlier import left empty.
     /// A later import that only has empty series does not clear a richer row.
@@ -750,16 +819,22 @@ enum WorkoutImport {
     /// so a re-import can correct steps that were divided by elapsed time.
     /// A row that already has a series keeps its scalar; the open detail page averages the series.
     /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
-    static func merge(_ imported: [WorkoutRecord], into workouts: inout [WorkoutRecord]) {
+    /// `denylist` keeps user-deleted Health workouts from being appended or refreshed.
+    static func merge(
+        _ imported: [WorkoutRecord],
+        into workouts: inout [WorkoutRecord],
+        skipping denylist: WorkoutDenylist = WorkoutDenylist()
+    ) {
         for record in imported {
             guard let healthID = record.healthKitUUID else { continue }
+            if denylist.containsHealthKitUUID(healthID) { continue }
             if let index = workouts.firstIndex(where: { $0.healthKitUUID == healthID }) {
                 workouts[index] = merging(workouts[index], with: record)
                 continue
             }
             workouts.append(record)
         }
-        workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
+        workouts.removeAll { SampleLibrary.isSeededWorkout($0) || denylist.blocks($0) }
         workouts.sort { $0.start > $1.start }
     }
 

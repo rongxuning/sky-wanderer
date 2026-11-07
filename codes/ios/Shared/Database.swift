@@ -16,12 +16,46 @@ struct Database {
     var routes: [SavedRoute] = []
     /// True after the phone has offered the bundled sample GPX once.
     var sampleRouteSeeded: Bool = false
+    /// Workouts the user removed on this phone. Missing in older files.
+    /// Health imports are remembered by `healthKitUUID`. Device-only rows are remembered by id.
+    var deletedWorkouts: WorkoutDenylist = WorkoutDenylist()
+}
+
+extension Database {
+    /// Drops the workout from this device and remembers it so a later import cannot restore it.
+    /// A Health row is remembered by `healthKitUUID`. A row with no Health id is remembered by its id.
+    /// Does not delete the workout from HealthKit.
+    mutating func deleteWorkout(id: UUID) {
+        guard let workout = workouts.first(where: { $0.id == id }) else { return }
+        deletedWorkouts.remember(workout)
+        if let healthID = WorkoutDenylist.healthIdentity(workout.healthKitUUID) {
+            workouts.removeAll { WorkoutDenylist.healthIdentity($0.healthKitUUID) == healthID }
+        } else {
+            workouts.removeAll { $0.id == id }
+        }
+    }
+
+    /// Appends a workout unless it is denylisted or repeats a Health uuid already stored.
+    /// A denylisted Health workout stays out. A denylisted device id stays out.
+    @discardableResult
+    mutating func insertWorkout(_ record: WorkoutRecord) -> Bool {
+        if deletedWorkouts.blocks(record) { return false }
+        if let healthID = record.healthKitUUID,
+           workouts.contains(where: { $0.healthKitUUID == healthID }) {
+            return false
+        }
+        workouts.removeAll { $0.id == record.id }
+        workouts.append(record)
+        workouts.sort { $0.start > $1.start }
+        return true
+    }
 }
 
 extension Database: Codable {
     private enum CodingKeys: String, CodingKey {
         case accounts, identities, authSessions, authRecords, sessionAccountID, sessionToken
         case workouts, posts, metricOrder, selectedTeammateIDs, seeded, routes, sampleRouteSeeded
+        case deletedWorkouts
     }
 
     init(from decoder: Decoder) throws {
@@ -39,6 +73,7 @@ extension Database: Codable {
         seeded = try container.decodeIfPresent(Bool.self, forKey: .seeded) ?? false
         routes = try container.decodeIfPresent([SavedRoute].self, forKey: .routes) ?? []
         sampleRouteSeeded = try container.decodeIfPresent(Bool.self, forKey: .sampleRouteSeeded) ?? false
+        deletedWorkouts = try container.decodeIfPresent(WorkoutDenylist.self, forKey: .deletedWorkouts) ?? WorkoutDenylist()
     }
 
     func encode(to encoder: Encoder) throws {
@@ -56,6 +91,7 @@ extension Database: Codable {
         try container.encode(seeded, forKey: .seeded)
         try container.encode(routes, forKey: .routes)
         try container.encode(sampleRouteSeeded, forKey: .sampleRouteSeeded)
+        try container.encode(deletedWorkouts, forKey: .deletedWorkouts)
     }
 }
 
