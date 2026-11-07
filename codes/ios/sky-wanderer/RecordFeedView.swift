@@ -5,6 +5,8 @@ import SwiftUI
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
     @State private var topWorkoutID: UUID?
+    @State private var revealedWorkoutID: UUID?
+    @State private var pendingDeleteID: UUID?
 
     var body: some View {
         recordList
@@ -13,6 +15,28 @@ struct RecordFeedView: View {
             .task {
                 await app.importFromApple()
             }
+            .alert(
+                "删除这条训练记录？",
+                isPresented: deleteAlertPresented,
+                presenting: pendingDeleteID
+            ) { id in
+                Button("取消", role: .cancel) {}
+                Button("删除", role: .destructive) {
+                    if revealedWorkoutID == id {
+                        revealedWorkoutID = nil
+                    }
+                    app.deleteWorkout(id: id)
+                }
+            } message: { _ in
+                EmptyView()
+            }
+    }
+
+    private var deleteAlertPresented: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteID != nil },
+            set: { if !$0 { pendingDeleteID = nil } }
+        )
     }
 
     private var monthLabel: String {
@@ -46,10 +70,11 @@ struct RecordFeedView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         ForEach(app.workouts) { workout in
-                            NavigationLink(value: RecordRoute.detail(workout.id)) {
-                                RecordSummaryCard(workout: workout)
-                            }
-                            .buttonStyle(.plain)
+                            RecordSwipeCard(
+                                workout: workout,
+                                revealedID: $revealedWorkoutID,
+                                onRequestDelete: { pendingDeleteID = workout.id }
+                            )
                             .background {
                                 GeometryReader { geo in
                                     Color.clear.preference(
@@ -83,6 +108,9 @@ struct RecordFeedView: View {
                 }
             }
             .onChange(of: app.workouts.map(\.id)) { _, ids in
+                if let revealedWorkoutID, !ids.contains(revealedWorkoutID) {
+                    self.revealedWorkoutID = nil
+                }
                 guard let topWorkoutID else {
                     self.topWorkoutID = ids.first
                     return
@@ -269,11 +297,177 @@ private struct RecordTopAnchor: Equatable {
     var minY: CGFloat
 }
 
+private struct RecordSwipeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
 private struct RecordTopAnchorsKey: PreferenceKey {
     static var defaultValue: [RecordTopAnchor] = []
 
     static func reduce(value: inout [RecordTopAnchor], nextValue: () -> [RecordTopAnchor]) {
         value.append(contentsOf: nextValue())
+    }
+}
+
+/// The trailing delete control. Wider than the 44pt minimum touch target.
+private enum RecordSwipeMetrics {
+    static let buttonWidth: CGFloat = 72
+    static let gap: CGFloat = SkyTheme.Spacing.related
+    static var revealed: CGFloat { buttonWidth + gap }
+}
+
+/// Slides the record card left to reveal 删除. Releasing the swipe only opens or closes that
+/// button. Tapping it asks first; the card's link does not open while the finger is dragging.
+private struct RecordSwipeCard: View {
+    var workout: WorkoutRecord
+    @Binding var revealedID: UUID?
+    var onRequestDelete: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var offset: CGFloat = 0
+    @State private var suppressNavigation = false
+    @State private var dragBase: CGFloat?
+    @State private var deleteArmed = false
+    @State private var gestureToken = 0
+    @State private var rowHeight: CGFloat = 0
+
+    private var snap: Animation {
+        reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.86)
+    }
+
+    var body: some View {
+        NavigationLink(value: RecordRoute.detail(workout.id)) {
+            RecordSummaryCard(workout: workout)
+        }
+        .buttonStyle(.plain)
+        // Hit testing, not disabled: disabled would fade the card while the finger is down.
+        .allowsHitTesting(!suppressNavigation && offset == 0)
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(key: RecordSwipeHeightKey.self, value: geo.size.height)
+            }
+        }
+        .offset(x: offset)
+        .background(alignment: .trailing) {
+            deleteButton
+        }
+        .overlay {
+            if offset != 0 {
+                // The trailing gap stays free so a tap lands on 删除 instead of closing the card.
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { close() }
+                    Color.clear
+                        .frame(width: RecordSwipeMetrics.revealed)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if deleteArmed {
+                Color.clear
+                    .frame(width: RecordSwipeMetrics.buttonWidth, height: rowHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onRequestDelete() }
+                    .accessibilityLabel("删除")
+            }
+        }
+        .contentShape(Rectangle())
+        .simultaneousGesture(drag)
+        .accessibilityAction(named: Text("删除")) {
+            onRequestDelete()
+        }
+        .onPreferenceChange(RecordSwipeHeightKey.self) { height in
+            if height > 0, height != rowHeight {
+                rowHeight = height
+            }
+        }
+        .onChange(of: revealedID) { _, id in
+            guard id != workout.id, offset != 0 else { return }
+            close()
+        }
+    }
+
+    private var deleteButton: some View {
+        Text("删除")
+            .font(SkyTheme.Font.subheadline)
+            .fontWeight(.semibold)
+            .foregroundStyle(SkyTheme.Color.onPrimary)
+            .frame(width: RecordSwipeMetrics.buttonWidth)
+            .frame(height: rowHeight > 0 ? rowHeight : nil)
+            .background(
+                SkyTheme.Color.danger,
+                in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
+            )
+            .opacity(offset < -4 ? 1 : 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 18, coordinateSpace: .local)
+            .onChanged { value in
+                if dragBase == nil {
+                    dragBase = offset
+                    gestureToken += 1
+                    deleteArmed = false
+                }
+                // A drag is not a tap. Disable the link before the finger lifts.
+                suppressNavigation = true
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) else { return }
+                revealedID = workout.id
+                let next = (dragBase ?? 0) + dx
+                offset = min(0, max(-RecordSwipeMetrics.revealed, next))
+            }
+            .onEnded { value in
+                let base = dragBase ?? offset
+                dragBase = nil
+                let dx = value.translation.width
+                let dy = value.translation.height
+                let horizontal = abs(dx) > abs(dy)
+                let resting = RecordCardSwipe.restingOffset(
+                    base: Double(base),
+                    translation: horizontal ? Double(dx) : 0,
+                    predicted: horizontal ? Double(value.predictedEndTranslation.width) : 0,
+                    revealed: Double(RecordSwipeMetrics.revealed)
+                )
+                // restingOffset only opens or closes the button. It does not delete.
+                let open = resting < 0
+                withAnimation(snap) {
+                    offset = CGFloat(resting)
+                }
+                if open {
+                    revealedID = workout.id
+                } else if revealedID == workout.id {
+                    revealedID = nil
+                }
+                let token = gestureToken
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(120))
+                    guard token == gestureToken else { return }
+                    deleteArmed = open && offset != 0
+                    if offset == 0 {
+                        suppressNavigation = false
+                    }
+                }
+            }
+    }
+
+    private func close() {
+        withAnimation(snap) { offset = 0 }
+        deleteArmed = false
+        suppressNavigation = false
+        if revealedID == workout.id {
+            revealedID = nil
+        }
     }
 }
 
