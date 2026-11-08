@@ -95,6 +95,88 @@ struct SeriesPoint: Codable, Hashable, Identifiable {
     var id: Double { second }
 }
 
+/// One pause or auto-pause, in seconds after the workout start.
+/// `endSecond` is the resume. Overlapping marks from manual and motion pause are merged.
+struct WorkoutPause: Codable, Hashable {
+    var startSecond: Double
+    var endSecond: Double
+
+    /// A HealthKit pause or resume mark before it is paired into an interval.
+    /// `duration` covers the whole pause when the event itself has a length.
+    /// A duration under one second is only the instant the pause began.
+    struct Mark: Equatable {
+        var second: Double
+        var isResume: Bool
+        var duration: Double
+    }
+
+    static func intervals(from marks: [Mark], elapsed: TimeInterval) -> [WorkoutPause] {
+        let span = elapsed.isFinite && elapsed > 0 ? elapsed : 0
+        let sorted = marks.filter { $0.second.isFinite && $0.duration.isFinite }.sorted { lhs, rhs in
+            if lhs.second == rhs.second { return !lhs.isResume && rhs.isResume }
+            return lhs.second < rhs.second
+        }
+        var raw: [WorkoutPause] = []
+        var open: Double?
+        var depth = 0
+        for mark in sorted {
+            let second = clamp(mark.second, span: span)
+            if mark.isResume {
+                guard depth > 0 else { continue }
+                depth -= 1
+                if depth == 0, let start = open {
+                    raw.append(WorkoutPause(startSecond: start, endSecond: max(start, second)))
+                    open = nil
+                }
+                continue
+            }
+            if mark.duration >= 1 {
+                let end = clamp(second + mark.duration, span: span)
+                raw.append(WorkoutPause(startSecond: second, endSecond: max(second, end)))
+                continue
+            }
+            if depth == 0 { open = second }
+            depth += 1
+        }
+        if let start = open, span > start {
+            raw.append(WorkoutPause(startSecond: start, endSecond: span))
+        }
+        return merged(raw)
+    }
+
+    static func merged(_ pauses: [WorkoutPause]) -> [WorkoutPause] {
+        let ordered = pauses
+            .filter { $0.startSecond.isFinite && $0.endSecond.isFinite && $0.endSecond > $0.startSecond }
+            .sorted { $0.startSecond < $1.startSecond }
+        var result: [WorkoutPause] = []
+        for pause in ordered {
+            if var last = result.last, pause.startSecond <= last.endSecond {
+                last.endSecond = max(last.endSecond, pause.endSecond)
+                result[result.count - 1] = last
+            } else {
+                result.append(pause)
+            }
+        }
+        return result
+    }
+
+    /// Seconds of these pauses that fall inside `[start, end)`.
+    static func overlap(_ pauses: [WorkoutPause], from start: Double, to end: Double) -> Double {
+        guard end > start else { return 0 }
+        return pauses.reduce(0) { partial, pause in
+            let lower = max(start, pause.startSecond)
+            let upper = min(end, pause.endSecond)
+            return partial + max(0, upper - lower)
+        }
+    }
+
+    private static func clamp(_ second: Double, span: TimeInterval) -> Double {
+        let lower = max(0, second)
+        guard span > 0 else { return lower }
+        return min(lower, span)
+    }
+}
+
 struct KilometerSplit: Codable, Hashable, Identifiable {
     var index: Int
     var paceSecPerKm: Double
@@ -263,6 +345,14 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     var trainingDurationSeconds: TimeInterval = 0
     var conditions: WorkoutConditions?
     var startPlace: WorkoutStartPlace?
+    /// Cumulative official distance, meters at wall-clock seconds after `start`.
+    /// Empty when this file was saved before the series existed, or when HealthKit's
+    /// distance samples did not match the official total. Kilometer rows are cut on
+    /// this curve so a GPS trace cannot slide the boundaries.
+    var distanceProgress: [SeriesPoint] = []
+    /// Recorded pause and auto-pause intervals, in seconds after `start`.
+    /// Empty when the workout was not paused, or when pauses were not stored yet.
+    var pauseIntervals: [WorkoutPause] = []
 
     /// Wall-clock span from `start` to `end`, including any pauses.
     var elapsedDuration: TimeInterval { end.timeIntervalSince(start) }
@@ -468,6 +558,7 @@ extension WorkoutRecord {
         case route, splits, heartRate, cadenceSeries, paceSeries
         case stride, elevation, groundContact, power, verticalOscillation
         case origin, healthKitUUID, trainingDurationSeconds, conditions, startPlace
+        case distanceProgress, pauseIntervals
     }
 
     init(from decoder: Decoder) throws {
@@ -496,6 +587,8 @@ extension WorkoutRecord {
         trainingDurationSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .trainingDurationSeconds) ?? 0
         conditions = try container.decodeIfPresent(WorkoutConditions.self, forKey: .conditions)
         startPlace = try container.decodeIfPresent(WorkoutStartPlace.self, forKey: .startPlace)
+        distanceProgress = try container.decodeIfPresent([SeriesPoint].self, forKey: .distanceProgress) ?? []
+        pauseIntervals = try container.decodeIfPresent([WorkoutPause].self, forKey: .pauseIntervals) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -524,6 +617,8 @@ extension WorkoutRecord {
         try container.encode(trainingDurationSeconds, forKey: .trainingDurationSeconds)
         try container.encodeIfPresent(conditions, forKey: .conditions)
         try container.encodeIfPresent(startPlace, forKey: .startPlace)
+        try container.encode(distanceProgress, forKey: .distanceProgress)
+        try container.encode(pauseIntervals, forKey: .pauseIntervals)
     }
 }
 
@@ -874,8 +969,9 @@ enum WorkoutImport {
     /// When this row has no cadence series, a positive imported cadence replaces the stored one,
     /// so a re-import can correct steps that were divided by elapsed time.
     /// A row that already has a series keeps its scalar. The detail page reads that step total;
-    /// it does not replace the scalar with a series average. Splits stay as stored here and are
-    /// rebuilt at display time when they do not match the official distance.
+    /// it does not replace the scalar with a series average. Splits stay as stored here.
+    /// Display rebuilds them from `distanceProgress` when a later import has stored the
+    /// official distance curve, and from the route when that curve is still missing.
     /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
     /// `denylist` keeps user-deleted Health workouts from being appended or refreshed.
     static func merge(
@@ -916,6 +1012,8 @@ enum WorkoutImport {
         fill(&merged.groundContact, imported.groundContact)
         fill(&merged.power, imported.power)
         fill(&merged.verticalOscillation, imported.verticalOscillation)
+        fill(&merged.distanceProgress, imported.distanceProgress)
+        fill(&merged.pauseIntervals, imported.pauseIntervals)
         return merged
     }
 

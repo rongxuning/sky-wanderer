@@ -192,6 +192,8 @@ let prefersRoute = HealthSeries.track(
     cadence: []
 )
 near(prefersRoute.pace[0].value, 300, tolerance: 2, "a usable route wins over distance samples")
+near(prefersRoute.splits[0].durationSeconds, 300, tolerance: 2, "splits stay on the route when distance samples miss the official total")
+check(prefersRoute.distanceProgress.isEmpty, "a distance series far from the official total is not stored")
 
 func makeWorkout(
     id: UUID = UUID(),
@@ -262,6 +264,27 @@ check(filled.splits == tracked.splits, "empty splits are filled")
 check(filled.verticalOscillation == oscillation, "empty vertical oscillation is filled")
 check(filled.averageCadence == 172, "missing cadence scalar is filled")
 check(filled.distanceMeters == existing.distanceMeters, "merge does not rewrite summary scalars")
+
+var withCurve = imported
+withCurve.distanceProgress = [
+    SeriesPoint(second: 0, value: 0),
+    SeriesPoint(second: 30, value: 100)
+]
+withCurve.pauseIntervals = [WorkoutPause(startSecond: 5, endSecond: 12)]
+let gained = WorkoutImport.merging(existing, with: withCurve)
+check(gained.distanceProgress.count == 2, "merge stores official distance progress")
+check(gained.pauseIntervals.count == 1 && gained.pauseIntervals[0].endSecond == 12, "merge stores pause intervals")
+let keptCurve = WorkoutImport.merging(gained, with: makeWorkout(healthKitUUID: "health-1", averageCadence: 0))
+check(keptCurve.distanceProgress.count == 2, "blank import does not clear distance progress")
+check(keptCurve.pauseIntervals.count == 1, "blank import does not clear pauses")
+var replacement = withCurve
+replacement.distanceProgress = [
+    SeriesPoint(second: 1, value: 5),
+    SeriesPoint(second: 2, value: 6),
+    SeriesPoint(second: 3, value: 7)
+]
+let alreadyCurved = WorkoutImport.merging(gained, with: replacement)
+check(alreadyCurved.distanceProgress.count == 2, "merge keeps distance progress already stored")
 
 let blank = makeWorkout(healthKitUUID: "health-1", averageCadence: 0)
 let richer = makeWorkout(
@@ -361,6 +384,8 @@ do {
     check(legacyRecord.elapsedDuration == 600, "legacy elapsed is end minus start")
     check(legacyRecord.trainingDuration == 600, "unknown training duration falls back to elapsed")
     check(legacyRecord.conditions == nil && legacyRecord.startPlace == nil, "missing context stays empty")
+    check(legacyRecord.distanceProgress.isEmpty, "missing distance progress decodes as empty")
+    check(legacyRecord.pauseIntervals.isEmpty, "missing pauses decode as empty")
 
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -376,6 +401,8 @@ do {
         airReady: true
     )
     enriched.startPlace = WorkoutStartPlace(name: "上海长风公园")
+    enriched.distanceProgress = [SeriesPoint(second: 0, value: 0), SeriesPoint(second: 12, value: 40)]
+    enriched.pauseIntervals = [WorkoutPause(startSecond: 4, endSecond: 9)]
     let enrichedData = try encoder.encode(enriched)
     let decodedEnriched = try decoder.decode(WorkoutRecord.self, from: enrichedData)
     check(decodedEnriched.trainingDurationSeconds == 480, "training duration round-trips")
@@ -384,6 +411,8 @@ do {
     check(decodedEnriched.conditions?.airQualityGrade == "良", "air grade round-trips")
     check(decodedEnriched.conditions?.weatherReady == true && decodedEnriched.conditions?.airReady == true, "ready flags round-trip")
     check(decodedEnriched.startPlace?.name == "上海长风公园", "place name round-trips")
+    check(decodedEnriched.distanceProgress.count == 2 && decodedEnriched.distanceProgress[1].value == 40, "distance progress round-trips")
+    check(decodedEnriched.pauseIntervals.count == 1 && decodedEnriched.pauseIntervals[0].startSecond == 4, "pause intervals round-trip")
     enriched.trainingDurationSeconds = 10_000
     check(enriched.trainingDuration == 600, "a stored duration past elapsed falls back")
 
@@ -399,6 +428,12 @@ do {
     let decoded = try decoder.decode(WorkoutRecord.self, from: stripped)
     check(decoded.verticalOscillation.isEmpty, "stripped key defaults to []")
     check(decoded.power == imported.power, "other series survive a missing key")
+    object.removeValue(forKey: "distanceProgress")
+    object.removeValue(forKey: "pauseIntervals")
+    let strippedCurve = try JSONSerialization.data(withJSONObject: object)
+    let decodedCurve = try decoder.decode(WorkoutRecord.self, from: strippedCurve)
+    check(decodedCurve.distanceProgress.isEmpty && decodedCurve.pauseIntervals.isEmpty, "missing curve keys decode as empty")
+    check(decodedCurve.power == imported.power, "stripping the curve keeps the other series")
     let roundTrip = try decoder.decode(WorkoutRecord.self, from: encoded)
     check(roundTrip.verticalOscillation == oscillation, "present vertical oscillation round-trips")
 } catch {
@@ -613,6 +648,221 @@ near(rebuilt.last?.distanceMeters ?? 0, 550, tolerance: 1, "rebuilt leftover dis
 near(rebuilt.reduce(0.0) { $0 + $1.durationSeconds }, 800, tolerance: 0.5, "rebuilt splits sum to training time")
 check(rebuilt.last?.listedDistanceText == "0.55" && rebuilt.last?.listedTimeText != "—", "rebuilt leftover is shown with real numbers")
 check(staleRows.splits.count == 3, "rebuild does not rewrite the stored array")
+check(official.distanceProgress.isEmpty, "a route-only rebuild does not invent official distance progress")
+
+let paired = WorkoutPause.intervals(
+    from: [
+        WorkoutPause.Mark(second: 100, isResume: false, duration: 0),
+        WorkoutPause.Mark(second: 400, isResume: true, duration: 0)
+    ],
+    elapsed: 1_000
+)
+check(paired.count == 1 && paired[0].startSecond == 100 && paired[0].endSecond == 400, "pause and resume pair into one interval")
+let closedPause = WorkoutPause.intervals(
+    from: [WorkoutPause.Mark(second: 100, isResume: false, duration: 50)],
+    elapsed: 1_000
+)
+check(closedPause.count == 1 && closedPause[0].endSecond == 150, "a pause event with duration is already closed")
+let unclosed = WorkoutPause.intervals(
+    from: [WorkoutPause.Mark(second: 800, isResume: false, duration: 0)],
+    elapsed: 1_000
+)
+check(unclosed.count == 1 && unclosed[0].endSecond == 1_000, "an open pause runs to the workout end")
+let nested = WorkoutPause.intervals(
+    from: [
+        WorkoutPause.Mark(second: 0, isResume: false, duration: 0),
+        WorkoutPause.Mark(second: 10, isResume: false, duration: 0),
+        WorkoutPause.Mark(second: 20, isResume: true, duration: 0),
+        WorkoutPause.Mark(second: 40, isResume: true, duration: 0)
+    ],
+    elapsed: 1_000
+)
+check(nested.count == 1 && nested[0].startSecond == 0 && nested[0].endSecond == 40, "nested pause and auto-pause stay one interval")
+let overlapped = WorkoutPause.merged([
+    WorkoutPause(startSecond: 100, endSecond: 400),
+    WorkoutPause(startSecond: 200, endSecond: 500)
+])
+check(overlapped.count == 1 && overlapped[0].endSecond == 500, "overlapping pauses merge")
+
+let cumulativeCuts = HealthSeries.track(
+    route: northRoute(count: 26, stepMeters: 100, stepSeconds: 30, firstOffset: 0, altitude: 20),
+    distanceSamples: [
+        sample(0, 600, 1_000),
+        sample(600, 1_500, 2_000),
+        sample(1_500, 1_800, 2_500)
+    ],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_800),
+    referenceDistanceMeters: 2_500,
+    heartRate: [
+        SeriesPoint(second: 100, value: 140),
+        SeriesPoint(second: 800, value: 160),
+        SeriesPoint(second: 1_600, value: 151)
+    ],
+    cadence: [
+        SeriesPoint(second: 100, value: 170),
+        SeriesPoint(second: 800, value: 150),
+        SeriesPoint(second: 1_600, value: 148)
+    ],
+    trainingDuration: 1_800
+)
+check(cumulativeCuts.splits.count == 3, "official 2.5 km is two full rows and a leftover, got \(cumulativeCuts.splits.count)")
+near(cumulativeCuts.splits[0].durationSeconds, 600, tolerance: 0.5, "km 1 follows the cumulative distance clock")
+near(cumulativeCuts.splits[1].durationSeconds, 900, tolerance: 0.5, "km 2 follows the cumulative distance clock")
+near(cumulativeCuts.splits[2].durationSeconds, 300, tolerance: 0.5, "leftover time follows the cumulative distance clock")
+near(cumulativeCuts.splits[2].distanceMeters, 500, tolerance: 1, "leftover distance is the real remainder")
+check(cumulativeCuts.splits[2].partial, "leftover row is partial")
+check(cumulativeCuts.splits[2].listedDistanceText == "0.50", "leftover lists 0.50, got \(cumulativeCuts.splits[2].listedDistanceText)")
+check(cumulativeCuts.splits[2].listedTimeText == "05:00", "leftover lists its own time, got \(cumulativeCuts.splits[2].listedTimeText)")
+check(cumulativeCuts.splits[2].listedDistanceText != "未满" && cumulativeCuts.splits[2].listedTimeText != "—", "leftover hides neither field")
+check(cumulativeCuts.splits.dropLast().allSatisfy { $0.listedDistanceText == "1.00" && !$0.partial }, "full official kilometers stay 1.00")
+near(cumulativeCuts.splits[0].heartRate, 140, tolerance: 0.01, "km 1 heart uses the official window")
+near(cumulativeCuts.splits[1].heartRate, 160, tolerance: 0.01, "km 2 heart uses the official window")
+near(cumulativeCuts.splits[2].heartRate, 151, tolerance: 0.01, "leftover heart uses the official window")
+near(cumulativeCuts.splits[0].cadence, 170, tolerance: 0.01, "km 1 cadence uses the official window")
+near(cumulativeCuts.splits[1].cadence, 150, tolerance: 0.01, "km 2 cadence uses the official window")
+near(cumulativeCuts.pace[0].value, 300, tolerance: 2, "pace chart still follows the route")
+check(!cumulativeCuts.distanceProgress.isEmpty, "official distance progress is kept")
+near(cumulativeCuts.splits.reduce(0) { $0 + $1.durationSeconds }, 1_800, tolerance: 0.5, "official split times sum to training time")
+
+let gapped = HealthSeries.track(
+    route: [],
+    distanceSamples: [
+        sample(0, 400, 1_000),
+        sample(700, 1_000, 1_000)
+    ],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_000),
+    referenceDistanceMeters: 2_000,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 700
+)
+check(gapped.splits.count == 2, "a gap between distance samples is still two kilometers, got \(gapped.splits.count)")
+near(gapped.splits[0].durationSeconds, 400, tolerance: 0.5, "a sample gap is not dumped into the next kilometer")
+near(gapped.splits[1].durationSeconds, 300, tolerance: 0.5, "the kilometer after a gap keeps only its sample time")
+
+let spanned = HealthSeries.track(
+    route: [],
+    distanceSamples: [
+        sample(0, 400, 1_000),
+        sample(400, 1_000, 1_000)
+    ],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_000),
+    referenceDistanceMeters: 2_000,
+    heartRate: [
+        SeriesPoint(second: 100, value: 142),
+        SeriesPoint(second: 500, value: 90),
+        SeriesPoint(second: 800, value: 158)
+    ],
+    cadence: [
+        SeriesPoint(second: 100, value: 168),
+        SeriesPoint(second: 500, value: 40),
+        SeriesPoint(second: 800, value: 152)
+    ],
+    trainingDuration: 700,
+    pauses: [WorkoutPause(startSecond: 400, endSecond: 700)]
+)
+near(spanned.splits[0].durationSeconds, 400, tolerance: 0.5, "a pause does not scale the earlier kilometer")
+near(spanned.splits[1].durationSeconds, 300, tolerance: 0.5, "a pause inside a distance sample is left out of that kilometer")
+near(spanned.splits[0].heartRate, 142, tolerance: 0.01, "heart before the pause stays")
+near(spanned.splits[1].heartRate, 158, tolerance: 0.01, "heart during the pause is left out")
+near(spanned.splits[1].cadence, 152, tolerance: 0.01, "cadence during the pause is left out")
+near(spanned.splits.reduce(0) { $0 + $1.durationSeconds }, 700, tolerance: 0.5, "paused splits still sum to training time")
+check(spanned.pauseIntervals.count == 1, "the track keeps the pause interval")
+
+func driftRoute() -> (points: [GeoPoint], pause: WorkoutPause, finish: Date, meters: Double) {
+    var rows: [GeoPoint] = []
+    var elapsed = 0.0
+    var north = 0.0
+    func add() {
+        rows.append(GeoPoint(
+            latitude: 31.24 + north / 111_320,
+            longitude: 121.49,
+            altitude: 20,
+            timestamp: start.addingTimeInterval(elapsed)
+        ))
+    }
+    add()
+    for _ in 0..<20 {
+        elapsed += 15
+        north += 50
+        add()
+    }
+    let pauseStart = elapsed
+    for _ in 0..<30 {
+        elapsed += 10
+        north += 2
+        add()
+    }
+    let pause = WorkoutPause(startSecond: pauseStart, endSecond: elapsed)
+    for _ in 0..<20 {
+        elapsed += 15
+        north += 50
+        add()
+    }
+    return (rows, pause, start.addingTimeInterval(elapsed), north)
+}
+
+let drifted = driftRoute()
+let gpsPaused = HealthSeries.track(
+    route: drifted.points,
+    distanceSamples: [],
+    workoutStart: start,
+    workoutEnd: drifted.finish,
+    referenceDistanceMeters: drifted.meters,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 600,
+    pauses: [drifted.pause]
+)
+check(gpsPaused.distanceProgress.isEmpty, "missing distance samples do not store an official curve")
+check(gpsPaused.splits.count == 3, "gps fallback still cuts the route, got \(gpsPaused.splits.count)")
+near(gpsPaused.splits[0].durationSeconds, 300, tolerance: 5, "gps fallback keeps the first kilometer when a later pause is removed")
+check(gpsPaused.splits.allSatisfy { $0.durationSeconds < 400 }, "a recorded pause is not dumped into a gps kilometer")
+near(gpsPaused.splits.reduce(0) { $0 + $1.durationSeconds }, 600, tolerance: 0.5, "gps fallback splits still sum to training time")
+check(gpsPaused.splits.last?.partial == true, "gps fallback keeps a real leftover")
+check((gpsPaused.splits.last?.distanceMeters ?? 0) > 30, "gps fallback leftover keeps its distance")
+check(gpsPaused.splits.last?.listedDistanceText != "未满" && gpsPaused.splits.last?.listedTimeText != "—", "gps fallback leftover is not a dash or 未满")
+
+var storedCuts = makeWorkout()
+storedCuts.distanceMeters = 2_000
+storedCuts.trainingDurationSeconds = 700
+storedCuts.end = start.addingTimeInterval(1_000)
+storedCuts.splits = [
+    KilometerSplit(index: 1, paceSecPerKm: 200, cadence: 160, heartRate: 140, partial: false, distanceMeters: 1_000, durationSeconds: 200),
+    KilometerSplit(index: 2, paceSecPerKm: 800, cadence: 160, heartRate: 150, partial: false, distanceMeters: 1_000, durationSeconds: 800)
+]
+storedCuts.distanceProgress = [
+    SeriesPoint(second: 0, value: 0),
+    SeriesPoint(second: 600, value: 1_000),
+    SeriesPoint(second: 1_000, value: 2_000)
+]
+storedCuts.pauseIntervals = [WorkoutPause(startSecond: 600, endSecond: 900)]
+storedCuts.heartRate = [
+    SeriesPoint(second: 100, value: 141),
+    SeriesPoint(second: 700, value: 99),
+    SeriesPoint(second: 950, value: 156)
+]
+let rebuiltCuts = storedCuts.resolvedSplits
+near(rebuiltCuts[0].durationSeconds, 600, tolerance: 0.5, "display cuts the stored official curve instead of the old gps rows")
+near(rebuiltCuts[1].durationSeconds, 100, tolerance: 0.5, "display leaves the stored pause out of the second kilometer")
+near(rebuiltCuts[0].heartRate, 141, tolerance: 0.01, "display heart follows the official window")
+near(rebuiltCuts[1].heartRate, 156, tolerance: 0.01, "display heart skips the stored pause")
+check(storedCuts.splits[0].durationSeconds == 200, "display rebuild does not rewrite the stored rows")
+check(rebuiltCuts.allSatisfy { !$0.partial } && rebuiltCuts.dropLast().allSatisfy { $0.listedDistanceText == "1.00" }, "rebuilt full rows stay 1.00")
+
+var untrusted = storedCuts
+untrusted.distanceProgress = [SeriesPoint(second: 0, value: 0), SeriesPoint(second: 100, value: 800)]
+untrusted.pauseIntervals = []
+untrusted.trainingDurationSeconds = 1_000
+untrusted.splits = [
+    KilometerSplit(index: 1, paceSecPerKm: 200, cadence: 160, heartRate: 140, partial: false, distanceMeters: 1_000, durationSeconds: 200),
+    KilometerSplit(index: 2, paceSecPerKm: 800, cadence: 160, heartRate: 150, partial: false, distanceMeters: 1_000, durationSeconds: 800)
+]
+check(untrusted.resolvedSplits[0].durationSeconds == 200, "a distance curve far from the official total does not replace matching rows")
+check(untrusted.resolvedSplits.count == 2, "untrusted progress keeps the stored rows, got \(untrusted.resolvedSplits.count)")
 
 if failures.isEmpty {
     print("health-series-check ok")
