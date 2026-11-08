@@ -161,7 +161,7 @@ enum AppleHealth {
         async let powerSamples = quantitySamples(.runningPower, unit: .watt(), start: windowStart, end: windowEnd)
         async let contactSamples = quantitySamples(.runningGroundContactTime, unit: .second(), start: windowStart, end: windowEnd)
         async let oscillationSamples = quantitySamples(.runningVerticalOscillation, unit: .meter(), start: windowStart, end: windowEnd)
-        async let distanceSamples = quantitySamples(.distanceWalkingRunning, unit: .meter(), start: windowStart, end: windowEnd)
+        async let linkedDistance = distanceSamples(for: workout)
 
         let route = await routeTask
         let stepCadence = await cadenceTask
@@ -177,15 +177,17 @@ enum AppleHealth {
         )
         let moving = workout.duration
         let training = moving.isFinite && moving > 0 ? moving : 0
+        let pauses = pauseIntervals(for: workout)
         let track = HealthSeries.track(
             route: route,
-            distanceSamples: await distanceSamples,
+            distanceSamples: await linkedDistance,
             workoutStart: windowStart,
             workoutEnd: windowEnd,
             referenceDistanceMeters: distance,
             heartRate: heartRate,
             cadence: cadenceSeries,
-            trainingDuration: training
+            trainingDuration: training,
+            pauses: pauses
         )
         return WorkoutRecord(
             id: UUID(),
@@ -209,8 +211,51 @@ enum AppleHealth {
             verticalOscillation: verticalOscillation,
             origin: .apple,
             healthKitUUID: workout.uuid.uuidString,
-            trainingDurationSeconds: training
+            trainingDurationSeconds: training,
+            conditions: nil,
+            startPlace: nil,
+            distanceProgress: track.distanceProgress,
+            pauseIntervals: track.pauseIntervals
         )
+    }
+
+    /// Distance samples that belong to the workout. A time-range query is the fallback
+    /// when HealthKit did not link the samples to the workout object.
+    private static func distanceSamples(for workout: HKWorkout) async -> [HealthQuantitySample] {
+        let linked = await quantitySamples(
+            .distanceWalkingRunning,
+            unit: .meter(),
+            predicate: HKQuery.predicateForObjects(from: workout)
+        )
+        if linked.contains(where: { $0.value.isFinite && $0.value > 0 }) {
+            return linked
+        }
+        return await quantitySamples(
+            .distanceWalkingRunning,
+            unit: .meter(),
+            start: workout.startDate,
+            end: workout.endDate
+        )
+    }
+
+    /// Manual pauses and motion pauses. Resume closes the open mark.
+    /// An event that already has a duration is a finished pause on its own.
+    private static func pauseIntervals(for workout: HKWorkout) -> [WorkoutPause] {
+        let origin = workout.startDate
+        let elapsed = workout.endDate.timeIntervalSince(origin)
+        let marks = (workout.workoutEvents ?? []).compactMap { event -> WorkoutPause.Mark? in
+            let second = event.dateInterval.start.timeIntervalSince(origin)
+            let duration = event.dateInterval.duration
+            switch event.type {
+            case .pause, .motionPaused:
+                return WorkoutPause.Mark(second: second, isResume: false, duration: duration)
+            case .resume, .motionResumed:
+                return WorkoutPause.Mark(second: second, isResume: true, duration: 0)
+            default:
+                return nil
+            }
+        }
+        return WorkoutPause.intervals(from: marks, elapsed: elapsed)
     }
 
     /// Samples that start inside the workout. A failed query returns none.
@@ -220,8 +265,16 @@ enum AppleHealth {
         start: Date,
         end: Date
     ) async -> [HealthQuantitySample] {
-        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return [] }
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        return await quantitySamples(identifier, unit: unit, predicate: predicate)
+    }
+
+    private static func quantitySamples(
+        _ identifier: HKQuantityTypeIdentifier,
+        unit: HKUnit,
+        predicate: NSPredicate
+    ) async -> [HealthQuantitySample] {
+        guard let type = HKQuantityType.quantityType(forIdentifier: identifier) else { return [] }
         return await withCheckedContinuation { continuation in
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
             let query = HKSampleQuery(

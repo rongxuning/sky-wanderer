@@ -70,18 +70,21 @@ enum HealthSeries {
         var pace: [SeriesPoint]
         var splits: [KilometerSplit]
         var elevation: [SeriesPoint]
+        /// Official cumulative meters, kept only when the distance samples match the workout total.
+        var distanceProgress: [SeriesPoint]
+        var pauseIntervals: [WorkoutPause]
     }
 
-    /// Pace and splits prefer a timestamped route. Distance samples are the fallback.
-    /// Elevation always comes from route altitudes.
+    /// Pace prefers a timestamped route. Elevation always comes from route altitudes.
     ///
-    /// Kilometer cuts use `referenceDistanceMeters` when that official distance is
-    /// trustworthy: the route (or the distance samples) only decides when each meter
-    /// happened, then the timeline is scaled so the last point matches the official
-    /// total. Split durations use moving time. A gap longer than
-    /// `TrainingSeriesMath.pauseGapSeconds` whose speed is under 0.5 m/s is a pause
-    /// or a GPS hole and adds no time. When `trainingDuration` is the workout's
-    /// moving time, split durations are scaled so they sum to it.
+    /// Kilometer cuts prefer HealthKit distance samples when their total is within
+    /// 15% of `referenceDistanceMeters`. Each kilometer ends where that cumulative
+    /// distance crossed the mark. A GPS trace is only the fallback: scaling it so
+    /// the last point matches the official total still leaves local trail error in
+    /// every cut. Recorded pauses are removed from split duration. With no pause
+    /// events, a GPS gap longer than `TrainingSeriesMath.pauseGapSeconds` whose
+    /// speed is under 0.5 m/s still adds no time. When `trainingDuration` is the
+    /// workout's moving time, split durations are scaled so they sum to it.
     static func track(
         route: [GeoPoint],
         distanceSamples: [HealthQuantitySample],
@@ -90,31 +93,71 @@ enum HealthSeries {
         referenceDistanceMeters: Double,
         heartRate: [SeriesPoint],
         cadence: [SeriesPoint],
-        trainingDuration: TimeInterval = 0
+        trainingDuration: TimeInterval = 0,
+        pauses: [WorkoutPause] = []
     ) -> Track {
+        let pauseList = WorkoutPause.merged(pauses)
         let followed = routeTimeline(route, workoutStart: workoutStart, workoutEnd: workoutEnd)
-        let routeMeters = followed.last?.meters ?? 0
-        let movement: [TimedDistance]
-        if followed.count >= 2, routeMeters >= 50 {
-            movement = followed
+        let sampled = distanceTimeline(
+            distanceSamples,
+            workoutStart: workoutStart,
+            workoutEnd: workoutEnd,
+            referenceDistanceMeters: referenceDistanceMeters
+        )
+        let progress = progressSeries(sampled)
+        let routeUsable = followed.count >= 2 && (followed.last?.meters ?? 0) >= 50
+        let official = trustedOfficialDistance(progress, officialMeters: referenceDistanceMeters)
+        let paceTimeline: [TimedDistance]
+        if routeUsable {
+            paceTimeline = followed
         } else {
-            movement = distanceTimeline(
-                distanceSamples,
-                workoutStart: workoutStart,
-                workoutEnd: workoutEnd,
-                referenceDistanceMeters: referenceDistanceMeters
-            )
+            paceTimeline = progress.map { TimedDistance(second: $0.second, movingSecond: 0, meters: $0.value) }
         }
-        let aligned = alignedToOfficialDistance(movement, officialMeters: referenceDistanceMeters)
+        let splitTimeline: [TimedDistance]
+        if official {
+            splitTimeline = timed(progress, pauses: pauseList, inferSlowGaps: false)
+        } else if routeUsable {
+            splitTimeline = applyingPauses(followed, pauseList)
+        } else {
+            splitTimeline = timed(progress, pauses: pauseList, inferSlowGaps: true)
+        }
+        let aligned = alignedToOfficialDistance(splitTimeline, officialMeters: referenceDistanceMeters)
         return Track(
-            pace: pace(from: movement),
+            pace: pace(from: paceTimeline),
             splits: splits(
                 from: aligned,
                 heartRate: heartRate,
                 cadence: cadence,
-                trainingDuration: trainingDuration
+                trainingDuration: trainingDuration,
+                pauses: pauseList
             ),
-            elevation: elevation(route, workoutStart: workoutStart, workoutEnd: workoutEnd)
+            elevation: elevation(route, workoutStart: workoutStart, workoutEnd: workoutEnd),
+            distanceProgress: official ? progress : [],
+            pauseIntervals: pauseList
+        )
+    }
+
+    /// Kilometer rows from a stored official distance curve.
+    /// Returns nothing when the curve is missing or its total is not the workout distance,
+    /// so the caller can keep GPS fallback.
+    static func splits(
+        distanceProgress: [SeriesPoint],
+        pauses: [WorkoutPause],
+        heartRate: [SeriesPoint],
+        cadence: [SeriesPoint],
+        trainingDuration: TimeInterval,
+        referenceDistanceMeters: Double
+    ) -> [KilometerSplit] {
+        guard trustedOfficialDistance(distanceProgress, officialMeters: referenceDistanceMeters) else { return [] }
+        let pauseList = WorkoutPause.merged(pauses)
+        let timeline = timed(distanceProgress, pauses: pauseList, inferSlowGaps: false)
+        let aligned = alignedToOfficialDistance(timeline, officialMeters: referenceDistanceMeters)
+        return splits(
+            from: aligned,
+            heartRate: heartRate,
+            cadence: cadence,
+            trainingDuration: trainingDuration,
+            pauses: pauseList
         )
     }
 
@@ -230,12 +273,16 @@ enum HealthSeries {
         return timeline
     }
 
+    /// Cumulative meters at wall-clock seconds. A gap between samples keeps the
+    /// distance flat so that gap is not later counted as moving time.
+    /// A monotonic series whose last value matches the workout, and whose sum is
+    /// much larger than that workout, is a running total and is differenced.
     private static func distanceTimeline(
         _ samples: [HealthQuantitySample],
         workoutStart: Date,
         workoutEnd: Date,
         referenceDistanceMeters: Double
-    ) -> [TimedDistance] {
+    ) -> [SeriesPoint] {
         let usable = samples
             .filter { $0.value.isFinite && $0.value > 0 && $0.end > $0.start && $0.end >= workoutStart && $0.start <= workoutEnd }
             .sorted { $0.start < $1.start }
@@ -245,30 +292,186 @@ enum HealthSeries {
         let matchesWorkout = referenceDistanceMeters > 0
             && abs(last.value - referenceDistanceMeters) / referenceDistanceMeters < 0.35
         let cumulative = monotonic && matchesWorkout && sum > referenceDistanceMeters * 1.3
-        var timeline: [TimedDistance] = []
+        var points: [SeriesPoint] = []
         var traveled = 0.0
-        var previous = 0.0
+        var previousValue = 0.0
+        func add(second: Double, meters: Double) {
+            if let last = points.last {
+                if second < last.second { return }
+                if second == last.second {
+                    if meters > last.value {
+                        points[points.count - 1] = SeriesPoint(second: second, value: meters)
+                    }
+                    return
+                }
+            }
+            points.append(SeriesPoint(second: second, value: meters))
+        }
         for sample in usable {
-            let delta = cumulative ? max(0, sample.value - previous) : sample.value
-            if cumulative { previous = sample.value }
+            let delta = cumulative ? max(0, sample.value - previousValue) : sample.value
+            if cumulative { previousValue = sample.value }
             guard delta > 0 else { continue }
             let startSecond = second(sample.start, start: workoutStart, end: workoutEnd)
             let endSecond = second(sample.end, start: workoutStart, end: workoutEnd)
-            if timeline.isEmpty {
-                timeline.append(TimedDistance(second: startSecond, movingSecond: 0, meters: 0))
+            if points.isEmpty {
+                add(second: startSecond, meters: 0)
+            } else if startSecond > points[points.count - 1].second {
+                add(second: startSecond, meters: traveled)
             }
             traveled += delta
+            let pointSecond = max(endSecond, points.last?.second ?? endSecond)
+            add(second: pointSecond, meters: traveled)
+        }
+        return points
+    }
+
+    /// Distance samples are the official curve when they land within 15% of the workout total.
+    private static func trustedOfficialDistance(_ progress: [SeriesPoint], officialMeters: Double) -> Bool {
+        guard let last = progress.last, last.value >= 50,
+              officialMeters.isFinite, officialMeters >= 50 else { return false }
+        let ratio = officialMeters / last.value
+        return ratio >= 0.85 && ratio <= 1.15
+    }
+
+    private static let splitProgressMaxPoints = 4096
+
+    /// Keeps gap markers (flat distance) and thins the rest. The last sample stays,
+    /// so the official total used for the trust check does not change.
+    private static func progressSeries(_ points: [SeriesPoint]) -> [SeriesPoint] {
+        guard points.count > splitProgressMaxPoints else { return points }
+        var keep = Set<Int>([0, points.count - 1])
+        for index in 1..<points.count where abs(points[index].value - points[index - 1].value) <= 0.5 {
+            keep.insert(index - 1)
+            keep.insert(index)
+        }
+        let extras = splitProgressMaxPoints - keep.count
+        if extras > 0 {
+            let optional = points.indices.filter { !keep.contains($0) }
+            if !optional.isEmpty {
+                let step = Double(optional.count) / Double(extras)
+                for slot in 0..<extras {
+                    let pick = min(optional.count - 1, Int((Double(slot) * step).rounded(.down)))
+                    keep.insert(optional[pick])
+                }
+            }
+        } else if keep.count > splitProgressMaxPoints {
+            let required = keep.sorted()
+            let lastIndex = required.count - 1
+            var slim: [Int] = []
+            var seen = Set<Int>()
+            let step = Double(lastIndex) / Double(splitProgressMaxPoints - 1)
+            for slot in 0..<splitProgressMaxPoints {
+                let index = required[min(lastIndex, Int((Double(slot) * step).rounded()))]
+                if seen.insert(index).inserted {
+                    slim.append(index)
+                }
+            }
+            if slim.last != required[lastIndex] {
+                slim.append(required[lastIndex])
+            }
+            return slim.map { points[$0] }
+        }
+        return keep.sorted().map { points[$0] }
+    }
+
+    private struct Span {
+        var start: Double
+        var end: Double
+    }
+
+    /// Wall-clock pieces of `[start, end)` that are not inside a pause.
+    private static func activePieces(from start: Double, to end: Double, pauses: [WorkoutPause]) -> [Span] {
+        guard end > start else { return [] }
+        var pieces: [Span] = []
+        var cursor = start
+        let cuts = pauses
+            .filter { $0.endSecond > start && $0.startSecond < end }
+            .sorted { $0.startSecond < $1.startSecond }
+        for pause in cuts {
+            let pauseStart = max(start, pause.startSecond)
+            let pauseEnd = min(end, pause.endSecond)
+            if pauseStart > cursor {
+                pieces.append(Span(start: cursor, end: pauseStart))
+            }
+            cursor = max(cursor, pauseEnd)
+        }
+        if cursor < end {
+            pieces.append(Span(start: cursor, end: end))
+        }
+        return pieces
+    }
+
+    /// Moving time along a cumulative distance curve.
+    /// Flat gaps add no time. Distance that spans a pause is spread across the
+    /// active pieces only, so a kilometer boundary cannot land inside the pause.
+    /// `inferSlowGaps` drops a long, near-stopped GPS-style segment when no pause
+    /// events were recorded. Official distance samples do not use it: a slow trail
+    /// kilometer is still moving time.
+    private static func timed(
+        _ progress: [SeriesPoint],
+        pauses: [WorkoutPause],
+        inferSlowGaps: Bool
+    ) -> [TimedDistance] {
+        let points = progress
+            .filter { $0.second.isFinite && $0.value.isFinite && $0.value >= 0 }
+            .sorted { $0.second < $1.second }
+        guard let first = points.first else { return [] }
+        var timeline = [TimedDistance(second: first.second, movingSecond: 0, meters: first.value)]
+        for point in points.dropFirst() {
             let previous = timeline[timeline.count - 1]
-            let pointSecond = max(endSecond, previous.second)
-            let sampleDt = max(0, endSecond - startSecond)
-            let moving = previous.movingSecond + movingCredit(dt: sampleDt, meters: delta)
-            if pointSecond == previous.second {
-                timeline[timeline.count - 1] = TimedDistance(second: pointSecond, movingSecond: moving, meters: traveled)
-            } else {
-                timeline.append(TimedDistance(second: pointSecond, movingSecond: moving, meters: traveled))
+            let span = point.second - previous.second
+            guard span > 0 else { continue }
+            let delta = point.value - previous.meters
+            if delta <= 0.5 {
+                timeline.append(TimedDistance(second: point.second, movingSecond: previous.movingSecond, meters: previous.meters))
+                continue
+            }
+            let pieces = activePieces(from: previous.second, to: point.second, pauses: pauses)
+            if pieces.isEmpty {
+                timeline.append(TimedDistance(
+                    second: point.second,
+                    movingSecond: previous.movingSecond,
+                    meters: max(previous.meters, point.value)
+                ))
+                continue
+            }
+            let active = pieces.reduce(0) { $0 + ($1.end - $1.start) }
+            if inferSlowGaps, pauses.isEmpty, span > TrainingSeriesMath.pauseGapSeconds, delta / span < 0.5 {
+                timeline.append(TimedDistance(second: point.second, movingSecond: previous.movingSecond, meters: previous.meters + delta))
+                continue
+            }
+            var carried = previous.meters
+            var moving = previous.movingSecond
+            for piece in pieces {
+                let dt = piece.end - piece.start
+                let share = active > 0 ? delta * (dt / active) : 0
+                carried += share
+                moving += dt
+                timeline.append(TimedDistance(second: piece.end, movingSecond: moving, meters: carried))
             }
         }
         return timeline
+    }
+
+    /// Subtracts recorded pauses from a GPS timeline without removing a gap the
+    /// speed heuristic already dropped.
+    private static func applyingPauses(_ timeline: [TimedDistance], _ pauses: [WorkoutPause]) -> [TimedDistance] {
+        guard !pauses.isEmpty, timeline.count >= 2 else { return timeline }
+        var result = [timeline[0]]
+        for index in 1..<timeline.count {
+            let previous = timeline[index - 1]
+            let current = timeline[index]
+            let movingDelta = max(0, current.movingSecond - previous.movingSecond)
+            let paused = WorkoutPause.overlap(pauses, from: previous.second, to: current.second)
+            let credit = movingDelta <= 0.5 ? 0 : max(0, movingDelta - paused)
+            let last = result[result.count - 1]
+            result.append(TimedDistance(
+                second: current.second,
+                movingSecond: last.movingSecond + credit,
+                meters: current.meters
+            ))
+        }
+        return result
     }
 
     private static func pace(from timeline: [TimedDistance]) -> [SeriesPoint] {
@@ -296,7 +499,8 @@ enum HealthSeries {
         from timeline: [TimedDistance],
         heartRate: [SeriesPoint],
         cadence: [SeriesPoint],
-        trainingDuration: TimeInterval
+        trainingDuration: TimeInterval,
+        pauses: [WorkoutPause]
     ) -> [KilometerSplit] {
         guard let first = timeline.first, let last = timeline.last, last.meters > 30 else { return [] }
         var splits: [KilometerSplit] = []
@@ -319,8 +523,8 @@ enum HealthSeries {
             splits.append(KilometerSplit(
                 index: splits.count + 1,
                 paceSecPerKm: dt,
-                cadence: mean(cadence, from: splitStartWall, to: crossedWall, includingEnd: false),
-                heartRate: mean(heartRate, from: splitStartWall, to: crossedWall, includingEnd: false),
+                cadence: mean(cadence, from: splitStartWall, to: crossedWall, includingEnd: false, pauses: pauses),
+                heartRate: mean(heartRate, from: splitStartWall, to: crossedWall, includingEnd: false, pauses: pauses),
                 partial: false,
                 energyKilocalories: 0,
                 distanceMeters: 1000,
@@ -336,8 +540,8 @@ enum HealthSeries {
             splits.append(KilometerSplit(
                 index: splits.count + 1,
                 paceSecPerKm: dt / (leftover / 1000),
-                cadence: mean(cadence, from: splitStartWall, to: last.second, includingEnd: true),
-                heartRate: mean(heartRate, from: splitStartWall, to: last.second, includingEnd: true),
+                cadence: mean(cadence, from: splitStartWall, to: last.second, includingEnd: true, pauses: pauses),
+                heartRate: mean(heartRate, from: splitStartWall, to: last.second, includingEnd: true, pauses: pauses),
                 partial: true,
                 energyKilocalories: 0,
                 distanceMeters: leftover,
@@ -369,13 +573,17 @@ enum HealthSeries {
         _ points: [SeriesPoint],
         from start: Double,
         to end: Double,
-        includingEnd: Bool
+        includingEnd: Bool,
+        pauses: [WorkoutPause]
     ) -> Double {
         let values = points.compactMap { point -> Double? in
             guard point.value.isFinite, point.value > 0, point.second >= start else { return nil }
             if includingEnd {
                 guard point.second <= end else { return nil }
             } else if point.second >= end {
+                return nil
+            }
+            if pauses.contains(where: { point.second >= $0.startSecond && point.second < $0.endSecond }) {
                 return nil
             }
             return point.value
@@ -419,11 +627,22 @@ enum HealthSeries {
 
 extension WorkoutRecord {
     /// Kilometer rows for the detail table and the share image.
-    /// Stored splits from an older import were cut on the raw GPS length and have no
-    /// leftover distance, so they are rebuilt from the saved route, official distance,
-    /// and training time. A record that already matches that distance keeps its splits.
+    /// An official distance curve cuts each kilometer where HealthKit distance crossed
+    /// that mark and leaves recorded pauses out of the row. Older imports have no curve;
+    /// the next Health merge stores one, and this rebuilds the rows without rewriting
+    /// the saved array. Until that curve exists, stored rows that already use the
+    /// official distance are kept, and anything else is rebuilt from the route.
     var resolvedSplits: [KilometerSplit] {
         guard distanceMeters > 30 else { return splits }
+        let official = HealthSeries.splits(
+            distanceProgress: distanceProgress,
+            pauses: pauseIntervals,
+            heartRate: heartRate,
+            cadence: cadenceSeries,
+            trainingDuration: storedTrainingDuration,
+            referenceDistanceMeters: distanceMeters
+        )
+        if !official.isEmpty { return official }
         if splitsMatchOfficialDistance() { return splits }
         let rebuilt = HealthSeries.track(
             route: route,
@@ -433,7 +652,8 @@ extension WorkoutRecord {
             referenceDistanceMeters: distanceMeters,
             heartRate: heartRate,
             cadence: cadenceSeries,
-            trainingDuration: storedTrainingDuration
+            trainingDuration: storedTrainingDuration,
+            pauses: pauseIntervals
         ).splits
         return rebuilt.isEmpty ? splits : rebuilt
     }
