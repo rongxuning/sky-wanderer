@@ -386,6 +386,7 @@ do {
     check(legacyRecord.conditions == nil && legacyRecord.startPlace == nil, "missing context stays empty")
     check(legacyRecord.distanceProgress.isEmpty, "missing distance progress decodes as empty")
     check(legacyRecord.pauseIntervals.isEmpty, "missing pauses decode as empty")
+    check(legacyRecord.lapMarks.isEmpty, "missing lap marks decode as empty")
 
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
@@ -403,6 +404,7 @@ do {
     enriched.startPlace = WorkoutStartPlace(name: "上海长风公园")
     enriched.distanceProgress = [SeriesPoint(second: 0, value: 0), SeriesPoint(second: 12, value: 40)]
     enriched.pauseIntervals = [WorkoutPause(startSecond: 4, endSecond: 9)]
+    enriched.lapMarks = [WorkoutLapMark(second: 30, distanceMeters: 1_000)]
     let enrichedData = try encoder.encode(enriched)
     let decodedEnriched = try decoder.decode(WorkoutRecord.self, from: enrichedData)
     check(decodedEnriched.trainingDurationSeconds == 480, "training duration round-trips")
@@ -413,6 +415,7 @@ do {
     check(decodedEnriched.startPlace?.name == "上海长风公园", "place name round-trips")
     check(decodedEnriched.distanceProgress.count == 2 && decodedEnriched.distanceProgress[1].value == 40, "distance progress round-trips")
     check(decodedEnriched.pauseIntervals.count == 1 && decodedEnriched.pauseIntervals[0].startSecond == 4, "pause intervals round-trip")
+    check(decodedEnriched.lapMarks.count == 1 && decodedEnriched.lapMarks[0].second == 30, "lap marks round-trip")
     enriched.trainingDurationSeconds = 10_000
     check(enriched.trainingDuration == 600, "a stored duration past elapsed falls back")
 
@@ -430,9 +433,11 @@ do {
     check(decoded.power == imported.power, "other series survive a missing key")
     object.removeValue(forKey: "distanceProgress")
     object.removeValue(forKey: "pauseIntervals")
+    object.removeValue(forKey: "lapMarks")
     let strippedCurve = try JSONSerialization.data(withJSONObject: object)
     let decodedCurve = try decoder.decode(WorkoutRecord.self, from: strippedCurve)
     check(decodedCurve.distanceProgress.isEmpty && decodedCurve.pauseIntervals.isEmpty, "missing curve keys decode as empty")
+    check(decodedCurve.lapMarks.isEmpty, "missing lap marks decode as empty after a strip")
     check(decodedCurve.power == imported.power, "stripping the curve keeps the other series")
     let roundTrip = try decoder.decode(WorkoutRecord.self, from: encoded)
     check(roundTrip.verticalOscillation == oscillation, "present vertical oscillation round-trips")
@@ -739,8 +744,65 @@ let gapped = HealthSeries.track(
     trainingDuration: 700
 )
 check(gapped.splits.count == 2, "a gap between distance samples is still two kilometers, got \(gapped.splits.count)")
-near(gapped.splits[0].durationSeconds, 400, tolerance: 0.5, "a sample gap is not dumped into the next kilometer")
-near(gapped.splits[1].durationSeconds, 300, tolerance: 0.5, "the kilometer after a gap keeps only its sample time")
+near(gapped.splits[0].durationSeconds, 400, tolerance: 0.5, "a kilometer that already closed keeps the time up to the mark")
+near(gapped.splits[1].durationSeconds, 600, tolerance: 0.5, "the gap after the mark stays on the kilometer already in progress")
+near(gapped.splits.reduce(0) { $0 + $1.durationSeconds }, 1_000, tolerance: 0.5, "a sample gap is not scaled back down to training duration")
+
+let openGap = HealthSeries.track(
+    route: [],
+    distanceSamples: [
+        sample(0, 200, 400),
+        sample(500, 800, 600),
+        sample(800, 1_100, 1_000)
+    ],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_100),
+    referenceDistanceMeters: 2_000,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 400
+)
+check(openGap.splits.count == 2, "a mid-kilometer gap is still two rows, got \(openGap.splits.count)")
+near(openGap.splits[0].durationSeconds, 800, tolerance: 0.5, "gap time lands in the kilometer that had already started")
+near(openGap.splits[1].durationSeconds, 300, tolerance: 0.5, "a gap is not dumped into the following kilometer")
+near(openGap.splits.reduce(0) { $0 + $1.durationSeconds }, 1_100, tolerance: 0.5, "mid-kilometer gap splits are not scaled to training duration")
+
+let pausedGap = HealthSeries.track(
+    route: [],
+    distanceSamples: [
+        sample(0, 200, 400),
+        sample(500, 800, 600),
+        sample(800, 1_100, 1_000)
+    ],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_100),
+    referenceDistanceMeters: 2_000,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 400,
+    pauses: [WorkoutPause(startSecond: 350, endSecond: 450)]
+)
+near(pausedGap.splits[0].durationSeconds, 700, tolerance: 0.5, "a pause inside a sample gap is left out of that kilometer")
+near(pausedGap.splits[1].durationSeconds, 300, tolerance: 0.5, "a pause inside a gap does not change the next kilometer")
+near(pausedGap.splits.reduce(0) { $0 + $1.durationSeconds }, 1_000, tolerance: 0.5, "paused gap time is not put back by scaling")
+
+let unscaledCurve = HealthSeries.track(
+    route: [],
+    distanceSamples: [
+        sample(0, 500, 1_000),
+        sample(500, 1_000, 1_000)
+    ],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_000),
+    referenceDistanceMeters: 2_200,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 1_600
+)
+check(unscaledCurve.splits.count == 2, "an official curve within 15% is not stretched into an extra partial, got \(unscaledCurve.splits.count)")
+near(unscaledCurve.splits[0].durationSeconds, 500, tolerance: 0.5, "official distance is not scaled, so the first mark stays at the sample")
+near(unscaledCurve.splits[1].durationSeconds, 500, tolerance: 0.5, "official split durations are not scaled to training time")
+check(unscaledCurve.splits.allSatisfy { abs($0.distanceMeters - 1_000) < 1 && !$0.partial }, "official rows keep the sample kilometers")
 
 let spanned = HealthSeries.track(
     route: [],
@@ -863,6 +925,158 @@ untrusted.splits = [
 ]
 check(untrusted.resolvedSplits[0].durationSeconds == 200, "a distance curve far from the official total does not replace matching rows")
 check(untrusted.resolvedSplits.count == 2, "untrusted progress keeps the stored rows, got \(untrusted.resolvedSplits.count)")
+
+var storedGap = makeWorkout()
+storedGap.distanceMeters = 2_000
+storedGap.end = start.addingTimeInterval(1_000)
+storedGap.trainingDurationSeconds = 900
+storedGap.splits = [
+    KilometerSplit(index: 1, paceSecPerKm: 200, cadence: 160, heartRate: 140, partial: false, distanceMeters: 1_000, durationSeconds: 200),
+    KilometerSplit(index: 2, paceSecPerKm: 700, cadence: 160, heartRate: 150, partial: false, distanceMeters: 1_000, durationSeconds: 700)
+]
+storedGap.distanceProgress = [
+    SeriesPoint(second: 0, value: 0),
+    SeriesPoint(second: 400, value: 1_000),
+    SeriesPoint(second: 700, value: 1_000),
+    SeriesPoint(second: 1_000, value: 2_000)
+]
+let rebuiltGap = storedGap.resolvedSplits
+near(rebuiltGap[0].durationSeconds, 400, tolerance: 0.5, "a stored curve keeps the closed kilometer")
+near(rebuiltGap[1].durationSeconds, 600, tolerance: 0.5, "a stored curve adds the gap to the kilometer already in progress")
+near(rebuiltGap.reduce(0) { $0 + $1.durationSeconds }, 1_000, tolerance: 0.5, "a stored official curve is not scaled to training duration")
+check(storedGap.splits[0].durationSeconds == 200 && storedGap.splits[1].durationSeconds == 700, "gap rebuild does not rewrite the stored rows")
+
+let lappedEnd = start.addingTimeInterval(1_500)
+let lappedHearts = [
+    SeriesPoint(second: 100, value: 140),
+    SeriesPoint(second: 570, value: 180),
+    SeriesPoint(second: 900, value: 155)
+]
+let lappedSamples = [
+    sample(0, 600, 1_000),
+    sample(600, 1_200, 1_000),
+    sample(1_200, 1_500, 400)
+]
+let lapped = HealthSeries.track(
+    route: [],
+    distanceSamples: lappedSamples,
+    workoutStart: start,
+    workoutEnd: lappedEnd,
+    referenceDistanceMeters: 2_400,
+    heartRate: lappedHearts,
+    cadence: [],
+    trainingDuration: 2_000,
+    pauses: [WorkoutPause(startSecond: 700, endSecond: 800)],
+    laps: [
+        WorkoutLapMark(second: 540, distanceMeters: 1_000),
+        WorkoutLapMark(second: 1_100, distanceMeters: 1_000)
+    ]
+)
+check(lapped.splits.count == 3, "equal kilometer laps keep a leftover row, got \(lapped.splits.count)")
+near(lapped.splits[0].durationSeconds, 540, tolerance: 0.5, "the first lap timestamp replaces the distance-curve cut")
+near(lapped.splits[1].durationSeconds, 460, tolerance: 0.5, "a pause between lap marks is left out of that kilometer")
+near(lapped.splits[2].distanceMeters, 400, tolerance: 1, "the lap leftover is the real remainder")
+near(lapped.splits[2].durationSeconds, 400, tolerance: 0.5, "the lap leftover keeps its own time")
+near(lapped.splits[0].heartRate, 140, tolerance: 0.01, "heart follows the lap window, not the later curve cut")
+near(lapped.splits[1].heartRate, 167.5, tolerance: 0.01, "heart after the lap mark stays in the next kilometer")
+near(lapped.splits.reduce(0) { $0 + $1.durationSeconds }, 1_400, tolerance: 0.5, "lap splits are not scaled to training duration")
+check(lapped.splits[2].partial && lapped.splits[2].listedDistanceText == "0.40", "lap leftover lists 0.40, got \(lapped.splits[2].listedDistanceText)")
+check(lapped.splits[2].listedTimeText != "—" && lapped.splits[2].listedDistanceText != "未满", "lap leftover hides neither field")
+
+let unevenLaps = HealthSeries.track(
+    route: [],
+    distanceSamples: lappedSamples,
+    workoutStart: start,
+    workoutEnd: lappedEnd,
+    referenceDistanceMeters: 2_400,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 2_000,
+    pauses: [WorkoutPause(startSecond: 700, endSecond: 800)],
+    laps: [
+        WorkoutLapMark(second: 540, distanceMeters: 1_000),
+        WorkoutLapMark(second: 1_100, distanceMeters: 400)
+    ]
+)
+near(unevenLaps.splits[0].durationSeconds, 600, tolerance: 0.5, "unequal laps leave the official distance curve in charge")
+near(unevenLaps.splits[1].durationSeconds, 500, tolerance: 0.5, "the curve still removes a pause inside the second kilometer")
+
+let crowdedLaps = HealthSeries.track(
+    route: [],
+    distanceSamples: [
+        sample(0, 500, 1_000),
+        sample(500, 1_000, 1_000)
+    ],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_000),
+    referenceDistanceMeters: 2_000,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 1_600,
+    laps: (0..<10).map { WorkoutLapMark(second: Double($0 + 1) * 40, distanceMeters: 0) }
+)
+near(crowdedLaps.splits[0].durationSeconds, 500, tolerance: 0.5, "laps that are not one per kilometer do not replace the curve")
+check(crowdedLaps.splits.count == 2, "extra short laps do not add rows, got \(crowdedLaps.splits.count)")
+
+let unmarkedLaps = HealthSeries.track(
+    route: route,
+    distanceSamples: [],
+    workoutStart: start,
+    workoutEnd: start.addingTimeInterval(1_200),
+    referenceDistanceMeters: 2_500,
+    heartRate: [],
+    cadence: [],
+    trainingDuration: 2_000,
+    laps: [
+        WorkoutLapMark(second: 400, distanceMeters: 0),
+        WorkoutLapMark(second: 900, distanceMeters: 0)
+    ]
+)
+near(unmarkedLaps.splits[0].durationSeconds, 400, tolerance: 0.5, "laps without a length still cut when they match the kilometer count")
+near(unmarkedLaps.splits[1].durationSeconds, 500, tolerance: 0.5, "the second unmarked lap is the next boundary")
+near(unmarkedLaps.splits[2].distanceMeters, 500, tolerance: 1, "unmarked laps keep the real leftover distance")
+near(unmarkedLaps.splits[2].durationSeconds, 300, tolerance: 0.5, "unmarked laps keep the real leftover time")
+near(unmarkedLaps.splits.reduce(0) { $0 + $1.durationSeconds }, 1_200, tolerance: 0.5, "unmarked lap splits are not scaled to training time")
+near(unmarkedLaps.pace[0].value, 300, tolerance: 2, "pace chart still follows the route when laps cut the kilometers")
+check(unmarkedLaps.distanceProgress.isEmpty, "laps do not invent an official distance curve")
+
+var storedLaps = makeWorkout()
+storedLaps.distanceMeters = 2_400
+storedLaps.end = lappedEnd
+storedLaps.trainingDurationSeconds = 2_000
+storedLaps.heartRate = lappedHearts
+storedLaps.pauseIntervals = [WorkoutPause(startSecond: 700, endSecond: 800)]
+storedLaps.distanceProgress = [
+    SeriesPoint(second: 0, value: 0),
+    SeriesPoint(second: 600, value: 1_000),
+    SeriesPoint(second: 1_200, value: 2_000),
+    SeriesPoint(second: 1_500, value: 2_400)
+]
+storedLaps.splits = [
+    KilometerSplit(index: 1, paceSecPerKm: 600, cadence: 160, heartRate: 140, partial: false, distanceMeters: 1_000, durationSeconds: 600),
+    KilometerSplit(index: 2, paceSecPerKm: 500, cadence: 160, heartRate: 150, partial: false, distanceMeters: 1_000, durationSeconds: 500),
+    KilometerSplit(index: 3, paceSecPerKm: 750, cadence: 160, heartRate: 155, partial: true, distanceMeters: 400, durationSeconds: 300)
+]
+let beforeLaps = storedLaps.resolvedSplits
+near(beforeLaps[0].durationSeconds, 600, tolerance: 0.5, "without lap marks the stored curve still cuts the kilometers")
+var importedLaps = storedLaps
+importedLaps.lapMarks = [
+    WorkoutLapMark(second: 540, distanceMeters: 1_000),
+    WorkoutLapMark(second: 1_100, distanceMeters: 1_000)
+]
+let mergedLaps = WorkoutImport.merging(storedLaps, with: importedLaps)
+check(mergedLaps.lapMarks.count == 2 && mergedLaps.lapMarks[1].second == 1_100, "merge stores lap marks")
+let keptLaps = WorkoutImport.merging(mergedLaps, with: makeWorkout())
+check(keptLaps.lapMarks.count == 2, "blank import does not clear lap marks")
+var replacementLaps = importedLaps
+replacementLaps.lapMarks = [WorkoutLapMark(second: 10, distanceMeters: 1_000)]
+let alreadyLapped = WorkoutImport.merging(mergedLaps, with: replacementLaps)
+check(alreadyLapped.lapMarks.count == 2 && alreadyLapped.lapMarks[0].second == 540, "merge keeps lap marks already stored")
+let shownLaps = mergedLaps.resolvedSplits
+near(shownLaps[0].durationSeconds, 540, tolerance: 0.5, "display prefers stored lap marks over the distance curve")
+near(shownLaps[1].durationSeconds, 460, tolerance: 0.5, "display leaves the stored pause out of the lap kilometer")
+near(shownLaps[0].heartRate, 140, tolerance: 0.01, "display heart follows the lap window")
+check(storedLaps.splits[0].durationSeconds == 600, "lap rebuild does not rewrite the stored rows")
 
 if failures.isEmpty {
     print("health-series-check ok")

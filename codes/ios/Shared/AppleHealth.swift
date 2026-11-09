@@ -178,6 +178,7 @@ enum AppleHealth {
         let moving = workout.duration
         let training = moving.isFinite && moving > 0 ? moving : 0
         let pauses = pauseIntervals(for: workout)
+        let laps = lapMarks(for: workout)
         let track = HealthSeries.track(
             route: route,
             distanceSamples: await linkedDistance,
@@ -187,7 +188,8 @@ enum AppleHealth {
             heartRate: heartRate,
             cadence: cadenceSeries,
             trainingDuration: training,
-            pauses: pauses
+            pauses: pauses,
+            laps: laps
         )
         return WorkoutRecord(
             id: UUID(),
@@ -215,7 +217,8 @@ enum AppleHealth {
             conditions: nil,
             startPlace: nil,
             distanceProgress: track.distanceProgress,
-            pauseIntervals: track.pauseIntervals
+            pauseIntervals: track.pauseIntervals,
+            lapMarks: laps
         )
     }
 
@@ -256,6 +259,26 @@ enum AppleHealth {
             }
         }
         return WorkoutPause.intervals(from: marks, elapsed: elapsed)
+    }
+
+    /// Lap events mark the kilometer boundaries when each lap is about 1 km.
+    /// Segment events are the same kind of mark on newer watches, and are used
+    /// only when the workout recorded no laps. The end of the event is the boundary.
+    private static func lapMarks(for workout: HKWorkout) -> [WorkoutLapMark] {
+        let origin = workout.startDate
+        let events = workout.workoutEvents ?? []
+        let laps = events.filter { $0.type == .lap }
+        let chosen = laps.isEmpty ? events.filter { $0.type == .segment } : laps
+        return chosen.compactMap { event in
+            let second = event.dateInterval.end.timeIntervalSince(origin)
+            guard second.isFinite, second > 0 else { return nil }
+            var meters = 0.0
+            if let quantity = event.metadata?[HKMetadataKeyLapLength] as? HKQuantity {
+                let value = quantity.doubleValue(for: .meter())
+                if value.isFinite, value > 0 { meters = value }
+            }
+            return WorkoutLapMark(second: second, distanceMeters: meters)
+        }
     }
 
     /// Samples that start inside the workout. A failed query returns none.
