@@ -177,6 +177,14 @@ struct WorkoutPause: Codable, Hashable {
     }
 }
 
+/// One HealthKit lap or segment, in seconds after the workout start.
+/// `second` is when the lap ended. `distanceMeters` is the recorded lap length,
+/// or `0` when the event did not say how far that lap was.
+struct WorkoutLapMark: Codable, Hashable {
+    var second: Double
+    var distanceMeters: Double
+}
+
 struct KilometerSplit: Codable, Hashable, Identifiable {
     var index: Int
     var paceSecPerKm: Double
@@ -353,6 +361,9 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     /// Recorded pause and auto-pause intervals, in seconds after `start`.
     /// Empty when the workout was not paused, or when pauses were not stored yet.
     var pauseIntervals: [WorkoutPause] = []
+    /// Lap or segment marks. Empty when this file was saved before laps were stored,
+    /// or when the workout had none. Equal 1 km laps override the distance curve.
+    var lapMarks: [WorkoutLapMark] = []
 
     /// Wall-clock span from `start` to `end`, including any pauses.
     var elapsedDuration: TimeInterval { end.timeIntervalSince(start) }
@@ -558,7 +569,7 @@ extension WorkoutRecord {
         case route, splits, heartRate, cadenceSeries, paceSeries
         case stride, elevation, groundContact, power, verticalOscillation
         case origin, healthKitUUID, trainingDurationSeconds, conditions, startPlace
-        case distanceProgress, pauseIntervals
+        case distanceProgress, pauseIntervals, lapMarks
     }
 
     init(from decoder: Decoder) throws {
@@ -589,6 +600,7 @@ extension WorkoutRecord {
         startPlace = try container.decodeIfPresent(WorkoutStartPlace.self, forKey: .startPlace)
         distanceProgress = try container.decodeIfPresent([SeriesPoint].self, forKey: .distanceProgress) ?? []
         pauseIntervals = try container.decodeIfPresent([WorkoutPause].self, forKey: .pauseIntervals) ?? []
+        lapMarks = try container.decodeIfPresent([WorkoutLapMark].self, forKey: .lapMarks) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -619,6 +631,7 @@ extension WorkoutRecord {
         try container.encodeIfPresent(startPlace, forKey: .startPlace)
         try container.encode(distanceProgress, forKey: .distanceProgress)
         try container.encode(pauseIntervals, forKey: .pauseIntervals)
+        try container.encode(lapMarks, forKey: .lapMarks)
     }
 }
 
@@ -970,8 +983,8 @@ enum WorkoutImport {
     /// so a re-import can correct steps that were divided by elapsed time.
     /// A row that already has a series keeps its scalar. The detail page reads that step total;
     /// it does not replace the scalar with a series average. Splits stay as stored here.
-    /// Display rebuilds them from `distanceProgress` when a later import has stored the
-    /// official distance curve, and from the route when that curve is still missing.
+    /// Display rebuilds them from equal 1 km lap marks when a later import stored those,
+    /// otherwise from `distanceProgress`, and from the route when that curve is still missing.
     /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
     /// `denylist` keeps user-deleted Health workouts from being appended or refreshed.
     static func merge(
@@ -1014,6 +1027,7 @@ enum WorkoutImport {
         fill(&merged.verticalOscillation, imported.verticalOscillation)
         fill(&merged.distanceProgress, imported.distanceProgress)
         fill(&merged.pauseIntervals, imported.pauseIntervals)
+        fill(&merged.lapMarks, imported.lapMarks)
         return merged
     }
 
