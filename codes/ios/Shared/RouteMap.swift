@@ -17,6 +17,9 @@ struct RouteMap: View {
     var bottomInset: CGFloat = 0
     /// Fraction of the map covered from the bottom. Shifts the camera so the track stays visible.
     var obscuredBottomFraction: Double = 0
+    /// Fraction of the map covered from the top. With the bottom fraction, fits the track
+    /// into the clear band between a toolbar and a sheet.
+    var obscuredTopFraction: Double = 0
     /// Start dot and end square. Off unless a detail screen asks for them.
     var showsEndpoints: Bool = false
     /// Hides the compass and other Map controls. The legal label stays.
@@ -28,6 +31,8 @@ struct RouteMap: View {
 
     @State private var position: MapCameraPosition = .automatic
     @State private var framedUser = false
+    /// Updated as soon as layout reports a size, so a later fit in the same turn sees it.
+    @State private var mapSize = RouteMapSizeBox()
 
     var body: some View {
         map
@@ -78,6 +83,18 @@ struct RouteMap: View {
         .modifier(RouteMapControlModifier(hidden: hidesMapControls))
         .modifier(RouteMapBottomInset(length: bottomInset))
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(key: RouteMapSizeKey.self, value: geo.size)
+            }
+        }
+        .onPreferenceChange(RouteMapSizeKey.self) { size in
+            guard size.width > 1, size.height > 1, size != mapSize.value else { return }
+            mapSize.value = size
+            if obscuredTopFraction > 0.02 {
+                frameCamera()
+            }
+        }
         .onAppear {
             frameCamera()
             if userCoordinate != nil {
@@ -89,6 +106,8 @@ struct RouteMap: View {
         .onChange(of: userCoordinate?.latitude) { _, _ in frameUserOnce() }
         .onChange(of: userCoordinate?.longitude) { _, _ in frameUserOnce() }
         .onChange(of: fitToken) { _, _ in frameCamera() }
+        .onChange(of: obscuredTopFraction) { _, _ in frameCamera() }
+        .onChange(of: obscuredBottomFraction) { _, _ in frameCamera() }
     }
 
     private func endpointMark(square: Bool) -> some View {
@@ -138,8 +157,17 @@ struct RouteMap: View {
         position = .region(biased(region))
     }
 
-    /// Moves the fitted region up so a bottom sheet does not cover the track.
+    /// Bottom sheet keeps the original latitude-only shift. A top obstruction fits the
+    /// track into the clear band, using the measured map size so a wide route stays centered.
     private func biased(_ region: MKCoordinateRegion) -> MKCoordinateRegion {
+        if obscuredTopFraction > 0.02 {
+            return GeoFit.visibleRegion(
+                region,
+                in: mapSize.value,
+                topFraction: obscuredTopFraction,
+                bottomFraction: obscuredBottomFraction
+            )
+        }
         let fraction = obscuredBottomFraction
         guard fraction > 0.05, fraction < 0.85 else { return region }
         let visible = 1 - fraction
@@ -148,6 +176,21 @@ struct RouteMap: View {
         shifted.span.latitudeDelta = region.span.latitudeDelta / visible
         shifted.center.latitude = region.center.latitude - shifted.span.latitudeDelta * fraction / 2
         return shifted
+    }
+}
+
+private final class RouteMapSizeBox {
+    var value = CGSize.zero
+}
+
+private struct RouteMapSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next.width > 0, next.height > 0 {
+            value = next
+        }
     }
 }
 
@@ -196,6 +239,64 @@ enum GeoFit {
             longitudeDelta: max(0.008, (maxLon - minLon) * 1.6)
         )
         return MKCoordinateRegion(center: center, span: span)
+    }
+
+    /// The region MapKit should display so `fitted` sits in the vertical band that is not
+    /// covered from the top or the bottom. Fractions are of the map view's height.
+    /// MapKit aspect-fits a region to the whole view, so latitude grows until that band
+    /// contains `fitted`, and the original center lands on the band's center.
+    static func visibleRegion(
+        _ fitted: MKCoordinateRegion,
+        in viewSize: CGSize,
+        topFraction: Double,
+        bottomFraction: Double
+    ) -> MKCoordinateRegion {
+        var top = max(topFraction, 0)
+        var bottom = max(bottomFraction, 0)
+        var obscured = top + bottom
+        guard obscured > 0.02 else { return fitted }
+        if obscured > 0.85 {
+            let scale = 0.85 / obscured
+            top *= scale
+            bottom *= scale
+            obscured = 0.85
+        }
+        let visible = 1 - obscured
+        guard viewSize.width > 1, viewSize.height > 1 else {
+            return latitudeShift(fitted, top: top, bottom: bottom, visible: visible)
+        }
+        let aspect = viewSize.width / viewSize.height
+        let cosine = cos(fitted.center.latitude * Double.pi / 180)
+        guard cosine > 0.2 else {
+            return latitudeShift(fitted, top: top, bottom: bottom, visible: visible)
+        }
+        let secant = 1 / cosine
+        let latitudeForBand = fitted.span.latitudeDelta / visible
+        let latitudeForWidth = fitted.span.longitudeDelta / (aspect * secant)
+        let latitudeDelta = max(latitudeForBand, latitudeForWidth)
+        let longitudeDelta = latitudeDelta * aspect * secant
+        let centerLatitude = fitted.center.latitude - latitudeDelta * (bottom - top) / 2
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(
+                latitude: min(85, max(-85, centerLatitude)),
+                longitude: fitted.center.longitude
+            ),
+            span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta)
+        )
+    }
+
+    /// Same vertical fit when the view size is not known yet. Longitude stays put;
+    /// MapKit may still widen the latitude span to match the view.
+    private static func latitudeShift(
+        _ fitted: MKCoordinateRegion,
+        top: Double,
+        bottom: Double,
+        visible: Double
+    ) -> MKCoordinateRegion {
+        var shifted = fitted
+        shifted.span.latitudeDelta = fitted.span.latitudeDelta / visible
+        shifted.center.latitude = fitted.center.latitude - shifted.span.latitudeDelta * (bottom - top) / 2
+        return shifted
     }
 }
 

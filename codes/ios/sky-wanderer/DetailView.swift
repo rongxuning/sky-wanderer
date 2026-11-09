@@ -160,12 +160,15 @@ struct WorkoutDetailView: View {
     }
 
     private func mapHeader(_ workout: WorkoutRecord, height: CGFloat, topInset: CGFloat) -> some View {
-        ZStack(alignment: .top) {
+        let band = obscuredMapBand(height: height, topInset: topInset)
+        return ZStack(alignment: .top) {
             RouteMap(
                 route: workout.route,
                 cornerRadius: 0,
                 routeColor: SkyTheme.Color.primary,
                 routeLineWidth: 5,
+                obscuredBottomFraction: band.bottom,
+                obscuredTopFraction: band.top,
                 showsEndpoints: workout.route.count >= 2,
                 hidesMapControls: true,
                 fitToken: fitToken,
@@ -208,6 +211,18 @@ struct WorkoutDetailView: View {
             .padding(.horizontal, SkyTheme.Spacing.screenInset)
             .padding(.top, topInset + SkyTheme.Spacing.related)
         }
+    }
+
+    /// Clear band for the detail camera. Top is the toolbar's bottom edge
+    /// (`topInset + related + touchMin`, matching the buttons above). Bottom is the
+    /// summary card overlap (`Radius.sheet`).
+    private func obscuredMapBand(height: CGFloat, topInset: CGFloat) -> (top: Double, bottom: Double) {
+        guard height > 1 else { return (0, 0) }
+        let toolbarBottom = topInset + SkyTheme.Spacing.related + SkyTheme.Spacing.touchMin
+        return (
+            max(0, Double(toolbarBottom / height)),
+            max(0, Double(SkyTheme.Radius.sheet / height))
+        )
     }
 
     private func mapButton(system: String, label: String, action: @escaping () -> Void) -> some View {
