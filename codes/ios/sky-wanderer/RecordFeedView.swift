@@ -461,7 +461,7 @@ private struct RecordSwipeCard: View {
 
 /// Horizontal pan for 删除. `shouldBegin` returns false for a vertical or diagonal move,
 /// so the recognizer never claims that touch and the list scroll keeps it.
-private struct RecordDeletePan: UIGestureRecognizerRepresentable {
+struct RecordDeletePan: UIGestureRecognizerRepresentable {
     var onBegan: () -> Void
     var onChanged: (CGFloat) -> Void
     var onEnded: (_ translation: CGFloat, _ velocity: CGFloat) -> Void
@@ -791,7 +791,7 @@ private enum RecordTrackInk {
 }
 
 /// Route stroke drawn behind the card numbers. Long traces are sampled down before they are projected.
-private struct RecordTrackLine: View {
+struct RecordTrackLine: View {
     var points: [GeoPoint]
 
     var body: some View {

@@ -300,6 +300,54 @@ for marker in spanMarkers {
     near(marker.altitude, altitude, 0.001, "km \(marker.kilometer) altitude")
 }
 
+func savedRoute(
+    id: String,
+    name: String,
+    kind: SavedRoute.Kind = .gpx,
+    file: String? = nil
+) -> SavedRoute {
+    SavedRoute(
+        id: id,
+        name: name,
+        points: [point(31.2, 121.4, 5), point(31.21, 121.41, 8)],
+        kind: kind,
+        creator: "阿宁",
+        gpxFilename: file
+    )
+}
+
+var seededList = Database()
+seededList.sampleRouteSeeded = true
+seededList.routes = [
+    savedRoute(id: SavedRoute.sampleGPXID, name: "徐汇滨江", file: "gpx/sample-xuhui-riverside.gpx"),
+    savedRoute(id: "user-same-name", name: "徐汇滨江", file: "gpx/user-same-name.gpx"),
+    savedRoute(id: "user-trail", name: "Shenxianju trail-30km"),
+    savedRoute(id: SavedRoute.presetRunningID, name: "湖滨环线", kind: .presetRunning)
+]
+let retiredFiles = seededList.retireSeededSampleRoute()
+check(retiredFiles == ["gpx/sample-xuhui-riverside.gpx"], "only the seed file is retired")
+check(seededList.sampleRouteSeeded, "seed flag stays set after retirement")
+check(!seededList.routes.contains { $0.id == SavedRoute.sampleGPXID }, "seed id is removed")
+check(seededList.routes.contains { $0.id == "user-same-name" && $0.name == "徐汇滨江" }, "user import named 徐汇滨江 stays")
+check(seededList.routes.contains { $0.id == "user-trail" }, "other imported route stays")
+check(seededList.routes.contains { $0.kind == .presetRunning }, "preset route stays")
+
+var freshRoutes = Database()
+check(freshRoutes.retireSeededSampleRoute().isEmpty, "fresh install has no seed file")
+check(freshRoutes.routes.isEmpty, "fresh install does not insert 徐汇滨江")
+check(freshRoutes.sampleRouteSeeded, "fresh install records that the sample was retired")
+
+var renamedSeed = Database()
+renamedSeed.routes = [savedRoute(id: SavedRoute.sampleGPXID, name: "改过的样本")]
+check(renamedSeed.retireSeededSampleRoute().isEmpty, "seed without a stored file returns no filename")
+check(renamedSeed.routes.isEmpty, "renamed seed is still removed by id")
+
+var alreadyImported = Database()
+alreadyImported.routes = [savedRoute(id: "user-9", name: "导入路线")]
+check(alreadyImported.retireSeededSampleRoute().isEmpty, "no seed file when the user already imported")
+check(alreadyImported.routes.map(\.id) == ["user-9"], "retire does not insert a sample beside a user route")
+check(alreadyImported.sampleRouteSeeded, "flag is set so a later launch cannot insert the sample")
+
 if failures.isEmpty {
     print("route-checkpoint-check ok")
 } else {

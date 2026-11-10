@@ -1,6 +1,6 @@
 import Foundation
 
-/// Sample GPX used to seed the routes list. The same file is in the app bundle for a manual import.
+/// Bundled sample GPX. The routes list does not insert it. A person can still import the file by hand.
 enum SampleGPX {
     static var data: Data {
         if let url = Bundle.main.url(forResource: "xuhui-riverside", withExtension: "gpx"),
