@@ -248,32 +248,28 @@ struct WorkoutDetailView: View {
     private func summarySheet(_ workout: WorkoutRecord, overlapsMap: Bool) -> some View {
         VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
             VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
-                HStack(alignment: .center, spacing: 12) {
-                    profileAvatar
+                HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        if let name = accountName {
-                            Text(name)
-                                .font(SkyTheme.Font.subheadline)
-                                .foregroundStyle(SkyTheme.Color.secondary)
+                        HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
+                            Text(workout.sport.title)
+                                .font(SkyTheme.Font.title3)
+                                .foregroundStyle(SkyTheme.Color.ink)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.7)
+                            if let badge = originBadge(workout) {
+                                Text(badge)
+                                    .font(SkyTheme.Font.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(SkyTheme.Color.primary)
+                                    .lineLimit(1)
+                            }
                         }
-                        Text(workout.sport.title)
-                            .font(SkyTheme.Font.title3)
-                            .foregroundStyle(SkyTheme.Color.ink)
-                            .lineLimit(1)
                         Text(Format.dateSpan(from: workout.start, to: workout.end))
                             .font(SkyTheme.Font.footnote)
                             .foregroundStyle(SkyTheme.Color.secondary)
                             .lineLimit(2)
                     }
-                    Spacer(minLength: SkyTheme.Spacing.related)
-                    if let badge = originBadge(workout) {
-                        Text(badge)
-                            .font(SkyTheme.Font.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(SkyTheme.Color.primary)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    profileColumn
                 }
                 weatherRow(workout)
                 placeRow(workout)
@@ -323,10 +319,35 @@ struct WorkoutDetailView: View {
         .padding(.top, overlapsMap ? -SkyTheme.Radius.sheet : 0)
     }
 
-    /// Same face as the home tab-bar avatar. Logged out keeps that scenic placeholder and no name.
+    /// ~40pt avatar. The nickname uses caption, which is the nearest text style to 11pt.
+    private enum DetailHeroMetrics {
+        static let avatar: CGFloat = 40
+    }
+
+    /// Same face as the home tab-bar avatar, on the trailing edge.
+    /// Logged out keeps that scenic placeholder and omits the nickname.
+    private var profileColumn: some View {
+        VStack(spacing: 4) {
+            profileAvatar
+            if let name = accountName {
+                Text(name)
+                    .font(SkyTheme.Font.caption)
+                    .foregroundStyle(SkyTheme.Color.nickname)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 88)
+            }
+        }
+        .frame(minWidth: DetailHeroMetrics.avatar)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accountName ?? "")
+        .accessibilityHidden(accountName == nil)
+    }
+
     @ViewBuilder
     private var profileAvatar: some View {
-        let diameter = SkyTheme.Spacing.touchMin
+        let diameter = DetailHeroMetrics.avatar
         if app.isLoggedIn {
             AccountAvatarFace(
                 name: app.account?.name ?? "",

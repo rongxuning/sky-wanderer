@@ -1,7 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// Records tab. Month headers pin at the top. Cards show a pale track, not a map.
+/// Records tab. The month header pins under an opaque status-bar slab.
+/// Each card draws its track behind the numbers, not in a side slot.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
     @State private var revealedWorkoutID: UUID?
@@ -10,7 +11,12 @@ struct RecordFeedView: View {
     var body: some View {
         recordList
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SkyTheme.Color.grouped)
+            // The list stays below the status bar. This fill continues into that band
+            // so the clock and the month title share one opaque surface.
+            .background(SkyTheme.Color.grouped.ignoresSafeArea())
+            .overlay(alignment: .top) {
+                RecordStatusSlab()
+            }
             .task {
                 await app.importFromApple()
             }
@@ -76,7 +82,11 @@ struct RecordFeedView: View {
                     }
                 }
             }
+            .scrollEdgeEffectStyle(.hard, for: .top)
+            .scrollEdgeEffectDisabled(true, for: .top)
+            .contentMargins(.top, 0, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(SkyTheme.Color.grouped)
             .refreshable {
                 await app.importFromApple()
             }
@@ -89,16 +99,17 @@ struct RecordFeedView: View {
     }
 
     /// Pinned section header. The next month's header pushes this one off the top.
+    /// The fill is the same opaque grouped gray as the status bar, so the two read as one slab.
     private func monthHeader(_ title: String) -> some View {
         Text(title)
-            .font(SkyTheme.Font.subheadline)
-            .fontWeight(.semibold)
+            .font(SkyTheme.Font.title3)
+            .fontWeight(.bold)
             .foregroundStyle(SkyTheme.Color.ink)
             .padding(.horizontal, SkyTheme.Spacing.screenInset)
             .padding(.top, SkyTheme.Spacing.related)
-            .padding(.bottom, SkyTheme.Spacing.related * 2)
+            .padding(.bottom, SkyTheme.Spacing.screenInset)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(SkyTheme.Color.grouped)
+            .background(SkyTheme.Color.grouped, ignoresSafeAreaEdges: .top)
             .zIndex(1)
             .accessibilityAddTraits(.isHeader)
     }
@@ -260,6 +271,24 @@ private struct RecordStatsPage: View {
     private var scoreText: String {
         guard stats.trainingScore > 0 else { return "—" }
         return String(Int(stats.trainingScore.rounded()))
+    }
+}
+
+/// Covers the status-bar band above the list. Drawn upward from the top of the scroll
+/// view, so it does not cover the month title, and cards cannot show between the clock and that title.
+private struct RecordStatusSlab: View {
+    var body: some View {
+        SkyTheme.Color.grouped
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+            .background(alignment: .bottom) {
+                SkyTheme.Color.grouped
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 160)
+            }
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -509,33 +538,55 @@ private struct RecordDeletePan: UIGestureRecognizerRepresentable {
     }
 }
 
-/// Confirmed record-card metrics. 10pt inset is the design measurement; the spacing scale has no 10.
+/// Confirmed record-card metrics. Vertical 10pt inset is the design measurement; the spacing scale has no 10.
 private enum RecordCardLayout {
-    static let thumbnail: CGFloat = 84
-    static let inset: CGFloat = 10
-    static let contentGap: CGFloat = 10
-    /// Tightest spacing step, so the sport line stays inside the 84pt thumbnail.
-    static let stackSpacing: CGFloat = 4
+    static let track: CGFloat = 84
+    /// ~20, between the 16 card token and the 24 sheet token.
+    static let corner: CGFloat = 20
+    static let horizontalInset: CGFloat = SkyTheme.Spacing.cardPadding
+    static let verticalInset: CGFloat = 10
+    /// One step for all four rows.
+    static let rowSpacing: CGFloat = 4
 }
 
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: RecordCardLayout.corner, style: .continuous)
+    }
 
     var body: some View {
-        HStack(alignment: .center, spacing: RecordCardLayout.contentGap) {
-            RecordMapThumbnail(points: workout.route, sport: workout.sport)
-            VStack(alignment: .leading, spacing: RecordCardLayout.stackSpacing) {
-                sportLine
-                header
-                metrics
+        ZStack(alignment: .trailing) {
+            if workout.route.count >= 2 {
+                RecordTrackLine(points: workout.route)
+                    .frame(width: RecordCardLayout.track, height: RecordCardLayout.track)
+                    .padding(.trailing, RecordCardLayout.horizontalInset)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
+            VStack(alignment: .leading, spacing: RecordCardLayout.rowSpacing) {
+                titleRow
+                timeRow
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    distanceColumn
+                    paceColumn
+                    columnLabel("训练负荷")
+                    columnLabel("训练评分")
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    smallMetric(heartText, SkyTheme.Color.Metric.heartRate)
+                    smallMetric(cadenceText, SkyTheme.Color.Metric.pace)
+                    columnValue(loadText, SkyTheme.Color.Metric.load)
+                    columnValue(scoreText, SkyTheme.Color.Metric.score)
+                }
+            }
+            .padding(.horizontal, RecordCardLayout.horizontalInset)
+            .padding(.vertical, RecordCardLayout.verticalInset)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        // The 84pt thumbnail anchors the card at the default type size. Larger Dynamic Type grows the card.
-        .frame(height: dynamicTypeSize <= .large ? RecordCardLayout.thumbnail : nil)
-        .padding(RecordCardLayout.inset)
-        .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .clipShape(cardShape)
         .shadow(
             color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
             radius: SkyTheme.Shadow.card.radius,
@@ -546,15 +597,25 @@ struct RecordSummaryCard: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private var sportLine: some View {
-        Text(workout.sport.title)
-            .font(SkyTheme.Font.caption)
-            .fontWeight(.semibold)
-            .foregroundStyle(SkyTheme.Color.ink)
-            .lineLimit(1)
+    /// Sport title on the left. The stable quote is right-aligned on the same row.
+    private var titleRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
+            Text(workout.sport.title)
+                .font(SkyTheme.Font.caption)
+                .fontWeight(.semibold)
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(1)
+                .layoutPriority(1)
+            Text(quote)
+                .font(SkyTheme.Font.caption)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
     }
 
-    private var header: some View {
+    private var timeRow: some View {
         HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
             Text(RecordCardText.clock(workout.trainingDuration))
                 .font(SkyTheme.Font.headline)
@@ -563,33 +624,18 @@ struct RecordSummaryCard: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .layoutPriority(1)
-            Spacer(minLength: 6)
             Text(RecordCardText.started(workout.start))
                 .font(SkyTheme.Font.caption)
                 .foregroundStyle(SkyTheme.Color.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 .allowsTightening(true)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
-    /// Three columns, no rules: a 2×2 on the left, then load, then score.
-    /// The 2×2 splits into two equal tracks, so the row is four equal columns.
-    private var metrics: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                distanceColumn
-                paceColumn
-                columnLabel("训练负荷")
-                columnLabel("训练评分")
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                smallMetric(heartText, SkyTheme.Color.Metric.heartRate)
-                smallMetric(cadenceText, SkyTheme.Color.Metric.pace)
-                columnValue(loadText, SkyTheme.Color.Metric.load)
-                columnValue(scoreText, SkyTheme.Color.Metric.score)
-            }
-        }
+    private var quote: String {
+        RecordMotivation.line(for: workout.id, healthKitUUID: workout.healthKitUUID)
     }
 
     private var distanceColumn: some View {
@@ -685,6 +731,7 @@ struct RecordSummaryCard: View {
         let distance = distanceUnit.map { "\(distanceValue) \($0)" } ?? distanceValue
         return [
             workout.sport.title,
+            quote,
             "训练时间 \(RecordCardText.clock(workout.trainingDuration))",
             "开始 \(RecordCardText.started(workout.start))",
             "距离 \(distance)",
@@ -736,35 +783,13 @@ private enum RecordCardText {
     }
 }
 
-/// 84×84 track. No map tiles: the route itself is the thumbnail.
-struct RecordMapThumbnail: View {
-    var points: [GeoPoint]
-    var sport: SportKind
-
-    var body: some View {
-        ZStack {
-            SkyTheme.Color.cardBorder
-            if points.count >= 2 {
-                RecordTrackLine(points: points)
-            } else {
-                Image(systemName: sport == .running ? "figure.run" : "figure.hiking")
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(SkyTheme.Color.primary)
-            }
-        }
-        .frame(width: RecordCardLayout.thumbnail, height: RecordCardLayout.thumbnail)
-        .clipShape(RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous))
-        .accessibilityHidden(true)
-    }
-}
-
-/// Washed brand blue for the list thumbnail. Full `#1E88FE` stays the icon and metric accent.
+/// Brand blue kept light enough that the numbers drawn on top stay readable.
 private enum RecordTrackInk {
-    /// 60% of `#1E88FE`. Pale on the light thumbnail, still darker than the `#E4F1FF` fill.
-    static let color = SkyTheme.Color.primary.opacity(0.6)
+    /// About 38% of `#1E88FE`, inside the 0.35–0.40 band for the background track.
+    static let color = SkyTheme.Color.primary.opacity(0.38)
 }
 
-/// Pale route on the thumbnail fill. Long traces are sampled down before they are projected.
+/// Route stroke drawn behind the card numbers. Long traces are sampled down before they are projected.
 private struct RecordTrackLine: View {
     var points: [GeoPoint]
 
@@ -784,16 +809,8 @@ private struct RecordTrackLine: View {
                 style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
             )
             if let last = spots.last {
-                let head = CGRect(x: last.x - 3.6, y: last.y - 12, width: 7.2, height: 7.2)
-                context.fill(Path(ellipseIn: head), with: .color(RecordTrackInk.color))
-                var tail = Path()
-                tail.move(to: CGPoint(x: last.x - 2.6, y: last.y - 6))
-                tail.addLine(to: last)
-                tail.addLine(to: CGPoint(x: last.x + 2.6, y: last.y - 6))
-                tail.closeSubpath()
-                context.fill(tail, with: .color(RecordTrackInk.color))
-                let pupil = CGRect(x: last.x - 1.4, y: last.y - 9.8, width: 2.8, height: 2.8)
-                context.fill(Path(ellipseIn: pupil), with: .color(SkyTheme.Color.card))
+                let dot = CGRect(x: last.x - 2.5, y: last.y - 2.5, width: 5, height: 5)
+                context.fill(Path(ellipseIn: dot), with: .color(RecordTrackInk.color))
             }
         }
     }
