@@ -1,10 +1,9 @@
-import MapKit
 import SwiftUI
+import UIKit
 
-/// Records tab. Short white cards: map thumbnail, sport, duration, and a three-column metric row.
+/// Records tab. Month headers pin at the top. Cards show a pale track, not a map.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
-    @State private var topWorkoutID: UUID?
     @State private var revealedWorkoutID: UUID?
     @State private var pendingDeleteID: UUID?
 
@@ -39,9 +38,9 @@ struct RecordFeedView: View {
         )
     }
 
-    private var monthLabel: String {
-        let workout = app.workouts.first { $0.id == topWorkoutID } ?? app.workouts.first
-        return workout.map { Format.monthTitle($0.start) } ?? ""
+    /// Newest month first. The span starts on the newest workout of that month.
+    private var monthSpans: [RecordMonthSpan] {
+        Format.recordMonthSpans(dates: app.workouts.map(\.start))
     }
 
     @ViewBuilder
@@ -49,87 +48,59 @@ struct RecordFeedView: View {
         if app.workouts.isEmpty {
             empty
         } else {
-            VStack(spacing: 0) {
-                Text(monthLabel)
-                    .font(SkyTheme.Font.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                    .padding(.top, SkyTheme.Spacing.related)
-                    .padding(.bottom, SkyTheme.Spacing.related)
-                    .background(SkyTheme.Color.grouped)
-                    .zIndex(1)
-                    .accessibilityAddTraits(.isHeader)
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
-                        if !app.banner.isEmpty {
-                            Text(app.banner)
-                                .font(SkyTheme.Font.footnote)
-                                .foregroundStyle(SkyTheme.Color.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        ForEach(app.workouts) { workout in
-                            RecordSwipeCard(
-                                workout: workout,
-                                revealedID: $revealedWorkoutID,
-                                onRequestDelete: { pendingDeleteID = workout.id }
-                            )
-                            .background {
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: RecordTopAnchorsKey.self,
-                                        value: [RecordTopAnchor(
-                                            id: workout.id,
-                                            minY: geo.frame(in: .scrollView).minY
-                                        )]
-                                    )
-                                }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    if !app.banner.isEmpty {
+                        Text(app.banner)
+                            .font(SkyTheme.Font.footnote)
+                            .foregroundStyle(SkyTheme.Color.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                            .padding(.top, SkyTheme.Spacing.related)
+                            .padding(.bottom, SkyTheme.Spacing.related)
+                    }
+                    ForEach(monthSpans) { span in
+                        Section {
+                            ForEach(Array(app.workouts[span.range])) { workout in
+                                RecordSwipeCard(
+                                    workout: workout,
+                                    revealedID: $revealedWorkoutID,
+                                    onRequestDelete: { pendingDeleteID = workout.id }
+                                )
+                                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                                .padding(.bottom, SkyTheme.Spacing.related)
                             }
+                        } header: {
+                            monthHeader(span.title)
                         }
                     }
-                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                    .padding(.top, SkyTheme.Spacing.related)
-                    .padding(.bottom, SkyTheme.Spacing.related)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onPreferenceChange(RecordTopAnchorsKey.self) { anchors in
-                    guard let next = Self.topmostWorkoutID(in: anchors), next != topWorkoutID else { return }
-                    topWorkoutID = next
-                }
-                .refreshable {
-                    await app.importFromApple()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onAppear {
-                if topWorkoutID == nil {
-                    topWorkoutID = app.workouts.first?.id
-                }
+            .refreshable {
+                await app.importFromApple()
             }
             .onChange(of: app.workouts.map(\.id)) { _, ids in
                 if let revealedWorkoutID, !ids.contains(revealedWorkoutID) {
                     self.revealedWorkoutID = nil
                 }
-                guard let topWorkoutID else {
-                    self.topWorkoutID = ids.first
-                    return
-                }
-                if !ids.contains(topWorkoutID) {
-                    self.topWorkoutID = ids.first
-                }
             }
         }
     }
 
-    /// The card whose top has reached the list, or the first card when none have.
-    private static func topmostWorkoutID(in anchors: [RecordTopAnchor]) -> UUID? {
-        let line: CGFloat = 12
-        let crossed = anchors.filter { $0.minY <= line }
-        if let current = crossed.max(by: { $0.minY < $1.minY }) {
-            return current.id
-        }
-        return anchors.min(by: { $0.minY < $1.minY })?.id
+    /// Pinned section header. The next month's header pushes this one off the top.
+    private func monthHeader(_ title: String) -> some View {
+        Text(title)
+            .font(SkyTheme.Font.subheadline)
+            .fontWeight(.semibold)
+            .foregroundStyle(SkyTheme.Color.ink)
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.top, SkyTheme.Spacing.related)
+            .padding(.bottom, SkyTheme.Spacing.related * 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(SkyTheme.Color.grouped)
+            .zIndex(1)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var empty: some View {
@@ -292,25 +263,12 @@ private struct RecordStatsPage: View {
     }
 }
 
-private struct RecordTopAnchor: Equatable {
-    var id: UUID
-    var minY: CGFloat
-}
-
 private struct RecordSwipeHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         let next = nextValue()
         if next > 0 { value = next }
-    }
-}
-
-private struct RecordTopAnchorsKey: PreferenceKey {
-    static var defaultValue: [RecordTopAnchor] = []
-
-    static func reduce(value: inout [RecordTopAnchor], nextValue: () -> [RecordTopAnchor]) {
-        value.append(contentsOf: nextValue())
     }
 }
 
@@ -323,6 +281,7 @@ private enum RecordSwipeMetrics {
 
 /// Slides the record card left to reveal 删除. Releasing the swipe only opens or closes that
 /// button. Tapping it asks first; the card's link does not open while the finger is dragging.
+/// The pan does not begin for a vertical or diagonal move, so that touch stays with the list.
 private struct RecordSwipeCard: View {
     var workout: WorkoutRecord
     @Binding var revealedID: UUID?
@@ -331,10 +290,10 @@ private struct RecordSwipeCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var offset: CGFloat = 0
     @State private var suppressNavigation = false
-    @State private var dragBase: CGFloat?
     @State private var deleteArmed = false
     @State private var gestureToken = 0
     @State private var rowHeight: CGFloat = 0
+    @State private var dragBase: CGFloat = 0
 
     private var snap: Animation {
         reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.86)
@@ -379,7 +338,7 @@ private struct RecordSwipeCard: View {
             }
         }
         .contentShape(Rectangle())
-        .simultaneousGesture(drag)
+        .simultaneousGesture(deletePan)
         .accessibilityAction(named: Text("删除")) {
             onRequestDelete()
         }
@@ -410,33 +369,29 @@ private struct RecordSwipeCard: View {
             .accessibilityHidden(true)
     }
 
-    private var drag: some Gesture {
-        DragGesture(minimumDistance: 18, coordinateSpace: .local)
-            .onChanged { value in
-                if dragBase == nil {
-                    dragBase = offset
-                    gestureToken += 1
-                    deleteArmed = false
-                }
-                // A drag is not a tap. Disable the link before the finger lifts.
+    private var deletePan: RecordDeletePan {
+        RecordDeletePan(
+            onBegan: {
+                dragBase = offset
+                gestureToken += 1
+                deleteArmed = false
+                // Only a horizontal pan reaches here. A vertical scroll never sets this.
                 suppressNavigation = true
-                let dx = value.translation.width
-                let dy = value.translation.height
-                guard abs(dx) > abs(dy) else { return }
                 revealedID = workout.id
-                let next = (dragBase ?? 0) + dx
+            },
+            onChanged: { translation in
+                let next = dragBase + translation
                 offset = min(0, max(-RecordSwipeMetrics.revealed, next))
-            }
-            .onEnded { value in
-                let base = dragBase ?? offset
-                dragBase = nil
-                let dx = value.translation.width
-                let dy = value.translation.height
-                let horizontal = abs(dx) > abs(dy)
+            },
+            onEnded: { translation, velocity in
+                let predicted = RecordCardSwipe.predictedTranslation(
+                    translation: Double(translation),
+                    velocity: Double(velocity)
+                )
                 let resting = RecordCardSwipe.restingOffset(
-                    base: Double(base),
-                    translation: horizontal ? Double(dx) : 0,
-                    predicted: horizontal ? Double(value.predictedEndTranslation.width) : 0,
+                    base: Double(dragBase),
+                    translation: Double(translation),
+                    predicted: predicted,
                     revealed: Double(RecordSwipeMetrics.revealed)
                 )
                 // restingOffset only opens or closes the button. It does not delete.
@@ -459,6 +414,7 @@ private struct RecordSwipeCard: View {
                     }
                 }
             }
+        )
     }
 
     private func close() {
@@ -467,6 +423,86 @@ private struct RecordSwipeCard: View {
         suppressNavigation = false
         if revealedID == workout.id {
             revealedID = nil
+        }
+    }
+}
+
+/// Horizontal pan for 删除. `shouldBegin` returns false for a vertical or diagonal move,
+/// so the recognizer never claims that touch and the list scroll keeps it.
+private struct RecordDeletePan: UIGestureRecognizerRepresentable {
+    var onBegan: () -> Void
+    var onChanged: (CGFloat) -> Void
+    var onEnded: (_ translation: CGFloat, _ velocity: CGFloat) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.cancelsTouchesInView = false
+        pan.delaysTouchesBegan = false
+        pan.delaysTouchesEnded = false
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {}
+
+    func gestureRecognizerShouldBegin(_ recognizer: UIPanGestureRecognizer) -> Bool {
+        Self.begins(recognizer)
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let translation = recognizer.translation(in: recognizer.view).x
+        let velocity = recognizer.velocity(in: recognizer.view).x
+        switch recognizer.state {
+        case .began:
+            context.coordinator.claimed = true
+            onBegan()
+            onChanged(translation)
+        case .changed:
+            guard context.coordinator.claimed else { return }
+            onChanged(translation)
+        case .ended:
+            guard context.coordinator.claimed else { return }
+            context.coordinator.claimed = false
+            onEnded(translation, velocity)
+        case .cancelled:
+            guard context.coordinator.claimed else { return }
+            context.coordinator.claimed = false
+            onEnded(translation, 0)
+        default:
+            break
+        }
+    }
+
+    private static func begins(_ recognizer: UIPanGestureRecognizer) -> Bool {
+        let translation = recognizer.translation(in: recognizer.view)
+        let velocity = recognizer.velocity(in: recognizer.view)
+        return RecordCardSwipe.shouldBeginDeletePan(
+            translationX: translation.x,
+            translationY: translation.y,
+            velocityX: velocity.x,
+            velocityY: velocity.y
+        )
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var claimed = false
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return false }
+            return RecordDeletePan.begins(pan)
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            // Declining in `shouldBegin` is what keeps a vertical scroll exclusive.
+            // Returning true here lets that scroll proceed while this pan is still undecided.
+            true
         }
     }
 }
@@ -698,34 +734,15 @@ private enum RecordCardText {
     }
 }
 
+/// 84×84 track. No map tiles: the route itself is the thumbnail.
 struct RecordMapThumbnail: View {
     var points: [GeoPoint]
     var sport: SportKind
 
-    @Environment(\.displayScale) private var displayScale
-    @State private var image: UIImage?
-    @State private var renderedKey = ""
-
-    private var cacheKey: String {
-        RecordMapSnapshot.key(for: points, scale: displayScale)
-    }
-
-    private var shownImage: UIImage? {
-        if renderedKey == cacheKey {
-            return image
-        }
-        return RecordMapSnapshot.cachedImage(forKey: cacheKey)
-    }
-
     var body: some View {
         ZStack {
             SkyTheme.Color.cardBorder
-            if let shownImage {
-                Image(uiImage: shownImage)
-                    .resizable()
-                    .interpolation(.medium)
-                    .scaledToFill()
-            } else if points.count >= 2 {
+            if points.count >= 2 {
                 RecordTrackLine(points: points)
             } else {
                 Image(systemName: sport == .running ? "figure.run" : "figure.hiking")
@@ -736,197 +753,23 @@ struct RecordMapThumbnail: View {
         .frame(width: RecordCardLayout.thumbnail, height: RecordCardLayout.thumbnail)
         .clipShape(RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous))
         .accessibilityHidden(true)
-        .task(id: cacheKey) {
-            guard points.count >= 2 else {
-                image = nil
-                renderedKey = cacheKey
-                return
-            }
-            let rendered = await RecordMapSnapshot.image(for: points, scale: displayScale)
-            guard !Task.isCancelled else { return }
-            image = rendered
-            renderedKey = cacheKey
-        }
     }
 }
 
-/// Resumes a snapshot continuation once. Cancel can race the completion handler.
-private final class SnapshotResume: @unchecked Sendable {
-    private let lock = NSLock()
-    private var resumed = false
-
-    func resume(
-        _ continuation: CheckedContinuation<MKMapSnapshotter.Snapshot?, Never>,
-        with snapshot: MKMapSnapshotter.Snapshot?
-    ) {
-        lock.lock()
-        let already = resumed
-        resumed = true
-        lock.unlock()
-        if !already {
-            continuation.resume(returning: snapshot)
-        }
-    }
+/// Washed brand blue for the list thumbnail. Full `#1E88FE` stays the icon and metric accent.
+private enum RecordTrackInk {
+    /// 60% of `#1E88FE`. Pale on the light thumbnail, still darker than the `#E4F1FF` fill.
+    static let color = SkyTheme.Color.primary.opacity(0.6)
 }
 
-/// Static MapKit snapshot with a primary route. The flat track is only the stand-in before tiles arrive.
-private enum RecordMapSnapshot {
-    private static let cache: NSCache<NSString, UIImage> = {
-        let cache = NSCache<NSString, UIImage>()
-        cache.countLimit = 40
-        return cache
-    }()
-
-    static func key(for points: [GeoPoint], scale: CGFloat) -> String {
-        var hash: UInt64 = UInt64(points.count)
-        let step = max(points.count / 16, 1)
-        var index = 0
-        while index < points.count {
-            let point = points[index]
-            hash = hash &* 31 &+ UInt64(bitPattern: Int64((point.latitude * 10_000).rounded()))
-            hash = hash &* 31 &+ UInt64(bitPattern: Int64((point.longitude * 10_000).rounded()))
-            index += step
-        }
-        return "\(hash)-\(Int((scale * 10).rounded()))"
-    }
-
-    static func cachedImage(forKey key: String) -> UIImage? {
-        cache.object(forKey: key as NSString)
-    }
-
-    static func image(for points: [GeoPoint], scale: CGFloat) async -> UIImage? {
-        let key = self.key(for: points, scale: scale) as NSString
-        if let cached = cache.object(forKey: key) {
-            return cached
-        }
-        guard points.count >= 2, let region = region(for: points) else { return nil }
-
-        let options = MKMapSnapshotter.Options()
-        options.region = region
-        options.size = CGSize(width: RecordCardLayout.thumbnail, height: RecordCardLayout.thumbnail)
-        options.scale = max(scale, 1)
-        options.mapType = .standard
-        options.showsBuildings = false
-        options.pointOfInterestFilter = .excludingAll
-        options.traitCollection = UITraitCollection(traitsFrom: [
-            UITraitCollection(userInterfaceStyle: .light),
-            UITraitCollection(displayScale: options.scale)
-        ])
-
-        let snapshotter = MKMapSnapshotter(options: options)
-        let box = SnapshotResume()
-        let snapshot: MKMapSnapshotter.Snapshot? = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                snapshotter.start { snapshot, _ in
-                    box.resume(continuation, with: snapshot)
-                }
-            }
-        } onCancel: {
-            snapshotter.cancel()
-        }
-        guard let snapshot, !Task.isCancelled else { return nil }
-        let rendered = render(points: points, on: snapshot)
-        cache.setObject(rendered, forKey: key)
-        return rendered
-    }
-
-    private static func region(for points: [GeoPoint]) -> MKCoordinateRegion? {
-        guard let first = points.first else { return nil }
-        var minLat = first.latitude
-        var maxLat = first.latitude
-        var minLon = first.longitude
-        var maxLon = first.longitude
-        for point in points {
-            minLat = min(minLat, point.latitude)
-            maxLat = max(maxLat, point.latitude)
-            minLon = min(minLon, point.longitude)
-            maxLon = max(maxLon, point.longitude)
-        }
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLon + maxLon) / 2
-        )
-        // Extra span leaves room for the end pin inside the rounded thumbnail.
-        let pad = 1.85
-        let minimum = 0.0012
-        return MKCoordinateRegion(
-            center: center,
-            span: MKCoordinateSpan(
-                latitudeDelta: max(maxLat - minLat, minimum) * pad,
-                longitudeDelta: max(maxLon - minLon, minimum) * pad
-            )
-        )
-    }
-
-    private static func render(points: [GeoPoint], on snapshot: MKMapSnapshotter.Snapshot) -> UIImage {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = snapshot.image.scale
-        format.opaque = true
-        let renderer = UIGraphicsImageRenderer(size: snapshot.image.size, format: format)
-        let coordinates = simplified(points).map(\.coordinate)
-        let stroke = UIColor(SkyTheme.Color.primary)
-        let hole = UIColor(SkyTheme.Color.card)
-        return renderer.image { _ in
-            snapshot.image.draw(at: .zero)
-            guard coordinates.count >= 2 else { return }
-            let path = UIBezierPath()
-            path.lineWidth = 3
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            for (index, coordinate) in coordinates.enumerated() {
-                let point = snapshot.point(for: coordinate)
-                if index == 0 {
-                    path.move(to: point)
-                } else {
-                    path.addLine(to: point)
-                }
-            }
-            stroke.setStroke()
-            path.stroke()
-            if let last = coordinates.last {
-                drawPin(at: snapshot.point(for: last), fill: stroke, hole: hole)
-            }
-        }
-    }
-
-    private static func drawPin(at tip: CGPoint, fill: UIColor, hole: UIColor) {
-        let radius: CGFloat = 3.6
-        let center = CGPoint(x: tip.x, y: tip.y - radius - 2)
-        let head = UIBezierPath(
-            ovalIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
-        )
-        let tail = UIBezierPath()
-        tail.move(to: CGPoint(x: tip.x - radius * 0.72, y: center.y + radius * 0.35))
-        tail.addLine(to: tip)
-        tail.addLine(to: CGPoint(x: tip.x + radius * 0.72, y: center.y + radius * 0.35))
-        tail.close()
-        fill.setFill()
-        tail.fill()
-        head.fill()
-        let pupil = radius * 0.38
-        hole.setFill()
-        UIBezierPath(
-            ovalIn: CGRect(x: center.x - pupil, y: center.y - pupil, width: pupil * 2, height: pupil * 2)
-        ).fill()
-    }
-
-    private static func simplified(_ points: [GeoPoint], limit: Int = 180) -> [GeoPoint] {
-        guard points.count > limit, limit >= 2 else { return points }
-        let step = Double(points.count - 1) / Double(limit - 1)
-        return (0..<limit).map { index in
-            let position = min(points.count - 1, Int((Double(index) * step).rounded()))
-            return points[position]
-        }
-    }
-}
-
-/// Primary route on the card fill while the map snapshot is still loading, or if tiles fail.
+/// Pale route on the thumbnail fill. Long traces are sampled down before they are projected.
 private struct RecordTrackLine: View {
     var points: [GeoPoint]
 
     var body: some View {
+        let samples = RecordTrackPath.simplified(points)
         Canvas { context, size in
-            let spots = projected(in: size)
+            let spots = Self.projected(samples, in: size)
             guard spots.count >= 2 else { return }
             var path = Path()
             path.move(to: spots[0])
@@ -935,34 +778,50 @@ private struct RecordTrackLine: View {
             }
             context.stroke(
                 path,
-                with: .color(SkyTheme.Color.primary),
+                with: .color(RecordTrackInk.color),
                 style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
             )
             if let last = spots.last {
                 let head = CGRect(x: last.x - 3.6, y: last.y - 12, width: 7.2, height: 7.2)
-                context.fill(Path(ellipseIn: head), with: .color(SkyTheme.Color.primary))
+                context.fill(Path(ellipseIn: head), with: .color(RecordTrackInk.color))
                 var tail = Path()
                 tail.move(to: CGPoint(x: last.x - 2.6, y: last.y - 6))
                 tail.addLine(to: last)
                 tail.addLine(to: CGPoint(x: last.x + 2.6, y: last.y - 6))
                 tail.closeSubpath()
-                context.fill(tail, with: .color(SkyTheme.Color.primary))
+                context.fill(tail, with: .color(RecordTrackInk.color))
                 let pupil = CGRect(x: last.x - 1.4, y: last.y - 9.8, width: 2.8, height: 2.8)
                 context.fill(Path(ellipseIn: pupil), with: .color(SkyTheme.Color.card))
             }
         }
     }
 
-    private func projected(in size: CGSize) -> [CGPoint] {
+    private static func projected(_ points: [GeoPoint], in size: CGSize) -> [CGPoint] {
         guard let first = points.first, points.count >= 2 else { return [] }
-        let midLatitude = points.map(\.latitude).reduce(0, +) / Double(points.count)
+        var latitudeSum = 0.0
+        for point in points {
+            latitudeSum += point.latitude
+        }
+        let midLatitude = latitudeSum / Double(points.count)
         let cosLat = max(cos(midLatitude * .pi / 180), 0.2)
-        let east = points.map { CGFloat(($0.longitude - first.longitude) * 111_320 * cosLat) }
-        let north = points.map { CGFloat(($0.latitude - first.latitude) * 111_320) }
-        let minX = east.min() ?? 0
-        let maxX = east.max() ?? 0
-        let minY = north.min() ?? 0
-        let maxY = north.max() ?? 0
+        var east: [CGFloat] = []
+        var north: [CGFloat] = []
+        east.reserveCapacity(points.count)
+        north.reserveCapacity(points.count)
+        var minX = CGFloat.greatestFiniteMagnitude
+        var maxX = -CGFloat.greatestFiniteMagnitude
+        var minY = CGFloat.greatestFiniteMagnitude
+        var maxY = -CGFloat.greatestFiniteMagnitude
+        for point in points {
+            let easting = CGFloat((point.longitude - first.longitude) * 111_320 * cosLat)
+            let northing = CGFloat((point.latitude - first.latitude) * 111_320)
+            east.append(easting)
+            north.append(northing)
+            minX = min(minX, easting)
+            maxX = max(maxX, easting)
+            minY = min(minY, northing)
+            maxY = max(maxY, northing)
+        }
         let spanX = max(maxX - minX, 1)
         let spanY = max(maxY - minY, 1)
         let pad: CGFloat = 12
