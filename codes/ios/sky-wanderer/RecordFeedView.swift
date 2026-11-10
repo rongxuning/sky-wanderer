@@ -338,7 +338,9 @@ private struct RecordSwipeCard: View {
             }
         }
         .contentShape(Rectangle())
-        .simultaneousGesture(deletePan)
+        // Representable pans attach with gesture(_:). simultaneousGesture requires a SwiftUI Gesture.
+        // The delegate still shares the touch with list scroll; shouldBegin stays fail-closed.
+        .gesture(deletePan)
         .accessibilityAction(named: Text("删除")) {
             onRequestDelete()
         }
