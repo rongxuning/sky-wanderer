@@ -35,7 +35,34 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 | `chartNeutral` | `#8E8E93` | 图表中性灰 |
 | `chartNeutralMuted` | `#C6C6C8` | 图表第二条中性灰 |
 
-图表只使用 `primary` 再加一到两条中性灰。
+图表的中性系列仍只用 `primary` 再加一到两条中性灰。记录列表和记录详情的指标另用下面的指标色，不另起一套页面色板。
+
+### 运动指标色
+
+记录列表和记录详情共用。数字和单位同一字重（Bold）、同一颜色。标签用 Caption，颜色 `secondary`。没有数值时用「—」，颜色 `secondary`，不用彩色的 0。
+
+| Token | Hex | 用途 |
+| --- | --- | --- |
+| `metric.duration` | `#A16207` | 训练时间、经过时间、列表里的时长 |
+| `metric.distance` | `#0277BD` | 距离。必须和 `primary` `#1E88FE` 分开 |
+| `metric.pace` | `#0B7F7A` | 配速、步频、步幅 |
+| `metric.heartRate` | `#D13924` | 心率。分段里变慢的箭头也用它 |
+| `metric.elevation` | `#15803D` | 爬升、海拔。分段里变快的箭头也用它 |
+| `metric.energy` | `#C2183B` | 能量 |
+| `metric.load` | `#6D28D9` | 训练负荷 |
+| `metric.score` | `#1E88FE` | 训练评分，等于 `primary` |
+
+### 区间色
+
+心率区间和配速区间共用，从易到难。浅色底上要能读清。分界仍是 `ZoneScale` 里已有的草稿（心率按 190 次/分的百分比，配速按固定的秒/公里），不把某一次运动的截图数字写死。
+
+| Token | Hex | 名称 |
+| --- | --- | --- |
+| `zone.base` | `#1E88FE` | 有氧基础 |
+| `zone.endurance` | `#15803D` | 有氧耐力 |
+| `zone.threshold` | `#A16207` | 乳酸阈值 |
+| `zone.speed` | `#C2410C` | 速度耐力 |
+| `zone.sprint` | `#D13924` | 冲刺能力 |
 
 卡片二选一：`cardBorder` 的极浅蓝边，或第 5 节的单层柔和阴影。不要又描边又叠多层阴影。
 
@@ -64,7 +91,9 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 | Footnote | 13 | Regular | 时间、单位 |
 | Caption | 12 | Regular | 徽章、图例 |
 
-指标数字与所在层级同字号，字重用 Semibold 或 Bold。单位用 Footnote，颜色用 `secondary`。
+未上色的指标：数字与所在层级同字号，字重用 Semibold 或 Bold；单位用 Footnote，颜色用 `secondary`。
+
+记录列表和记录详情里用了指标色的数字：数字和单位同一字号、同一字重（Bold），颜色用上一节的指标色。标签仍是 Caption、`secondary`。
 
 ## 4. 间距
 

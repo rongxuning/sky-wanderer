@@ -755,7 +755,8 @@ private struct LiveElevationChart: View {
     }
 }
 
-/// Same draft heart-rate bands as the workout detail page and `ZoneScale.heart`.
+/// Same draft heart-rate cutoffs as `ZoneScale.heart` and the detail page.
+/// The detail page names these five bands 有氧基础 through 冲刺能力.
 private enum LiveHeartZones {
     struct Share: Identifiable {
         var name: String
