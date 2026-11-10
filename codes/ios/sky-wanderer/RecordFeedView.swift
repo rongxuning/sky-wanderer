@@ -83,7 +83,8 @@ struct RecordFeedView: View {
                 }
             }
             .scrollEdgeEffectStyle(.hard, for: .top)
-            .scrollEdgeEffectDisabled(true, for: .top)
+            // iOS 26 SDK: scrollEdgeEffectHidden(_:for:). Hides the top blur so the slab stays opaque.
+            .scrollEdgeEffectHidden(true, for: .top)
             .contentMargins(.top, 0, for: .scrollContent)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(SkyTheme.Color.grouped)
