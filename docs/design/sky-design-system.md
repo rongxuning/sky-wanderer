@@ -24,8 +24,10 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 | `grouped` | `#F5F5F7` | 分组列表、统计区底 |
 | `card` | `#FFFFFF` | 卡片底 |
 | `cardBorder` | `#E4F1FF` | 卡片描边。白底叠约 12% 的 `primary`。也可以改用下面的单层阴影 |
+| `recordCard` | `#E6F1FE` | 记录列表卡片底。淡蓝，不另起一套页面色板 |
 | `ink` | `#1C1C1E` | 主文字、标签 |
 | `secondary` | `#8E8E93` | 次要文字、未选中的标签 |
+| `nickname` | `#636366` | 记录详情里，头像正下方的用户名 |
 | `tertiary` | `#C6C6C8` | 更弱的说明。分隔线与此同色，token 名 `separator` |
 | `success` | `#34C759` | 完成、正向状态 |
 | `warning` | `#FF9500` | 需要注意 |

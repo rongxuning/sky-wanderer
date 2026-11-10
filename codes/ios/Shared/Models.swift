@@ -1014,7 +1014,44 @@ enum RecordCardSwipe {
     }
 }
 
-/// Even samples of a route for the records-list thumbnail.
+/// One short line per workout on the record list. The choice is a pure function of a
+/// stable id, so a refresh does not rotate it. `Hasher` is salted per process and is not used.
+enum RecordMotivation {
+    static let lines: [String] = [
+        "山高路远，行则将至",
+        "慢慢跑，也能跑很远",
+        "把今天跑完，就是胜利",
+        "每一步都算数",
+        "出发，就是最好的开始",
+        "路在脚下，心在远方",
+        "不怕走得慢，只怕停下",
+        "风过林间，步履更稳",
+        "今天的路，是明天的风景",
+        "走完这一段，再看远方",
+        "山还在，人就继续走",
+        "先迈出去，路会打开",
+    ]
+
+    /// Health id when the row has one; otherwise the stored workout id.
+    /// Import keeps the Health id. Merge keeps the stored id. Either seed survives a refresh.
+    static func line(for workoutID: UUID, healthKitUUID: String? = nil) -> String {
+        let key = WorkoutDenylist.healthIdentity(healthKitUUID) ?? workoutID.uuidString
+        return lines[index(for: key)]
+    }
+
+    /// FNV-1a over the UTF-8 key. Stable across launches.
+    static func index(for key: String) -> Int {
+        guard !lines.isEmpty else { return 0 }
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in key.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return Int(hash % UInt64(lines.count))
+    }
+}
+
+/// Even samples of a route for the list track.
 /// The first and last points stay put so the line still starts and finishes on the real track.
 enum RecordTrackPath {
     static func simplified(_ points: [GeoPoint], limit: Int = 180) -> [GeoPoint] {

@@ -373,6 +373,32 @@ check(simplifiedTrack.first == longTrack.first, "the sample keeps the start")
 check(simplifiedTrack.last == longTrack.last, "the sample keeps the end")
 check(RecordTrackPath.simplified(Array(longTrack.prefix(12))).count == 12, "a short route is not resampled")
 
+let quoteID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
+let quoteAgain = RecordMotivation.line(for: quoteID)
+check(quoteAgain == RecordMotivation.line(for: quoteID), "a workout id keeps the same quote")
+check(RecordMotivation.lines.contains(quoteAgain), "the quote comes from the curated list")
+check(RecordMotivation.lines.count == 12, "the curated list has twelve lines")
+check(
+    RecordMotivation.lines.allSatisfy { line in
+        !line.isEmpty && !line.contains(where: { $0.isASCII && $0.isLetter })
+    },
+    "quotes stay short Chinese lines"
+)
+let otherQuoteID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
+check(
+    RecordMotivation.line(for: quoteID, healthKitUUID: "HK-RUN-1")
+        == RecordMotivation.line(for: otherQuoteID, healthKitUUID: "HK-RUN-1"),
+    "the same Health id keeps the quote when the local id changes"
+)
+check(
+    RecordMotivation.line(for: quoteID, healthKitUUID: "   ") == quoteAgain,
+    "a blank Health id falls back to the workout id"
+)
+check(
+    RecordMotivation.index(for: "HK-RUN-1") == RecordMotivation.index(for: "HK-RUN-1"),
+    "the quote index does not use a per-process hash"
+)
+
 if failures.isEmpty {
     print("workout-delete-check ok")
 } else {

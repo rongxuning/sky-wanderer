@@ -13,8 +13,12 @@ enum SkyTheme {
         static let grouped = SkyHex.color(0xF5F5F7)
         static let card = SkyHex.color(0xFFFFFF)
         static let cardBorder = SkyHex.color(0xE4F1FF)
+        /// Pale blue fill for a record-list card. Not a white `card`.
+        static let recordCard = SkyHex.color(0xE6F1FE)
         static let ink = SkyHex.color(0x1C1C1E)
         static let secondary = SkyHex.color(0x8E8E93)
+        /// Nickname under the detail-hero avatar. Darker than `secondary`.
+        static let nickname = SkyHex.color(0x636366)
         static let tertiary = SkyHex.color(0xC6C6C8)
         static let separator = SkyHex.color(0xC6C6C8)
         static let success = SkyHex.color(0x34C759)
