@@ -1160,8 +1160,10 @@ private struct ElevationChartCard: View {
         return first...max(first + 1, last)
     }
 
+    /// Domain uses every finite sample, not the downsampled curve, so the true peak stays on scale.
     private var yDomain: (lower: Double, upper: Double) {
-        let values = samples.map(\.value).filter(\.isFinite)
+        let source = points.map(\.value).filter(\.isFinite)
+        let values = source.isEmpty ? samples.map(\.value).filter(\.isFinite) : source
         let low = values.min() ?? 0
         let high = values.max() ?? 0
         let span = high - low
@@ -1506,20 +1508,94 @@ private enum WorkoutDetailMath {
         return (climb, drop)
     }
 
+    /// Evenly samples the series and always keeps the minimum and maximum.
+    /// Times stay strictly increasing. The point cap is honored unless the only
+    /// remaining points are those extrema.
     static func plotSamples(_ points: [SeriesPoint], limit: Int = 90) -> [ChartSample] {
         let unique = uniqued(points)
         guard unique.count >= 2 else { return [] }
-        let step = max(1, unique.count / max(limit, 2))
-        var picked: [SeriesPoint] = []
-        for index in stride(from: 0, to: unique.count, by: step) {
-            picked.append(unique[index])
+        let cap = max(2, limit)
+        let finite = points.filter { $0.second.isFinite && $0.value.isFinite }
+        let low = finite.min { $0.value < $1.value }
+        let high = finite.max { $0.value < $1.value }
+
+        var chosen: [SeriesPoint]
+        if unique.count <= cap {
+            chosen = unique
+        } else {
+            let step = max(1, unique.count / cap)
+            chosen = []
+            chosen.reserveCapacity(cap)
+            for index in stride(from: 0, to: unique.count, by: step) {
+                chosen.append(unique[index])
+            }
+            if let last = unique.last, chosen.last?.second != last.second {
+                chosen.append(last)
+            }
         }
-        if let last = unique.last, picked.last?.second != last.second {
-            picked.append(last)
-        }
-        return picked.enumerated().map { offset, point in
+        chosen = includingExtrema(chosen, low: low, high: high, cap: cap)
+        return chosen.enumerated().map { offset, point in
             ChartSample(id: offset, second: point.second, value: point.value)
         }
+    }
+
+    /// Inserts the true min and max. A sample already at that time keeps the more extreme value
+    /// so the chart does not plot two points on one second.
+    private static func includingExtrema(
+        _ samples: [SeriesPoint],
+        low: SeriesPoint?,
+        high: SeriesPoint?,
+        cap: Int
+    ) -> [SeriesPoint] {
+        var rows = samples
+        if let high {
+            rows = merging(rows, extreme: high, replaces: { $0 > $1 })
+        }
+        if let low, low.second != high?.second {
+            rows = merging(rows, extreme: low, replaces: { $0 < $1 })
+        }
+        rows.sort { $0.second < $1.second }
+        var collapsed: [SeriesPoint] = []
+        collapsed.reserveCapacity(rows.count)
+        for row in rows {
+            if let last = collapsed.last, last.second == row.second {
+                if row.value == high?.value || (row.value == low?.value && last.value != high?.value) {
+                    collapsed[collapsed.count - 1] = SeriesPoint(second: row.second, value: row.value)
+                }
+            } else {
+                collapsed.append(row)
+            }
+        }
+        guard collapsed.count > cap else { return collapsed }
+        let protected = Set([low?.second, high?.second].compactMap { $0 })
+        var trimmed = collapsed
+        while trimmed.count > cap {
+            let middle = trimmed.indices.filter { index in
+                let second = trimmed[index].second
+                if protected.contains(second) { return false }
+                return index != 0 && index != trimmed.count - 1
+            }
+            let pool = middle.isEmpty
+                ? trimmed.indices.filter { !protected.contains(trimmed[$0].second) }
+                : middle
+            guard !pool.isEmpty else { break }
+            trimmed.remove(at: pool[pool.count / 2])
+        }
+        return trimmed
+    }
+
+    private static func merging(
+        _ rows: [SeriesPoint],
+        extreme: SeriesPoint,
+        replaces: (Double, Double) -> Bool
+    ) -> [SeriesPoint] {
+        if let index = rows.firstIndex(where: { $0.second == extreme.second }) {
+            guard replaces(extreme.value, rows[index].value) else { return rows }
+            var copy = rows
+            copy[index] = SeriesPoint(second: extreme.second, value: extreme.value)
+            return copy
+        }
+        return rows + [SeriesPoint(second: extreme.second, value: extreme.value)]
     }
 
     struct ZoneSegment: Identifiable {
