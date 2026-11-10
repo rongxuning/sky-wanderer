@@ -475,7 +475,8 @@ struct WorkoutDetailView: View {
             trailingLabel: "最大",
             accent: SkyTheme.Color.Metric.heartRate,
             bands: WorkoutDetailMath.heartBands,
-            invert: false
+            invert: false,
+            paintCrossings: true
         )
     }
 
@@ -781,6 +782,15 @@ private struct SplitPaceMarks {
 private struct DetailSplitsCard: View {
     var workout: WorkoutRecord
 
+    /// One line for the header and every body row. The fastest and slowest
+    /// labels sit in a fixed slot to the left of the index, so they do not
+    /// change the row height or shift the numbers.
+    private static let rowHeight: CGFloat = 36
+    private static let columnGap: CGFloat = 2
+    private static let separatorBlock: CGFloat = 9
+    private static let tagWidth: CGFloat = 30
+    private static let paceColumn = 3
+
     var body: some View {
         let splits = workout.resolvedSplits
         VStack(alignment: .leading, spacing: 12) {
@@ -792,8 +802,23 @@ private struct DetailSplitsCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, SkyTheme.Spacing.related)
             } else {
-                let marks = SplitPaceMarks.make(splits: splits)
-                splitRow(["圈数", "时间", "距离", "配速", "心率", "步频"], header: true)
+                table(splits)
+            }
+        }
+        .detailCard()
+    }
+
+    private func table(_ splits: [KilometerSplit]) -> some View {
+        let marks = SplitPaceMarks.make(splits: splits)
+        let rowCount = CGFloat(splits.count + 2)
+        return GeometryReader { geo in
+            let widths = Self.columnWidths(in: geo.size.width)
+            VStack(spacing: 0) {
+                splitRow(
+                    ["圈数", "时间", "距离", "配速", "心率", "步频"],
+                    widths: widths,
+                    header: true
+                )
                 ForEach(splits) { split in
                     splitRow(
                         [
@@ -804,6 +829,7 @@ private struct DetailSplitsCard: View {
                             Format.integer(split.heartRate),
                             Format.integer(split.cadence)
                         ],
+                        widths: widths,
                         trend: marks.trend[split.index],
                         tag: marks.tag[split.index]
                     )
@@ -812,78 +838,136 @@ private struct DetailSplitsCard: View {
                     .fill(SkyTheme.Color.separator)
                     .frame(height: 1)
                     .padding(.vertical, 4)
-                    splitRow([
-                    "总计",
-                    Format.clock(workout.trainingDuration),
-                    Format.kilometers(workout.distanceMeters),
-                    Format.pace(workout.averagePaceSecPerKm),
-                    Format.integer(workout.resolvedAverageHeartRate),
-                    Format.integer(workout.resolvedAverageCadence)
-                ])
+                splitRow(
+                    [
+                        "总计",
+                        Format.clock(workout.trainingDuration),
+                        Format.kilometers(workout.distanceMeters),
+                        Format.pace(workout.averagePaceSecPerKm),
+                        Format.integer(workout.resolvedAverageHeartRate),
+                        Format.integer(workout.resolvedAverageCadence)
+                    ],
+                    widths: widths
+                )
             }
         }
-        .detailCard()
+        .frame(height: rowCount * Self.rowHeight + Self.separatorBlock)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Index keeps a fixed slot for 最快 / 最慢. Heart rate and cadence fit three
+    /// digits. Whatever remains is split between time and pace.
+    private static func columnWidths(in total: CGFloat) -> [CGFloat] {
+        let gaps = columnGap * 5
+        let index = min(CGFloat(68), max(CGFloat(64), total * 0.20))
+        let distance = min(CGFloat(48), max(CGFloat(40), total * 0.14))
+        let heart = min(CGFloat(34), max(CGFloat(28), total * 0.10))
+        let cadence = heart
+        let fixed = index + distance + heart + cadence + gaps
+        let free = max(0, total - fixed)
+        let time = (free * 0.44 * 100).rounded() / 100
+        let pace = max(0, free - time)
+        return [index, time, distance, pace, heart, cadence]
     }
 
     private func splitRow(
         _ cells: [String],
+        widths: [CGFloat],
         header: Bool = false,
         trend: PaceTrend? = nil,
         tag: String? = nil
     ) -> some View {
-        HStack(alignment: .center, spacing: 4) {
+        HStack(spacing: Self.columnGap) {
             ForEach(Array(cells.enumerated()), id: \.offset) { column, cell in
-                splitCell(cell, column: column, header: header, trend: trend, tag: tag)
+                splitCell(
+                    cell,
+                    column: column,
+                    width: widths.indices.contains(column) ? widths[column] : 0,
+                    header: header,
+                    trend: trend,
+                    tag: tag
+                )
             }
         }
+        .frame(height: Self.rowHeight)
+        .background { rowWash(header ? nil : tag) }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Pale frost on the fastest and slowest full kilometers. The wash sits on
+    /// top of a thin material so the row stays translucent on the white card.
+    @ViewBuilder
+    private func rowWash(_ tag: String?) -> some View {
+        if let wash = washColor(tag) {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.thinMaterial)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(wash)
+                }
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func washColor(_ tag: String?) -> Color? {
+        switch tag {
+        case "最快":
+            return SkyTheme.Color.success.opacity(0.28)
+        case "最慢":
+            return SkyTheme.Color.danger.opacity(0.20)
+        default:
+            return nil
+        }
     }
 
     @ViewBuilder
     private func splitCell(
         _ cell: String,
         column: Int,
+        width: CGFloat,
         header: Bool,
         trend: PaceTrend?,
         tag: String?
     ) -> some View {
         let text = Text(cell)
-            .font(header ? SkyTheme.Font.caption : SkyTheme.Font.footnote)
-            .fontWeight(header ? .regular : .semibold)
-            .foregroundStyle(color(header: header, column: column))
+            .font(SkyTheme.Font.footnote)
+            .fontWeight(.semibold)
+            .foregroundStyle(color(header: header, column: column, text: cell))
             .monospacedDigit()
             .lineLimit(1)
-            .minimumScaleFactor(0.6)
-        if column == 0, let tag, !header {
-            VStack(alignment: .leading, spacing: 0) {
-                text
-                Text(tag)
-                    .font(SkyTheme.Font.caption)
+            .minimumScaleFactor(0.7)
+        if column == 0 {
+            HStack(spacing: 2) {
+                Text(header ? "" : (tag ?? ""))
+                    .font(SkyTheme.Font.footnote)
+                    .fontWeight(.semibold)
                     .foregroundStyle(SkyTheme.Color.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .frame(width: Self.tagWidth, alignment: .leading)
+                text
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else if column == 3, let trend, !header {
+            .frame(width: width, height: Self.rowHeight, alignment: .leading)
+        } else if column == Self.paceColumn, let trend, !header {
             HStack(alignment: .center, spacing: 2) {
                 text
                 Image(systemName: trend.symbol)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(trend.color)
                     .accessibilityLabel(trend.label)
             }
-            .lineLimit(1)
-            .minimumScaleFactor(0.6)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: width, height: Self.rowHeight, alignment: .leading)
         } else {
             text
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: width, height: Self.rowHeight, alignment: .leading)
         }
     }
 
-    private func color(header: Bool, column: Int) -> Color {
-        if header { return SkyTheme.Color.secondary }
-        if column == 3 { return SkyTheme.Color.primary }
+    private func color(header: Bool, column: Int, text: String) -> Color {
+        if header || text == "—" {
+            return SkyTheme.Color.secondary
+        }
+        if column == Self.paceColumn { return SkyTheme.Color.primary }
         return SkyTheme.Color.ink
     }
 }
@@ -900,6 +984,9 @@ private struct ZoneSeriesCard: View {
     var accent: Color
     var bands: [ZoneBand]
     var invert: Bool
+    /// Heart rate samples are sparse, so a straight stroke can cross several
+    /// bands. Split that stroke on the cutoffs. Pace stays on the sample boundary.
+    var paintCrossings: Bool = false
 
     private var samples: [ChartSample] {
         WorkoutDetailMath.plotSamples(points)
@@ -959,7 +1046,9 @@ private struct ZoneSeriesCard: View {
     }
 
     private var chart: some View {
-        let segments = WorkoutDetailMath.zoneSegments(samples: samples, bands: bands)
+        let segments = paintCrossings
+            ? WorkoutDetailMath.boundaryZoneSegments(samples: samples, bands: bands)
+            : WorkoutDetailMath.zoneSegments(samples: samples, bands: bands)
         let domain = plottedDomain
         return Chart {
             ForEach(segments) { segment in
@@ -1456,18 +1545,77 @@ private enum WorkoutDetailMath {
         return String(format: "%.\(digits)f", value)
     }
 
+    /// Time in each band.
+    ///
+    /// A gap longer than `TrainingSeriesMath.pauseGapSeconds` is a pause and is
+    /// left out, matching the training average. That rule is right for pace,
+    /// which is sampled about every 10–20 seconds of movement.
+    ///
+    /// Heart rate is not. HealthKit samples are thinned to `HealthSeries.maxPoints`
+    /// (720). On a long workout the stored points sit more than 30 seconds apart,
+    /// so every interval was classified as a pause and every zone reported 0%
+    /// while the chart still drew the series. When the pause rule counts nothing,
+    /// treat the series' own spacing as the sample interval: keep gaps up to
+    /// 1.5× the median, drop a hole that is much longer, and split each kept
+    /// interval across the bands the value crosses.
     static func shares(points: [SeriesPoint], bands: [ZoneBand]) -> [ZoneShare] {
         let ordered = uniqued(points)
+        let held = dwell(ordered, bands: bands, limit: TrainingSeriesMath.pauseGapSeconds, interpolate: false)
+        if held.reduce(0, +) > 0 || ordered.count < 2 {
+            return packaged(bands, held)
+        }
+        let gaps = (1..<ordered.count).map { ordered[$0].second - ordered[$0 - 1].second }.filter { $0 > 0 }
+        guard let typical = median(gaps) else { return packaged(bands, held) }
+        let limit = max(TrainingSeriesMath.pauseGapSeconds, typical * 1.5)
+        let crossed = dwell(ordered, bands: bands, limit: limit, interpolate: true)
+        return packaged(bands, crossed)
+    }
+
+    private static func dwell(
+        _ ordered: [SeriesPoint],
+        bands: [ZoneBand],
+        limit: Double,
+        interpolate: Bool
+    ) -> [Double] {
         var seconds = Array(repeating: 0.0, count: bands.count)
-        if ordered.count >= 2 {
-            for index in 1..<ordered.count {
-                let dt = ordered[index].second - ordered[index - 1].second
-                guard dt > 0, dt <= TrainingSeriesMath.pauseGapSeconds else { continue }
-                let value = ordered[index - 1].value
-                guard let band = bands.firstIndex(where: { $0.contains(value) }) else { continue }
+        guard ordered.count >= 2 else { return seconds }
+        for index in 1..<ordered.count {
+            let dt = ordered[index].second - ordered[index - 1].second
+            guard dt > 0, dt <= limit else { continue }
+            let start = ordered[index - 1].value
+            let end = ordered[index].value
+            if interpolate && start != end {
+                addCrossed(&seconds, from: start, to: end, dt: dt, bands: bands)
+            } else if let band = bands.firstIndex(where: { $0.contains(start) }) {
                 seconds[band] += dt
             }
         }
+        return seconds
+    }
+
+    /// Linear in time. The fraction of the interval between two values is the
+    /// fraction of `dt`, which is the same split the heart-rate stroke uses.
+    private static func addCrossed(
+        _ seconds: inout [Double],
+        from start: Double,
+        to end: Double,
+        dt: Double,
+        bands: [ZoneBand]
+    ) {
+        let span = end - start
+        guard span != 0 else { return }
+        var knots = [start]
+        knots.append(contentsOf: edges(between: start, and: end, bands: bands))
+        knots.append(end)
+        for index in 1..<knots.count {
+            let share = abs(knots[index] - knots[index - 1]) / abs(span) * dt
+            let probe = knots[index - 1] + (knots[index] - knots[index - 1]) * 0.5
+            guard let band = bands.firstIndex(where: { $0.contains(probe) }) else { continue }
+            seconds[band] += share
+        }
+    }
+
+    private static func packaged(_ bands: [ZoneBand], _ seconds: [Double]) -> [ZoneShare] {
         let total = seconds.reduce(0, +)
         return zip(bands, seconds).map { band, time in
             ZoneShare(
@@ -1477,6 +1625,34 @@ private enum WorkoutDetailMath {
                 fraction: total > 0 ? time / total : 0
             )
         }
+    }
+
+    private static func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let mid = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[mid - 1] + sorted[mid]) / 2
+        }
+        return sorted[mid]
+    }
+
+    /// Band edges strictly between two readings, in the direction of travel.
+    private static func edges(between start: Double, and end: Double, bands: [ZoneBand]) -> [Double] {
+        guard start.isFinite, end.isFinite, start != end else { return [] }
+        let low = min(start, end)
+        let high = max(start, end)
+        var found: [Double] = []
+        for band in bands {
+            for edge in [band.lower, band.upper] where edge.isFinite && edge > low && edge < high {
+                if found.allSatisfy({ abs($0 - edge) > 0.000_001 }) {
+                    found.append(edge)
+                }
+            }
+        }
+        found.sort()
+        if start > end { found.reverse() }
+        return found
     }
 
     static func elevationProfile(_ workout: WorkoutRecord) -> ElevationProfile {
@@ -1630,6 +1806,52 @@ private enum WorkoutDetailMath {
             }
         }
         segments.append(ZoneSegment(id: nextSegment, name: name, samples: current))
+        return segments
+    }
+
+    /// Same zone colors as `zoneSegments`, but the stroke changes color where the
+    /// line crosses a cutoff. Used for heart rate, whose plotted samples are far
+    /// enough apart that one segment can pass through several bands.
+    static func boundaryZoneSegments(samples: [ChartSample], bands: [ZoneBand]) -> [ZoneSegment] {
+        guard samples.count >= 2, !bands.isEmpty else {
+            return zoneSegments(samples: samples, bands: bands)
+        }
+        var nextID = (samples.map(\.id).max() ?? 0) + 1
+        func mint(_ second: Double, _ value: Double) -> ChartSample {
+            defer { nextID += 1 }
+            return ChartSample(id: nextID, second: second, value: value)
+        }
+        var segments: [ZoneSegment] = []
+        for index in 1..<samples.count {
+            let start = samples[index - 1]
+            let end = samples[index]
+            var knots: [(second: Double, value: Double)] = [(start.second, start.value)]
+            let deltaValue = end.value - start.value
+            let deltaTime = end.second - start.second
+            if deltaValue != 0 {
+                for edge in edges(between: start.value, and: end.value, bands: bands) {
+                    let t = (edge - start.value) / deltaValue
+                    knots.append((start.second + deltaTime * t, edge))
+                }
+            }
+            knots.append((end.second, end.value))
+            for knot in 1..<knots.count {
+                let left = knots[knot - 1]
+                let right = knots[knot]
+                let probe = left.value + (right.value - left.value) * 0.5
+                let name = zoneName(probe, bands: bands)
+                let endSample = mint(right.second, right.value)
+                if let last = segments.indices.last, segments[last].name == name {
+                    segments[last].samples.append(endSample)
+                } else {
+                    segments.append(ZoneSegment(
+                        id: segments.count,
+                        name: name,
+                        samples: [mint(left.second, left.value), endSample]
+                    ))
+                }
+            }
+        }
         return segments
     }
 
