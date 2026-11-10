@@ -588,12 +588,12 @@ private struct ElevationProfileChart: View {
                     .frame(height: 128)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(accessibilityText)
-                HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("0")
-                    Spacer(minLength: 0)
-                    Text(distanceLabel)
-                    Spacer(minLength: 0)
-                    Text("距离 (公里)")
+                    Spacer(minLength: 8)
+                    Text("\(distanceLabel) 公里")
+                        .lineLimit(1)
+                        .multilineTextAlignment(.trailing)
                 }
                 .padding(.trailing, 50)
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
