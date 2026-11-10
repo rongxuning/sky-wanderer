@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -260,98 +259,47 @@ struct RouteDetailView: View {
     @State private var zoomDragBase: Double?
     @State private var showsChart = false
     @State private var showsKilometerMarkers = false
+    @State private var editingTitle = false
+    @State private var titleDraft = ""
+    @FocusState private var titleFocused: Bool
 
     private var route: SavedRoute? {
         app.importedRoutes.first { $0.id == routeID }
     }
 
     var body: some View {
-        Group {
-            if let route {
-                detail(route)
-            } else {
-                missing
+        GeometryReader { geo in
+            // The reader sits in the safe area. Add the insets back so the split is a fraction of the full screen.
+            let top = geo.safeAreaInsets.top
+            let bottom = geo.safeAreaInsets.bottom
+            let screenHeight = geo.size.height + top + bottom
+            Group {
+                if let route {
+                    detail(route, screenHeight: screenHeight, topInset: top, bottomInset: bottom)
+                } else {
+                    missing
+                }
             }
+            .frame(width: geo.size.width, height: screenHeight, alignment: .top)
+            .padding(.top, -top)
+            .padding(.bottom, -bottom)
         }
+        .ignoresSafeArea(.keyboard)
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func detail(_ route: SavedRoute) -> some View {
+    private func detail(_ route: SavedRoute, screenHeight: CGFloat, topInset: CGFloat, bottomInset: CGFloat) -> some View {
         let layout = RouteCheckpoints.layout(waypoints: route.waypoints, points: route.points)
+        let panelHeight = screenHeight * 0.25
+        let mapHeight = max(screenHeight - panelHeight, 0)
         return VStack(spacing: 0) {
-            ZStack {
-                OfflineRouteMap(
-                    routeID: route.id,
-                    points: route.points,
-                    checkpoints: layout.marks,
-                    showsKilometerMarkers: showsKilometerMarkers,
-                    zoomMultiplier: multiplier,
-                    zoomArmed: zoomArmed,
-                    tileEpoch: tileStatus.revision,
-                    onZoomChanged: { value in
-                        guard !zoomArmed else { return }
-                        multiplier = value
-                    },
-                    onZoomDrag: { phase in
-                        handleZoomDrag(phase)
-                    }
-                )
-                .ignoresSafeArea(edges: .top)
-            }
-            .overlay(alignment: .top) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 10) {
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(Color.omniInk)
-                                .frame(width: 40, height: 40)
-                                .background(Color.white.opacity(0.92), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("返回")
-                        Text(route.name)
-                            .font(.system(size: 18, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.omniInk)
-                            .lineLimit(1)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.92), in: Capsule())
-                        Spacer(minLength: 0)
-                    }
-                    Text(tileStatus.note)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniInk)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.92), in: Capsule())
-                }
-                .padding(.horizontal, 12)
-                .padding(.top, 8)
-            }
-            .overlay(alignment: .bottom) {
-                // Equal 12pt side insets. Tools sit above the card and do not narrow it.
-                VStack(alignment: .trailing, spacing: 10) {
-                    toolColumn
-                    Group {
-                        if showsChart {
-                            ElevationChangeChart(points: route.points, layout: layout)
-                        } else {
-                            infoPanel(route)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-
-            elevationDock(route)
+            mapColumn(route, layout: layout, topInset: topInset)
+                .frame(maxWidth: .infinity)
+                .frame(height: mapHeight)
+            bottomPanel(route, bottomInset: bottomInset)
+                .frame(maxWidth: .infinity)
+                .frame(height: panelHeight)
         }
         .background(Color.white)
         .onAppear { tileStatus.refresh(for: route.points) }
@@ -360,63 +308,208 @@ struct RouteDetailView: View {
             await OfflineTileStore.prefetch([route.points])
             tileStatus.refresh(for: route.points)
         }
+        .onChange(of: editingTitle) { _, editing in
+            guard editing else { return }
+            Task { @MainActor in
+                if editingTitle { titleFocused = true }
+            }
+        }
+        .onDisappear { commitTitle() }
     }
 
-    private func elevationDock(_ route: SavedRoute) -> some View {
+    private func mapColumn(_ route: SavedRoute, layout: RouteCheckpointLayout, topInset: CGFloat) -> some View {
         let markerCount = RouteKilometers.markers(along: route.points).count
-        return VStack(alignment: .leading, spacing: 8) {
-            ElevationProfileChart(points: route.points)
-            kilometerControl(markerCount: markerCount)
+        return ZStack {
+            OfflineRouteMap(
+                routeID: route.id,
+                points: route.points,
+                checkpoints: layout.marks,
+                showsKilometerMarkers: showsKilometerMarkers,
+                zoomMultiplier: multiplier,
+                zoomArmed: zoomArmed,
+                tileEpoch: tileStatus.revision,
+                onZoomChanged: { value in
+                    guard !zoomArmed else { return }
+                    multiplier = value
+                },
+                onZoomDrag: { phase in
+                    handleZoomDrag(phase)
+                }
+            )
+            .clipped()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            titleBar(route, topInset: topInset)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            toolColumn(markerCount: markerCount)
+                .padding(.trailing, 12)
+                .padding(.bottom, 10)
+        }
+    }
+
+    private func titleBar(_ route: SavedRoute, topInset: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if editingTitle {
+                titleCapsule(route)
+            } else {
+                HStack(spacing: 0) {
+                    titleCapsule(route)
+                    Spacer(minLength: 0)
+                }
+            }
+            Text(tileStatus.note)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.omniInk)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.92), in: Capsule())
         }
         .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, topInset + 8)
+    }
+
+    /// System text field: the caret, delete, and the copy / paste / cut menu stay the platform ones.
+    private func titleCapsule(_ route: SavedRoute) -> some View {
+        HStack(spacing: 4) {
+            Button {
+                commitTitle()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.omniInk)
+                    .frame(width: 36, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("返回")
+            if editingTitle {
+                TextField(
+                    "路线名称",
+                    text: $titleDraft,
+                    prompt: Text("路线名称").foregroundStyle(Color.omniMuted)
+                )
+                .focused($titleFocused)
+                .submitLabel(.done)
+                .onSubmit(commitTitle)
+                .textFieldStyle(.plain)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.omniInk)
+                .tint(SkyTheme.Color.primary)
+                .lineLimit(1)
+                .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("路线名称")
+            } else {
+                Text(route.name)
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.omniInk)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(-1)
+            }
+            Button {
+                if editingTitle {
+                    commitTitle()
+                } else {
+                    beginTitleEdit(route)
+                }
+            } label: {
+                Image(systemName: editingTitle ? "square.and.arrow.down" : "pencil")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(editingTitle ? SkyTheme.Color.primary : Color.omniInk)
+                    .frame(width: 36, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(editingTitle ? "保存" : "编辑路线名称")
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, 6)
+        .background(Color.white.opacity(0.92), in: Capsule())
+    }
+
+    private func beginTitleEdit(_ route: SavedRoute) {
+        titleDraft = route.name
+        editingTitle = true
+    }
+
+    /// Done and save both commit. A cleared field keeps the previous title.
+    private func commitTitle() {
+        guard editingTitle else { return }
+        let trimmed = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        editingTitle = false
+        titleFocused = false
+        guard !trimmed.isEmpty else { return }
+        app.renameRoute(id: routeID, name: trimmed)
+    }
+
+    private func bottomPanel(_ route: SavedRoute, bottomInset: CGFloat) -> some View {
+        Group {
+            if showsChart {
+                ElevationProfileChart(points: route.points)
+            } else {
+                routeFacts(route)
+            }
+        }
+        .padding(.bottom, bottomInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color.white)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.black.opacity(0.06))
                 .frame(height: 1)
         }
+        .clipped()
     }
 
-    private func kilometerControl(markerCount: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                showsKilometerMarkers.toggle()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: showsKilometerMarkers ? "smallcircle.filled.circle.fill" : "smallcircle.filled.circle")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("路程点")
-                        .font(.system(size: 16, weight: .bold, design: .rounded))
-                    Spacer(minLength: 0)
-                    Text(showsKilometerMarkers ? "已显示" : "未显示")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+    private func routeFacts(_ route: SavedRoute) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            factRow("导入时间", importTime(route), SkyTheme.Color.ink)
+            factRow("距离", routeKilometers(RouteStats.distance(route.points)), SkyTheme.Color.Metric.distance)
+            factRow("爬升", routeMeters(RouteStats.ascent(route.points)), SkyTheme.Color.Metric.elevation)
+            factRow("最高海拔", maxElevationText(route.points), SkyTheme.Color.Metric.elevation)
+            factRow("创建人", route.creatorLabel, SkyTheme.Color.ink)
+            HStack(spacing: 16) {
+                Button(draft.routeID == route.id ? "已用于训练" : "用于训练") {
+                    draft.routeID = route.id
                 }
-                .foregroundStyle(showsKilometerMarkers ? SkyTheme.Color.onPrimary : SkyTheme.Color.ink)
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(
-                    showsKilometerMarkers ? SkyTheme.Color.primary : SkyTheme.Color.grouped,
-                    in: RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
-                )
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("路程点")
-            .accessibilityValue(showsKilometerMarkers ? "已显示" : "未显示")
-            .accessibilityHint("沿路线显示每公里的标记")
-            .accessibilityAddTraits(showsKilometerMarkers ? .isSelected : [])
-            if showsKilometerMarkers, markerCount == 0 {
-                Text("不足 1 公里，没有路程点")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniMuted)
+                .buttonStyle(.plain)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(SkyTheme.Color.primary)
+                if draft.routeID == route.id {
+                    Button("取消使用") {
+                        draft.routeID = PlannedRoute.free.id
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                }
+                Spacer(minLength: 0)
             }
         }
+        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
-    private var toolColumn: some View {
-        VStack(spacing: 8) {
+    private func factRow(_ title: String, _ value: String, _ valueColor: Color) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .foregroundStyle(SkyTheme.Color.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .foregroundStyle(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func toolColumn(markerCount: Int) -> some View {
+        VStack(spacing: 10) {
             if zoomArmed {
                 Text(String(format: "%.1f×", multiplier))
                     .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -444,57 +537,45 @@ struct RouteDetailView: View {
                     .padding(.vertical, 3)
                     .background(Color.white.opacity(0.92), in: Capsule())
             }
+            if showsKilometerMarkers, markerCount == 0 {
+                Text("不足 1 公里，没有路程点")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.omniInk)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.92), in: Capsule())
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             toolButton(system: "plus.magnifyingglass", label: "缩放", hint: "点按后上下拖动地图", active: zoomArmed) {
                 zoomArmed.toggle()
             }
-            toolButton(system: "chart.xyaxis.line", label: "海拔分析", hint: "查看海拔变化", active: showsChart) {
+            toolButton(
+                system: "chart.xyaxis.line",
+                label: "海拔分析",
+                hint: "在轨迹数据和海拔剖面之间切换",
+                active: showsChart,
+                tinted: true
+            ) {
                 showsChart.toggle()
             }
-        }
-    }
-
-    private func infoPanel(_ route: SavedRoute) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            RouteSketch(points: route.points)
-                .frame(width: 64, height: 64)
-            VStack(alignment: .leading, spacing: 3) {
-                field("导入时间", importTime(route))
-                field("距离", routeKilometers(RouteStats.distance(route.points)))
-                field("爬升", routeMeters(RouteStats.ascent(route.points)))
-                field("创建人", route.creatorLabel)
-                field("最高海拔", maxElevationText(route.points))
-                HStack(spacing: 12) {
-                    Button(draft.routeID == route.id ? "已用于训练" : "用于训练") {
-                        draft.routeID = route.id
-                    }
-                    .buttonStyle(.plain)
-                    if draft.routeID == route.id {
-                        Button("取消使用") {
-                            draft.routeID = PlannedRoute.free.id
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Color.omniMuted)
-                    }
-                }
-                .font(.system(size: 14, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.omniCobalt)
-                .padding(.top, 4)
+            .accessibilityValue(showsChart ? "海拔" : "轨迹数据")
+            toolButton(
+                system: showsKilometerMarkers ? "smallcircle.filled.circle.fill" : "smallcircle.filled.circle",
+                label: "路程点",
+                hint: "沿路线显示每公里的标记",
+                active: showsKilometerMarkers,
+                tinted: true
+            ) {
+                showsKilometerMarkers.toggle()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityValue(kilometerValue(markerCount))
         }
-        .padding(12)
-        .glass(radius: 22)
     }
 
-    private func field(_ title: String, _ value: String) -> some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .foregroundStyle(Color.omniMuted)
-            Text(value)
-                .foregroundStyle(Color.omniInk)
-                .lineLimit(1)
-        }
-        .font(.system(size: 13, weight: .semibold, design: .rounded))
+    private func kilometerValue(_ markerCount: Int) -> String {
+        guard showsKilometerMarkers else { return "未显示" }
+        if markerCount == 0 { return "不足 1 公里，没有路程点" }
+        return "已显示"
     }
 
     private func toolButton(
@@ -502,14 +583,17 @@ struct RouteDetailView: View {
         label: String,
         hint: String,
         active: Bool,
+        tinted: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let foreground = active ? (tinted ? SkyTheme.Color.primary : Color.white) : Color.omniInk
+        let fill = active ? (tinted ? SkyTheme.Color.recordCard : Color.omniCobalt) : Color.white
+        return Button(action: action) {
             Image(systemName: system)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(active ? Color.white : Color.omniInk)
-                .frame(width: 44, height: 44)
-                .background(active ? Color.omniCobalt : Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .foregroundStyle(foreground)
+                .frame(width: 42, height: 42)
+                .background(fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
         }
         .buttonStyle(.plain)
@@ -561,7 +645,7 @@ private struct ElevationProfileChart: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("海拔")
                     .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -581,11 +665,11 @@ private struct ElevationProfileChart: View {
                 Text("点数不够，画不出曲线")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
                     .foregroundStyle(Color.omniMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 120)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let bounds {
                 profile(low: bounds.low, high: bounds.high)
-                    .frame(height: 128)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minHeight: 64)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(accessibilityText)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -601,6 +685,9 @@ private struct ElevationProfileChart: View {
                 .accessibilityHidden(true)
             }
         }
+        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .padding(.top, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func profile(low: Double, high: Double) -> some View {
@@ -690,130 +777,6 @@ private struct ElevationProfileChart: View {
 
     private func meterText(_ meters: Double) -> String {
         String(Int(meters.rounded()))
-    }
-}
-
-private struct ElevationChangeChart: View {
-    var points: [GeoPoint]
-    var layout: RouteCheckpointLayout
-
-    private var samples: [ElevationSample] {
-        RouteStats.profile(points)
-    }
-
-    private var marks: [RouteCheckpointMark] { layout.marks }
-
-    private var segments: [RouteSegmentSummary] { layout.segments }
-
-    private var flat: Bool {
-        let values = samples.map(\.changeMeters)
-        let low = values.min() ?? 0
-        let high = values.max() ?? 0
-        return high - low < 0.5
-    }
-
-    private var yDomain: ClosedRange<Double> {
-        let values = samples.map(\.changeMeters) + marks.map(\.changeMeters)
-        let low = values.min() ?? 0
-        let high = values.max() ?? 0
-        if high - low < 1 {
-            return (low - 5)...(high + 5)
-        }
-        let pad = (high - low) * 0.18
-        return (low - pad)...(high + pad)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("海拔变化")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
-                .foregroundStyle(Color.omniInk)
-            Text(flat ? "海拔几乎没有变化" : "横轴是距离，纵轴是相对起点的升降")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniMuted)
-            if marks.isEmpty {
-                Text("这条路线没有检查点")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniMuted)
-            }
-            if samples.count < 2 {
-                Text("点数不够，画不出曲线")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: 120)
-            } else {
-                Chart {
-                    ForEach(samples) { sample in
-                        AreaMark(
-                            x: .value("距离", sample.distanceKilometers),
-                            y: .value("海拔变化", sample.changeMeters)
-                        )
-                        .foregroundStyle(Color.omniCobalt.opacity(0.18))
-                        LineMark(
-                            x: .value("距离", sample.distanceKilometers),
-                            y: .value("海拔变化", sample.changeMeters)
-                        )
-                        .foregroundStyle(Color.omniCobalt)
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    }
-                    RuleMark(y: .value("起点", 0))
-                        .foregroundStyle(Color.omniIdle)
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    ForEach(marks) { mark in
-                        RuleMark(x: .value("距离", mark.distanceKilometers))
-                            .foregroundStyle(Color.omniIdle)
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                        PointMark(
-                            x: .value("距离", mark.distanceKilometers),
-                            y: .value("海拔变化", mark.changeMeters)
-                        )
-                        .foregroundStyle(Color.omniInk)
-                        .symbolSize(40)
-                        .annotation(position: .top, spacing: 2) {
-                            Text(mark.name)
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color.omniInk)
-                                .lineLimit(1)
-                                .padding(.horizontal, 3)
-                                .padding(.vertical, 1)
-                                .background(Color.white.opacity(0.92), in: Capsule())
-                        }
-                    }
-                }
-                .chartYScale(domain: yDomain)
-                .chartXAxisLabel("距离 (公里)")
-                .chartYAxisLabel("海拔变化 (米)")
-                .chartLegend(.hidden)
-                .frame(height: 150)
-                .accessibilityLabel(marks.isEmpty ? "海拔变化图，没有检查点" : "海拔变化图")
-            }
-            if !segments.isEmpty {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(segments) { segment in
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(segment.title)
-                                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                                    .foregroundStyle(Color.omniInk)
-                                    .lineLimit(1)
-                                Text("距离 \(routeKilometers(segment.distanceMeters)) · 爬升 \(routeMeters(segment.ascentMeters)) · 下降 \(routeMeters(segment.descentMeters))")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(Color.omniMuted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityElement(children: .combine)
-                        }
-                    }
-                }
-                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
-                .frame(height: min(CGFloat(segments.count) * 44, 160))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glass(radius: 22)
     }
 }
 

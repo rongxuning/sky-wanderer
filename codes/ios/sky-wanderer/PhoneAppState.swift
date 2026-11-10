@@ -166,6 +166,18 @@ final class PhoneAppState: ObservableObject {
         RouteGPXStore.delete(filename: filename)
     }
 
+    /// Saves a new display name on the on-device route (`Database.routes` in phone.json).
+    /// Blank names are ignored so the previous title stays. The list and the training line read this same field.
+    func renameRoute(id: String, name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard database.routes.contains(where: { $0.id == id && $0.kind == .gpx && $0.name != trimmed }) else { return }
+        mutate { database in
+            guard let index = database.routes.firstIndex(where: { $0.id == id && $0.kind == .gpx }) else { return }
+            database.routes[index].name = trimmed
+        }
+    }
+
     var metricOrder: [LiveBlock] {
         let saved = database.metricOrder.filter { LiveBlock.standard.contains($0) }
         let missing = LiveBlock.standard.filter { !saved.contains($0) }
