@@ -347,6 +347,7 @@ struct OfflineRouteMap: UIViewRepresentable {
     var routeID: String
     var points: [GeoPoint]
     var checkpoints: [RouteCheckpointMark]
+    var showsKilometerMarkers: Bool = false
     var zoomMultiplier: Double
     var zoomArmed: Bool
     var tileEpoch: Int
@@ -387,11 +388,21 @@ struct OfflineRouteMap: UIViewRepresentable {
         map.isPitchEnabled = false
         let checkpointKey = checkpoints.map { "\($0.id):\($0.name):\($0.latitude):\($0.longitude)" }.joined(separator: "|")
         if coordinator.routeID != routeID {
-            coordinator.install(routeID: routeID, points: points, checkpoints: checkpoints, tileEpoch: tileEpoch, map: map)
+            coordinator.install(
+                routeID: routeID,
+                points: points,
+                checkpoints: checkpoints,
+                showsKilometerMarkers: showsKilometerMarkers,
+                tileEpoch: tileEpoch,
+                map: map
+            )
             return
         }
         if coordinator.checkpointKey != checkpointKey {
             coordinator.replaceCheckpoints(checkpoints, on: map)
+        }
+        if coordinator.showsKilometers != showsKilometerMarkers {
+            coordinator.setKilometers(showsKilometerMarkers, points: points, on: map)
         }
         if coordinator.tileEpoch != tileEpoch {
             coordinator.tileEpoch = tileEpoch
@@ -416,6 +427,7 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     var zoomArmed = false
     var tileEpoch = -1
     var appliedMultiplier = 1.0
+    var showsKilometers = false
 
     private var fitted: MKCoordinateRegion?
     /// The first camera settles MapKit's aspect-fit. That view is 1×.
@@ -424,15 +436,24 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     private var suppressCallback = false
     private var tileOverlay: MKTileOverlay?
     private var halo: MKPolyline?
-    private var polyline: MKPolyline?
+    private var track: ElevationTrackOverlay?
     private var checkpointAnnotations: [CheckpointAnnotation] = []
+    private var kilometerAnnotations: [KilometerAnnotation] = []
 
-    func install(routeID: String, points: [GeoPoint], checkpoints: [RouteCheckpointMark], tileEpoch: Int, map: MKMapView) {
+    func install(
+        routeID: String,
+        points: [GeoPoint],
+        checkpoints: [RouteCheckpointMark],
+        showsKilometerMarkers: Bool,
+        tileEpoch: Int,
+        map: MKMapView
+    ) {
         self.routeID = routeID
         self.tileEpoch = tileEpoch
         fitted = GeoFit.region(points.map(\.coordinate))
         replacePolyline(points, on: map)
         replaceCheckpoints(checkpoints, on: map)
+        setKilometers(showsKilometerMarkers, points: points, on: map)
         replaceTiles(on: map)
         guard let fitted else { return }
         lockingFit = true
@@ -498,17 +519,29 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     }
 
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
-        guard let mark = annotation as? CheckpointAnnotation else { return nil }
-        let view = mapView.dequeueReusableAnnotationView(withIdentifier: CheckpointMarkerView.reuseID) as? CheckpointMarkerView
-            ?? CheckpointMarkerView(annotation: mark, reuseIdentifier: CheckpointMarkerView.reuseID)
-        view.annotation = mark
-        view.apply(name: mark.title ?? "")
-        return view
+        if let mark = annotation as? CheckpointAnnotation {
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: CheckpointMarkerView.reuseID) as? CheckpointMarkerView
+                ?? CheckpointMarkerView(annotation: mark, reuseIdentifier: CheckpointMarkerView.reuseID)
+            view.annotation = mark
+            view.apply(name: mark.title ?? "")
+            return view
+        }
+        if let mark = annotation as? KilometerAnnotation {
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: KilometerMarkerView.reuseID) as? KilometerMarkerView
+                ?? KilometerMarkerView(annotation: mark, reuseIdentifier: KilometerMarkerView.reuseID)
+            view.annotation = mark
+            view.apply(kilometer: mark.kilometer)
+            return view
+        }
+        return nil
     }
 
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         if let tiles = overlay as? MKTileOverlay {
             return MKTileOverlayRenderer(tileOverlay: tiles)
+        }
+        if overlay is ElevationTrackOverlay {
+            return ElevationTrackRenderer(overlay: overlay)
         }
         guard let line = overlay as? MKPolyline else {
             return MKOverlayRenderer(overlay: overlay)
@@ -516,13 +549,8 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
         let renderer = MKPolylineRenderer(polyline: line)
         renderer.lineJoin = .round
         renderer.lineCap = .round
-        if line === halo {
-            renderer.strokeColor = UIColor.white.withAlphaComponent(0.92)
-            renderer.lineWidth = 8
-        } else {
-            renderer.strokeColor = UIColor(red: 2 / 255, green: 132 / 255, blue: 199 / 255, alpha: 1)
-            renderer.lineWidth = 4
-        }
+        renderer.strokeColor = UIColor.white.withAlphaComponent(0.92)
+        renderer.lineWidth = 8
         return renderer
     }
 
@@ -542,17 +570,36 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
 
     private func replacePolyline(_ points: [GeoPoint], on map: MKMapView) {
         if let halo { map.removeOverlay(halo) }
-        if let polyline { map.removeOverlay(polyline) }
+        if let track {
+            map.removeOverlay(track)
+        }
         halo = nil
-        polyline = nil
+        track = nil
         guard points.count >= 2 else { return }
         let coordinates = points.map(\.coordinate)
         let underlay = MKPolyline(coordinates: coordinates, count: coordinates.count)
-        let line = MKPolyline(coordinates: coordinates, count: coordinates.count)
         map.addOverlay(underlay)
-        map.addOverlay(line)
         halo = underlay
-        polyline = line
+        let colored = ElevationTrackOverlay(points: points)
+        map.addOverlay(colored)
+        track = colored
+    }
+
+    func setKilometers(_ visible: Bool, points: [GeoPoint], on map: MKMapView) {
+        showsKilometers = visible
+        if !kilometerAnnotations.isEmpty {
+            map.removeAnnotations(kilometerAnnotations)
+            kilometerAnnotations = []
+        }
+        guard visible else { return }
+        let notes = RouteKilometers.markers(along: points).map(KilometerAnnotation.init(marker:))
+        kilometerAnnotations = notes
+        map.addAnnotations(notes)
+        // Adding the numbers last would paint them over checkpoint names. Put checkpoints back on top.
+        if !checkpointAnnotations.isEmpty {
+            map.removeAnnotations(checkpointAnnotations)
+            map.addAnnotations(checkpointAnnotations)
+        }
     }
 
     func replaceCheckpoints(_ marks: [RouteCheckpointMark], on map: MKMapView) {
@@ -576,10 +623,248 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
             map.removeOverlay(halo)
             map.addOverlay(halo)
         }
-        if let polyline {
-            map.removeOverlay(polyline)
-            map.addOverlay(polyline)
+        if let track {
+            map.removeOverlay(track)
+            map.addOverlay(track)
         }
+    }
+}
+
+/// One colored piece of the track. The next piece starts on this piece's last coordinate.
+struct ElevationTrackRun {
+    var coordinates: [CLLocationCoordinate2D]
+    var color: UIColor
+}
+
+/// Splits the path into runs colored by altitude on this route's own range.
+enum ElevationTrack {
+    private static let steps = 48
+
+    static func make(points: [GeoPoint]) -> [ElevationTrackRun] {
+        guard points.count >= 2, let bounds = ElevationScale.bounds(points) else { return [] }
+        let vertices = coloredVertices(points, bounds: bounds)
+        guard let first = vertices.first else { return [] }
+        var runs: [ElevationTrackRun] = []
+        var coordinates: [CLLocationCoordinate2D] = [first.coordinate]
+        var runBucket = first.bucket
+        func flush() {
+            guard coordinates.count >= 2 else { return }
+            runs.append(ElevationTrackRun(coordinates: coordinates, color: color(for: runBucket)))
+        }
+        for vertex in vertices.dropFirst() {
+            if vertex.bucket != runBucket {
+                flush()
+                coordinates = [coordinates.last ?? vertex.coordinate, vertex.coordinate]
+                runBucket = vertex.bucket
+            } else {
+                coordinates.append(vertex.coordinate)
+            }
+        }
+        flush()
+        return runs
+    }
+
+    private static func coloredVertices(
+        _ points: [GeoPoint],
+        bounds: (low: Double, high: Double)
+    ) -> [(coordinate: CLLocationCoordinate2D, bucket: Int)] {
+        var vertices: [(coordinate: CLLocationCoordinate2D, bucket: Int)] = []
+        vertices.append((points[0].coordinate, bucket(points[0].altitude, bounds: bounds)))
+        for index in 1..<points.count {
+            let previous = points[index - 1]
+            let point = points[index]
+            let from = bucket(previous.altitude, bounds: bounds)
+            let to = bucket(point.altitude, bounds: bounds)
+            let gap = abs(to - from)
+            if gap > 1 {
+                for step in 1..<gap {
+                    let fraction = Double(step) / Double(gap)
+                    let altitude = previous.altitude + (point.altitude - previous.altitude) * fraction
+                    vertices.append((interpolate(previous, point, fraction), bucket(altitude, bounds: bounds)))
+                }
+            }
+            vertices.append((point.coordinate, to))
+        }
+        return vertices
+    }
+
+    private static func interpolate(_ start: GeoPoint, _ end: GeoPoint, _ fraction: Double) -> CLLocationCoordinate2D {
+        CLLocationCoordinate2D(
+            latitude: start.latitude + (end.latitude - start.latitude) * fraction,
+            longitude: start.longitude + (end.longitude - start.longitude) * fraction
+        )
+    }
+
+    private static func bucket(_ altitude: Double, bounds: (low: Double, high: Double)) -> Int {
+        let unit = ElevationScale.unit(altitude: altitude, low: bounds.low, high: bounds.high)
+        let index = Int((unit * Double(steps - 1)).rounded())
+        return min(steps - 1, max(0, index))
+    }
+
+    private static func color(for bucket: Int) -> UIColor {
+        let unit = Double(bucket) / Double(max(steps - 1, 1))
+        let rgb = ElevationScale.rgb(unit: unit)
+        return UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+    }
+}
+
+/// Map overlay whose stroke follows `ElevationScale` from this route's low altitude to its high altitude.
+final class ElevationTrackOverlay: NSObject, MKOverlay {
+    struct Run {
+        var mapPoints: [MKMapPoint]
+        var color: UIColor
+        var bounds: MKMapRect
+    }
+
+    let runs: [Run]
+    let boundingMapRect: MKMapRect
+    let coordinate: CLLocationCoordinate2D
+
+    init(points: [GeoPoint]) {
+        var built = ElevationTrack.make(points: points)
+        if built.isEmpty, points.count >= 2 {
+            let rgb = ElevationRGB.mid
+            built = [
+                ElevationTrackRun(
+                    coordinates: points.map(\.coordinate),
+                    color: UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+                )
+            ]
+        }
+        var runs: [Run] = []
+        var minX = Double.greatestFiniteMagnitude
+        var minY = Double.greatestFiniteMagnitude
+        var maxX = -Double.greatestFiniteMagnitude
+        var maxY = -Double.greatestFiniteMagnitude
+        for piece in built {
+            let mapPoints = piece.coordinates.map { MKMapPoint($0) }
+            guard let first = mapPoints.first, mapPoints.count >= 2 else { continue }
+            var left = first.x
+            var right = first.x
+            var top = first.y
+            var bottom = first.y
+            for mapPoint in mapPoints.dropFirst() {
+                left = min(left, mapPoint.x)
+                right = max(right, mapPoint.x)
+                top = min(top, mapPoint.y)
+                bottom = max(bottom, mapPoint.y)
+            }
+            minX = min(minX, left)
+            maxX = max(maxX, right)
+            minY = min(minY, top)
+            maxY = max(maxY, bottom)
+            runs.append(
+                Run(
+                    mapPoints: mapPoints,
+                    color: piece.color,
+                    bounds: MKMapRect(x: left, y: top, width: max(right - left, 1), height: max(bottom - top, 1))
+                )
+            )
+        }
+        self.runs = runs
+        if minX <= maxX {
+            let pad = 512.0
+            boundingMapRect = MKMapRect(
+                x: minX - pad,
+                y: minY - pad,
+                width: max(maxX - minX, 1) + pad * 2,
+                height: max(maxY - minY, 1) + pad * 2
+            )
+            coordinate = MKMapPoint(x: boundingMapRect.midX, y: boundingMapRect.midY).coordinate
+        } else {
+            boundingMapRect = .world
+            coordinate = points.first?.coordinate ?? CLLocationCoordinate2D()
+        }
+        super.init()
+    }
+}
+
+final class ElevationTrackRenderer: MKOverlayRenderer {
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        guard let track = overlay as? ElevationTrackOverlay else { return }
+        let pad = 64 / Double(max(zoomScale, 0.0001))
+        let visible = MKMapRect(
+            x: mapRect.origin.x - pad,
+            y: mapRect.origin.y - pad,
+            width: mapRect.size.width + pad * 2,
+            height: mapRect.size.height + pad * 2
+        )
+        // zoomScale is screen points per map point. Dividing keeps the stroke about 4 points wide.
+        context.setLineWidth(4 / max(zoomScale, 0.000001))
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        for run in track.runs where MKMapRectIntersectsRect(run.bounds, visible) {
+            guard let first = run.mapPoints.first else { continue }
+            context.beginPath()
+            context.setStrokeColor(run.color.cgColor)
+            context.move(to: point(for: first))
+            for mapPoint in run.mapPoints.dropFirst() {
+                context.addLine(to: point(for: mapPoint))
+            }
+            context.strokePath()
+        }
+    }
+}
+
+final class KilometerAnnotation: NSObject, MKAnnotation {
+    let kilometer: Int
+    let coordinate: CLLocationCoordinate2D
+    var title: String? { "\(kilometer)" }
+
+    init(marker: KilometerMarker) {
+        kilometer = marker.kilometer
+        coordinate = CLLocationCoordinate2D(latitude: marker.latitude, longitude: marker.longitude)
+        super.init()
+    }
+}
+
+/// White disc with the kilometer number, lifted off the path so a checkpoint name stays readable.
+final class KilometerMarkerView: MKAnnotationView {
+    static let reuseID = "route-kilometer"
+
+    private let badge = UILabel()
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        badge.font = .systemFont(ofSize: 12, weight: .bold)
+        badge.textColor = UIColor(red: 28 / 255, green: 28 / 255, blue: 30 / 255, alpha: 1)
+        badge.textAlignment = .center
+        badge.backgroundColor = .white
+        badge.layer.borderColor = UIColor(red: 0x1E / 255, green: 0x88 / 255, blue: 0xFE / 255, alpha: 1).cgColor
+        badge.layer.borderWidth = 1.5
+        badge.clipsToBounds = true
+        badge.isUserInteractionEnabled = false
+        addSubview(badge)
+        collisionMode = .none
+        displayPriority = .required
+        zPriority = .defaultUnselected
+        canShowCallout = false
+        isEnabled = false
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.22
+        layer.shadowRadius = 1.5
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+        layer.masksToBounds = false
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func apply(kilometer: Int) {
+        let text = String(kilometer)
+        badge.text = text
+        let digits = text.count
+        let side: CGFloat = digits >= 3 ? 32 : (digits == 2 ? 26 : 22)
+        badge.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        badge.layer.cornerRadius = side / 2
+        bounds = badge.bounds
+        // The disc sits above the coordinate. Checkpoint names stay to the right of their dot.
+        centerOffset = CGPoint(x: 0, y: -(side / 2 + 12))
+        isAccessibilityElement = true
+        accessibilityLabel = "\(kilometer) 公里"
     }
 }
 
@@ -620,6 +905,7 @@ final class CheckpointMarkerView: MKAnnotationView {
         isEnabled = false
         isUserInteractionEnabled = false
         displayPriority = .required
+        zPriority = .max
         backgroundColor = .clear
     }
 

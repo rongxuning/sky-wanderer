@@ -259,6 +259,7 @@ struct RouteDetailView: View {
     @State private var multiplier = 1.0
     @State private var zoomDragBase: Double?
     @State private var showsChart = false
+    @State private var showsKilometerMarkers = false
 
     private var route: SavedRoute? {
         app.importedRoutes.first { $0.id == routeID }
@@ -278,78 +279,139 @@ struct RouteDetailView: View {
 
     private func detail(_ route: SavedRoute) -> some View {
         let layout = RouteCheckpoints.layout(waypoints: route.waypoints, points: route.points)
-        return ZStack {
-            OfflineRouteMap(
-                routeID: route.id,
-                points: route.points,
-                checkpoints: layout.marks,
-                zoomMultiplier: multiplier,
-                zoomArmed: zoomArmed,
-                tileEpoch: tileStatus.revision,
-                onZoomChanged: { value in
-                    guard !zoomArmed else { return }
-                    multiplier = value
-                },
-                onZoomDrag: { phase in
-                    handleZoomDrag(phase)
-                }
-            )
-            .ignoresSafeArea()
-        }
-        .overlay(alignment: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
+        return VStack(spacing: 0) {
+            ZStack {
+                OfflineRouteMap(
+                    routeID: route.id,
+                    points: route.points,
+                    checkpoints: layout.marks,
+                    showsKilometerMarkers: showsKilometerMarkers,
+                    zoomMultiplier: multiplier,
+                    zoomArmed: zoomArmed,
+                    tileEpoch: tileStatus.revision,
+                    onZoomChanged: { value in
+                        guard !zoomArmed else { return }
+                        multiplier = value
+                    },
+                    onZoomDrag: { phase in
+                        handleZoomDrag(phase)
+                    }
+                )
+                .ignoresSafeArea(edges: .top)
+            }
+            .overlay(alignment: .top) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Color.omniInk)
+                                .frame(width: 40, height: 40)
+                                .background(Color.white.opacity(0.92), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("返回")
+                        Text(route.name)
+                            .font(.system(size: 18, weight: .bold, design: .rounded))
                             .foregroundStyle(Color.omniInk)
-                            .frame(width: 40, height: 40)
-                            .background(Color.white.opacity(0.92), in: Circle())
+                            .lineLimit(1)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.92), in: Capsule())
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("返回")
-                    Text(route.name)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                    Text(tileStatus.note)
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(Color.omniInk)
-                        .lineLimit(1)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
                         .background(Color.white.opacity(0.92), in: Capsule())
-                    Spacer(minLength: 0)
                 }
-                Text(tileStatus.note)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniInk)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.92), in: Capsule())
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-        }
-        .overlay(alignment: .bottom) {
-            // Equal 12pt side insets. Tools sit above the card and do not narrow it.
-            VStack(alignment: .trailing, spacing: 10) {
-                toolColumn
-                Group {
-                    if showsChart {
-                        ElevationChangeChart(points: route.points, layout: layout)
-                    } else {
-                        infoPanel(route)
+            .overlay(alignment: .bottom) {
+                // Equal 12pt side insets. Tools sit above the card and do not narrow it.
+                VStack(alignment: .trailing, spacing: 10) {
+                    toolColumn
+                    Group {
+                        if showsChart {
+                            ElevationChangeChart(points: route.points, layout: layout)
+                        } else {
+                            infoPanel(route)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+
+            elevationDock(route)
         }
+        .background(Color.white)
         .onAppear { tileStatus.refresh(for: route.points) }
         .task(id: route.id) {
             tileStatus.refresh(for: route.points)
             await OfflineTileStore.prefetch([route.points])
             tileStatus.refresh(for: route.points)
+        }
+    }
+
+    private func elevationDock(_ route: SavedRoute) -> some View {
+        let markerCount = RouteKilometers.markers(along: route.points).count
+        return VStack(alignment: .leading, spacing: 8) {
+            ElevationProfileChart(points: route.points)
+            kilometerControl(markerCount: markerCount)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.black.opacity(0.06))
+                .frame(height: 1)
+        }
+    }
+
+    private func kilometerControl(markerCount: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                showsKilometerMarkers.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: showsKilometerMarkers ? "smallcircle.filled.circle.fill" : "smallcircle.filled.circle")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("路程点")
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                    Spacer(minLength: 0)
+                    Text(showsKilometerMarkers ? "已显示" : "未显示")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(showsKilometerMarkers ? SkyTheme.Color.onPrimary : SkyTheme.Color.ink)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    showsKilometerMarkers ? SkyTheme.Color.primary : SkyTheme.Color.grouped,
+                    in: RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("路程点")
+            .accessibilityValue(showsKilometerMarkers ? "已显示" : "未显示")
+            .accessibilityHint("沿路线显示每公里的标记")
+            .accessibilityAddTraits(showsKilometerMarkers ? .isSelected : [])
+            if showsKilometerMarkers, markerCount == 0 {
+                Text("不足 1 公里，没有路程点")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.omniMuted)
+            }
         }
     }
 
@@ -478,6 +540,156 @@ struct RouteDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(CanvasBackground())
+    }
+}
+
+private struct ElevationProfileChart: View {
+    var points: [GeoPoint]
+
+    private var samples: [RouteAltitudeSample] {
+        // Every stored point, so the profile uses the same altitudes as the colored track.
+        RouteStats.altitudeProfile(points, limit: max(points.count, 2))
+    }
+
+    private var bounds: (low: Double, high: Double)? {
+        ElevationScale.bounds(points)
+    }
+
+    private var flat: Bool {
+        guard let bounds else { return true }
+        return bounds.high - bounds.low < ElevationScale.flatSpanMeters
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("海拔")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.omniInk)
+                Spacer(minLength: 8)
+                if let bounds {
+                    Text("\(meterText(bounds.low))–\(meterText(bounds.high)) 米")
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color.omniMuted)
+                        .lineLimit(1)
+                }
+            }
+            Text(flat ? "海拔几乎没有变化" : "低处绿色，高处红色")
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.omniMuted)
+            if samples.count < 2 || bounds == nil {
+                Text("点数不够，画不出曲线")
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.omniMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 120)
+            } else if let bounds {
+                profile(low: bounds.low, high: bounds.high)
+                    .frame(height: 128)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(accessibilityText)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("0")
+                    Spacer(minLength: 8)
+                    Text("\(distanceLabel) 公里")
+                        .lineLimit(1)
+                        .multilineTextAlignment(.trailing)
+                }
+                .padding(.trailing, 50)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.omniMuted)
+                .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func profile(low: Double, high: Double) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Canvas { context, size in
+                draw(context: context, size: size, low: low, high: high)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(alignment: .trailing) {
+                Text(meterText(high))
+                Spacer(minLength: 0)
+                Text(meterText((low + high) / 2))
+                Spacer(minLength: 0)
+                Text(meterText(low))
+            }
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(Color.omniMuted)
+            .frame(width: 44)
+        }
+    }
+
+    /// The canvas height is this route's altitude range, so a vertical green→yellow→red
+    /// gradient is the same scale the map uses for each point.
+    private func draw(context: GraphicsContext, size: CGSize, low: Double, high: Double) {
+        let rect = CGRect(x: 1, y: 3, width: max(size.width - 2, 1), height: max(size.height - 6, 1))
+        let span = high - low
+        let flatLine = span < ElevationScale.flatSpanMeters
+        func yPos(_ altitude: Double) -> CGFloat {
+            if flatLine { return rect.midY }
+            let unit = min(1, max(0, (altitude - low) / span))
+            return rect.maxY - CGFloat(unit) * rect.height
+        }
+        let total = max(samples.last?.distanceKilometers ?? 0, 0.000001)
+        func xPos(_ kilometers: Double) -> CGFloat {
+            rect.minX + CGFloat(min(1, max(0, kilometers / total))) * rect.width
+        }
+        var line = Path()
+        for (index, sample) in samples.enumerated() {
+            let point = CGPoint(x: xPos(sample.distanceKilometers), y: yPos(sample.altitudeMeters))
+            if index == 0 {
+                line.move(to: point)
+            } else {
+                line.addLine(to: point)
+            }
+        }
+        guard let first = samples.first, let last = samples.last else { return }
+        var fill = line
+        fill.addLine(to: CGPoint(x: xPos(last.distanceKilometers), y: rect.maxY))
+        fill.addLine(to: CGPoint(x: xPos(first.distanceKilometers), y: rect.maxY))
+        fill.closeSubpath()
+        context.fill(fill, with: shading(in: rect, flatLine: flatLine, opacity: 0.78))
+        context.stroke(
+            line,
+            with: shading(in: rect, flatLine: flatLine, opacity: 1),
+            style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+        )
+    }
+
+    private func shading(in rect: CGRect, flatLine: Bool, opacity: Double) -> GraphicsContext.Shading {
+        if flatLine {
+            return .color(elevationColor(unit: 0.5).opacity(opacity))
+        }
+        return .linearGradient(
+            Gradient(stops: [
+                .init(color: elevationColor(unit: 1).opacity(opacity), location: 0),
+                .init(color: elevationColor(unit: 0.5).opacity(opacity), location: 0.5),
+                .init(color: elevationColor(unit: 0).opacity(opacity), location: 1)
+            ]),
+            startPoint: CGPoint(x: rect.midX, y: rect.minY),
+            endPoint: CGPoint(x: rect.midX, y: rect.maxY)
+        )
+    }
+
+    private func elevationColor(unit: Double) -> Color {
+        let rgb = ElevationScale.rgb(unit: unit)
+        return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
+    }
+
+    private var distanceLabel: String {
+        Format.kilometers((samples.last?.distanceKilometers ?? 0) * 1000)
+    }
+
+    private var accessibilityText: String {
+        guard let bounds else { return "海拔剖面" }
+        return "海拔剖面，最低 \(meterText(bounds.low)) 米，最高 \(meterText(bounds.high)) 米"
+    }
+
+    private func meterText(_ meters: Double) -> String {
+        String(Int(meters.rounded()))
     }
 }
 

@@ -110,6 +110,166 @@ enum RouteStats {
             )
         }
     }
+
+    /// Absolute altitude along the path. The chart and the colored track share these altitudes.
+    /// Downsampling keeps the first point, the last point, and the lowest and highest altitudes.
+    static func altitudeProfile(_ points: [GeoPoint], limit: Int = 240) -> [RouteAltitudeSample] {
+        guard let origin = points.first else { return [] }
+        var samples = [RouteAltitudeSample(id: 0, distanceKilometers: 0, altitudeMeters: origin.altitude)]
+        var traveled = 0.0
+        for index in 1..<points.count {
+            traveled += segment(points[index - 1], points[index])
+            samples.append(
+                RouteAltitudeSample(
+                    id: index,
+                    distanceKilometers: traveled / 1000,
+                    altitudeMeters: points[index].altitude
+                )
+            )
+        }
+        return downsampleAltitude(samples, limit: limit)
+    }
+
+    private static func downsampleAltitude(_ samples: [RouteAltitudeSample], limit: Int) -> [RouteAltitudeSample] {
+        guard samples.count > limit, limit >= 2 else { return samples }
+        let last = samples.count - 1
+        let step = Double(last) / Double(limit - 1)
+        var indexes: [Int] = []
+        var seen = Set<Int>()
+        func add(_ index: Int) {
+            if seen.insert(index).inserted {
+                indexes.append(index)
+            }
+        }
+        for slot in 0..<limit {
+            add(min(last, Int((Double(slot) * step).rounded())))
+        }
+        if let peak = samples.indices.max(by: { samples[$0].altitudeMeters < samples[$1].altitudeMeters }) {
+            add(peak)
+        }
+        if let trough = samples.indices.min(by: { samples[$0].altitudeMeters < samples[$1].altitudeMeters }) {
+            add(trough)
+        }
+        indexes.sort()
+        return indexes.enumerated().map { offset, index in
+            RouteAltitudeSample(
+                id: offset,
+                distanceKilometers: samples[index].distanceKilometers,
+                altitudeMeters: samples[index].altitudeMeters
+            )
+        }
+    }
+}
+
+struct RouteAltitudeSample: Identifiable {
+    var id: Int
+    var distanceKilometers: Double
+    var altitudeMeters: Double
+}
+
+/// Green at this route's lowest altitude, yellow in the middle, red at the highest.
+struct ElevationRGB: Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+
+    static let low = ElevationRGB(red: 0.18, green: 0.78, blue: 0.22)
+    static let mid = ElevationRGB(red: 0.98, green: 0.84, blue: 0.08)
+    static let high = ElevationRGB(red: 0.92, green: 0.18, blue: 0.14)
+
+    func mixed(with other: ElevationRGB, fraction: Double) -> ElevationRGB {
+        let t = min(1, max(0, fraction))
+        return ElevationRGB(
+            red: red + (other.red - red) * t,
+            green: green + (other.green - green) * t,
+            blue: blue + (other.blue - blue) * t
+        )
+    }
+}
+
+enum ElevationScale {
+    /// A route this flat has no low-to-high spread, so every point uses the middle color.
+    static let flatSpanMeters = 0.5
+
+    static func bounds(_ points: [GeoPoint]) -> (low: Double, high: Double)? {
+        var low = Double.greatestFiniteMagnitude
+        var high = -Double.greatestFiniteMagnitude
+        var found = false
+        for point in points where point.altitude.isFinite {
+            found = true
+            low = min(low, point.altitude)
+            high = max(high, point.altitude)
+        }
+        guard found else { return nil }
+        return (low, high)
+    }
+
+    /// 0 is this route's low altitude and 1 is its high altitude.
+    static func unit(altitude: Double, low: Double, high: Double) -> Double {
+        guard altitude.isFinite, low.isFinite, high.isFinite else { return 0.5 }
+        let span = high - low
+        guard span >= flatSpanMeters else { return 0.5 }
+        return min(1, max(0, (altitude - low) / span))
+    }
+
+    static func rgb(unit: Double) -> ElevationRGB {
+        let t = min(1, max(0, unit.isFinite ? unit : 0.5))
+        if t == 0 { return .low }
+        if t == 1 { return .high }
+        if t == 0.5 { return .mid }
+        if t < 0.5 {
+            return ElevationRGB.low.mixed(with: .mid, fraction: t / 0.5)
+        }
+        return ElevationRGB.mid.mixed(with: .high, fraction: (t - 0.5) / 0.5)
+    }
+
+    static func rgb(altitude: Double, low: Double, high: Double) -> ElevationRGB {
+        rgb(unit: unit(altitude: altitude, low: low, high: high))
+    }
+}
+
+struct KilometerMarker: Equatable, Identifiable {
+    var kilometer: Int
+    var latitude: Double
+    var longitude: Double
+    var altitude: Double
+    var distanceMeters: Double
+
+    var id: Int { kilometer }
+}
+
+/// Kilometer pins along the stored path. Distance is the sum of each segment, not the
+/// straight line from the start to the end. A partial last kilometer has no pin.
+enum RouteKilometers {
+    static func markers(along points: [GeoPoint]) -> [KilometerMarker] {
+        guard points.count >= 2 else { return [] }
+        var markers: [KilometerMarker] = []
+        var traveled = 0.0
+        var nextKilometer = 1
+        for index in 1..<points.count {
+            let start = points[index - 1]
+            let end = points[index]
+            let length = RouteStats.metersBetween(start, end)
+            guard length.isFinite, length > 0 else { continue }
+            while traveled + length + 0.0001 >= Double(nextKilometer) * 1000 {
+                let target = Double(nextKilometer) * 1000
+                let fraction = min(1, max(0, (target - traveled) / length))
+                markers.append(
+                    KilometerMarker(
+                        kilometer: nextKilometer,
+                        latitude: start.latitude + (end.latitude - start.latitude) * fraction,
+                        longitude: start.longitude + (end.longitude - start.longitude) * fraction,
+                        altitude: start.altitude + (end.altitude - start.altitude) * fraction,
+                        distanceMeters: target
+                    )
+                )
+                nextKilometer += 1
+                if nextKilometer > 100_000 { return markers }
+            }
+            traveled += length
+        }
+        return markers
+    }
 }
 
 struct RouteCheckpointMark: Identifiable, Hashable {
