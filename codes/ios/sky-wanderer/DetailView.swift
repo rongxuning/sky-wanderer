@@ -238,21 +238,15 @@ struct WorkoutDetailView: View {
         .accessibilityLabel(label)
     }
 
-    private func metricRow(_ cells: [MetricCell]) -> some View {
+    private func metricPair(_ leading: DetailMetric, _ trailing: DetailMetric) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            ForEach(0..<3, id: \.self) { index in
-                if index < cells.count {
-                    cells[index]
-                } else {
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                }
-            }
+            leading
+            trailing
         }
     }
 
     private func summarySheet(_ workout: WorkoutRecord, overlapsMap: Bool) -> some View {
-        VStack(alignment: .leading, spacing: SkyTheme.Spacing.screenInset) {
+        VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
             VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
                 HStack(alignment: .center, spacing: 12) {
                     profileAvatar
@@ -285,32 +279,35 @@ struct WorkoutDetailView: View {
                 placeRow(workout)
             }
 
-            VStack(spacing: SkyTheme.Spacing.screenInset) {
-                metricRow([
-                    MetricCell(value: distanceText(workout), label: "距离（公里）", prominent: true, hero: true),
-                    MetricCell(value: Format.pace(workout.averagePaceSecPerKm), label: "配速", prominent: true, hero: true),
-                    MetricCell(value: Format.clock(workout.trainingDuration), label: "训练时间", prominent: true, hero: true)
-                ])
-                metricRow([
-                    MetricCell(value: Format.clock(workout.elapsedDuration), label: "经过时间", prominent: false, hero: false),
-                    MetricCell(value: countText(Double(workout.sessionLoad)), label: "负荷", prominent: false, hero: false),
-                    MetricCell(value: Format.integer(workout.resolvedAverageHeartRate), label: "心率", prominent: false, hero: false)
-                ])
-                metricRow([
-                    MetricCell(value: climbText(workout), label: "爬升（米）", prominent: false, hero: false),
-                    MetricCell(value: strideText(workout.averageStrideMeters), label: "步幅（米）", prominent: false, hero: false),
-                    MetricCell(value: Format.integer(workout.resolvedAverageCadence), label: "步频", prominent: false, hero: false)
-                ])
-                metricRow([
-                    MetricCell(value: countText(workout.energyKilocalories), label: "能量（千卡）", prominent: false, hero: false)
-                ])
+            VStack(spacing: 4) {
+                metricPair(
+                    DetailMetric(label: "训练时间", value: Format.clock(workout.trainingDuration), color: SkyTheme.Color.Metric.duration),
+                    DetailMetric(label: "经过时间", value: Format.clock(workout.elapsedDuration), color: SkyTheme.Color.Metric.duration)
+                )
+                metricPair(
+                    DetailMetric(label: "距离", value: distanceText(workout), unit: "公里", color: SkyTheme.Color.Metric.distance),
+                    DetailMetric(label: "配速", value: Format.pace(workout.averagePaceSecPerKm), unit: "/公里", color: SkyTheme.Color.Metric.pace)
+                )
+                metricPair(
+                    DetailMetric(label: "心率", value: Format.integer(workout.resolvedAverageHeartRate), unit: "次/分", color: SkyTheme.Color.Metric.heartRate),
+                    DetailMetric(label: "步频", value: Format.integer(workout.resolvedAverageCadence), unit: "步/分", color: SkyTheme.Color.Metric.pace)
+                )
+                metricPair(
+                    DetailMetric(label: "爬升", value: climbText(workout), unit: "米", color: SkyTheme.Color.Metric.elevation),
+                    DetailMetric(label: "步幅", value: strideText(workout.averageStrideMeters), unit: "米", color: SkyTheme.Color.Metric.pace)
+                )
+                metricPair(
+                    DetailMetric(label: "负荷", value: countText(Double(workout.sessionLoad)), color: SkyTheme.Color.Metric.load),
+                    DetailMetric(label: "能量", value: countText(workout.energyKilocalories), unit: "千卡", color: SkyTheme.Color.Metric.energy)
+                )
             }
-            .padding(SkyTheme.Spacing.cardPadding)
+            .padding(.horizontal, SkyTheme.Spacing.cardPadding)
+            .padding(.vertical, 10)
             .background(SkyTheme.Color.grouped, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
         }
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
         .padding(.top, SkyTheme.Spacing.screenInset)
-        .padding(.bottom, SkyTheme.Spacing.section)
+        .padding(.bottom, SkyTheme.Spacing.related)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             UnevenRoundedRectangle(
@@ -452,28 +449,33 @@ struct WorkoutDetailView: View {
 
     private func paceCard(_ workout: WorkoutRecord) -> some View {
         let points = WorkoutDetailMath.runningPace(workout.paceSeries)
-        return DetailChartCard(
-            title: "配速（分钟/公里）",
+        return ZoneSeriesCard(
+            title: "配速区间",
             points: points,
-            leading: stat("平均", Format.pace(workout.averagePaceSecPerKm)),
-            trailing: stat("最佳", Format.pace(WorkoutDetailMath.extreme(points, fastest: true) ?? 0)),
-            kind: .pace,
-            zones: points.count >= 2 ? WorkoutDetailMath.shares(points: points, bands: WorkoutDetailMath.paceBands) : [],
-            zoneTitle: "配速区间"
+            leadingValue: Format.pace(workout.averagePaceSecPerKm),
+            leadingLabel: "平均",
+            trailingValue: Format.pace(WorkoutDetailMath.extreme(points, fastest: true) ?? 0),
+            trailingLabel: "最快",
+            accent: SkyTheme.Color.Metric.pace,
+            bands: WorkoutDetailMath.paceBands,
+            invert: true
         )
     }
 
     private func heartCard(_ workout: WorkoutRecord) -> some View {
         let points = WorkoutDetailMath.positive(workout.heartRate)
-        let average = workout.resolvedAverageHeartRate
-        return DetailChartCard(
-            title: "心率（次/分）",
+        return ZoneSeriesCard(
+            title: "心率区间",
             points: points,
-            leading: stat("平均", Format.integer(average)),
-            trailing: stat("最大", Format.integer(WorkoutDetailMath.extreme(points, fastest: false) ?? 0)),
-            kind: .line,
-            zones: points.count >= 2 ? WorkoutDetailMath.shares(points: points, bands: WorkoutDetailMath.heartBands) : [],
-            zoneTitle: "心率区间"
+            leadingValue: Format.integer(workout.resolvedAverageHeartRate),
+            leadingUnit: "次/分",
+            leadingLabel: "平均",
+            trailingValue: Format.integer(WorkoutDetailMath.extreme(points, fastest: false) ?? 0),
+            trailingUnit: "次/分",
+            trailingLabel: "最大",
+            accent: SkyTheme.Color.Metric.heartRate,
+            bands: WorkoutDetailMath.heartBands,
+            invert: false
         )
     }
 
@@ -496,16 +498,12 @@ struct WorkoutDetailView: View {
 
     private func elevationCard(_ workout: WorkoutRecord) -> some View {
         let profile = WorkoutDetailMath.elevationProfile(workout)
-        let change = WorkoutDetailMath.climbDrop(profile.points, gate: profile.gate)
         let climb = WorkoutDetailMath.displayedClimb(workout, profile: profile)
-        let hasLine = profile.points.count >= 2
-        return DetailChartCard(
-            title: "海拔变化（米）",
-            points: profile.points,
-            leading: hasLine || climb > 0 ? "总爬升 \(Int(climb.rounded())) 米" : nil,
-            trailing: hasLine ? "总下降 \(Int(change.drop.rounded())) 米" : nil,
-            kind: .area
-        )
+        let finite = profile.points.map(\.value).filter(\.isFinite)
+        let hasLine = WorkoutDetailMath.plotSamples(profile.points).count >= 2
+        let climbText = hasLine || climb > 0 ? String(Int(climb.rounded())) : "—"
+        let peakText = finite.max().map { String(Int($0.rounded())) } ?? "—"
+        return ElevationChartCard(points: profile.points, climb: climbText, peak: peakText)
     }
 
     private func stat(_ title: String, _ value: String) -> String? {
@@ -645,29 +643,138 @@ struct WorkoutDetailView: View {
     }
 }
 
-private struct MetricCell: View {
-    var value: String
+/// Label above the figure. Number and unit share weight and the metric color.
+/// An em dash stays secondary and drops the unit.
+private struct DetailMetric: View {
     var label: String
-    var prominent: Bool
-    var hero: Bool
+    var value: String
+    var unit: String? = nil
+    var color: Color
+
+    private var missing: Bool { value == "—" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(hero ? SkyTheme.Font.title : SkyTheme.Font.title3)
-                .fontWeight(.bold)
-                .foregroundStyle(prominent ? SkyTheme.Color.primary : SkyTheme.Color.ink)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+        VStack(alignment: .leading, spacing: 1) {
             Text(label)
                 .font(SkyTheme.Font.caption)
+                .fontWeight(.medium)
                 .foregroundStyle(SkyTheme.Color.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                if let unit, !missing {
+                    Text(unit)
+                }
+            }
+            .font(SkyTheme.Font.title3)
+            .fontWeight(.bold)
+            .foregroundStyle(missing ? SkyTheme.Color.secondary : color)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Figure with the unit beside it, and the caption underneath. Used by the zone and elevation cards.
+private struct MetricHeadline: View {
+    var value: String
+    var unit: String? = nil
+    var label: String
+    var color: Color
+
+    private var missing: Bool { value == "—" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                if let unit, !missing {
+                    Text(unit)
+                }
+            }
+            .font(SkyTheme.Font.title2)
+            .fontWeight(.bold)
+            .foregroundStyle(missing ? SkyTheme.Color.secondary : color)
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            Text(label)
+                .font(SkyTheme.Font.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private enum PaceTrend {
+    case faster
+    case slower
+
+    var symbol: String {
+        switch self {
+        case .faster: return "arrow.up"
+        case .slower: return "arrow.down"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .faster: return SkyTheme.Color.Metric.elevation
+        case .slower: return SkyTheme.Color.Metric.heartRate
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .faster: return "更快"
+        case .slower: return "更慢"
+        }
+    }
+}
+
+/// Pace arrows compare the rounded seconds already shown in the table.
+/// Fastest and slowest tags apply only to full kilometers, and only when they differ.
+private struct SplitPaceMarks {
+    var trend: [Int: PaceTrend] = [:]
+    var tag: [Int: String] = [:]
+
+    static func make(splits: [KilometerSplit]) -> SplitPaceMarks {
+        var marks = SplitPaceMarks()
+        for index in splits.indices where index > 0 {
+            guard let current = displayedSecond(splits[index]),
+                  let previous = displayedSecond(splits[index - 1]),
+                  current != previous else { continue }
+            marks.trend[splits[index].index] = current < previous ? .faster : .slower
+        }
+        let full = splits.compactMap { split -> (index: Int, second: Int)? in
+            guard !split.partial, let second = displayedSecond(split) else { return nil }
+            return (split.index, second)
+        }
+        guard full.count >= 2 else { return marks }
+        guard let fastest = full.map(\.second).min(),
+              let slowest = full.map(\.second).max(),
+              fastest != slowest else { return marks }
+        for item in full {
+            if item.second == fastest {
+                marks.tag[item.index] = "最快"
+            } else if item.second == slowest {
+                marks.tag[item.index] = "最慢"
+            }
+        }
+        return marks
+    }
+
+    private static func displayedSecond(_ split: KilometerSplit) -> Int? {
+        let pace = split.paceSecPerKm
+        guard pace.isFinite, pace > 0, pace < 3_600 else { return nil }
+        return Int(pace.rounded())
     }
 }
 
@@ -685,16 +792,21 @@ private struct DetailSplitsCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, SkyTheme.Spacing.related)
             } else {
+                let marks = SplitPaceMarks.make(splits: splits)
                 splitRow(["圈数", "时间", "距离", "配速", "心率", "步频"], header: true)
                 ForEach(splits) { split in
-                    splitRow([
-                        "\(split.index)",
-                        split.listedTimeText,
-                        split.listedDistanceText,
-                        Format.pace(split.paceSecPerKm),
-                        Format.integer(split.heartRate),
-                        Format.integer(split.cadence)
-                    ])
+                    splitRow(
+                        [
+                            "\(split.index)",
+                            split.listedTimeText,
+                            split.listedDistanceText,
+                            Format.pace(split.paceSecPerKm),
+                            Format.integer(split.heartRate),
+                            Format.integer(split.cadence)
+                        ],
+                        trend: marks.trend[split.index],
+                        tag: marks.tag[split.index]
+                    )
                 }
                 Rectangle()
                     .fill(SkyTheme.Color.separator)
@@ -713,20 +825,60 @@ private struct DetailSplitsCard: View {
         .detailCard()
     }
 
-    private func splitRow(_ cells: [String], header: Bool = false) -> some View {
-        HStack(spacing: 4) {
+    private func splitRow(
+        _ cells: [String],
+        header: Bool = false,
+        trend: PaceTrend? = nil,
+        tag: String? = nil
+    ) -> some View {
+        HStack(alignment: .center, spacing: 4) {
             ForEach(Array(cells.enumerated()), id: \.offset) { column, cell in
-                Text(cell)
-                    .font(header ? SkyTheme.Font.caption : SkyTheme.Font.footnote)
-                    .fontWeight(header ? .regular : .semibold)
-                    .foregroundStyle(color(header: header, column: column))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                splitCell(cell, column: column, header: header, trend: trend, tag: tag)
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private func splitCell(
+        _ cell: String,
+        column: Int,
+        header: Bool,
+        trend: PaceTrend?,
+        tag: String?
+    ) -> some View {
+        let text = Text(cell)
+            .font(header ? SkyTheme.Font.caption : SkyTheme.Font.footnote)
+            .fontWeight(header ? .regular : .semibold)
+            .foregroundStyle(color(header: header, column: column))
+            .monospacedDigit()
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+        if column == 0, let tag, !header {
+            VStack(alignment: .leading, spacing: 0) {
+                text
+                Text(tag)
+                    .font(SkyTheme.Font.caption)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if column == 3, let trend, !header {
+            HStack(alignment: .center, spacing: 2) {
+                text
+                Image(systemName: trend.symbol)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(trend.color)
+                    .accessibilityLabel(trend.label)
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            text
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func color(header: Bool, column: Int) -> Color {
@@ -736,14 +888,320 @@ private struct DetailSplitsCard: View {
     }
 }
 
+private struct ZoneSeriesCard: View {
+    var title: String
+    var points: [SeriesPoint]
+    var leadingValue: String
+    var leadingUnit: String? = nil
+    var leadingLabel: String
+    var trailingValue: String
+    var trailingUnit: String? = nil
+    var trailingLabel: String
+    var accent: Color
+    var bands: [ZoneBand]
+    var invert: Bool
+
+    private var samples: [ChartSample] {
+        WorkoutDetailMath.plotSamples(points)
+    }
+
+    private var showsChart: Bool { samples.count >= 2 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            DetailSectionTitle(title: title)
+            if leadingValue != "—" || trailingValue != "—" {
+                HStack(alignment: .top, spacing: 8) {
+                    MetricHeadline(value: leadingValue, unit: leadingUnit, label: leadingLabel, color: accent)
+                    MetricHeadline(value: trailingValue, unit: trailingUnit, label: trailingLabel, color: accent)
+                }
+            }
+            if showsChart {
+                chart
+                    .frame(height: 168)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(title)，\(leadingLabel) \(leadingValue)，\(trailingLabel) \(trailingValue)")
+                zoneRows
+            } else {
+                Text("这次没有采集到")
+                    .font(SkyTheme.Font.subheadline)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, SkyTheme.Spacing.related)
+            }
+        }
+        .detailCard()
+    }
+
+    private var zoneRows: some View {
+        let shares = WorkoutDetailMath.shares(points: points, bands: bands)
+        return VStack(spacing: SkyTheme.Spacing.related) {
+            ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
+                ZoneShareRow(
+                    name: share.name,
+                    range: share.range,
+                    fraction: share.fraction,
+                    color: zoneColor(index)
+                )
+            }
+        }
+    }
+
+    private func zoneColor(_ index: Int) -> Color {
+        let colors = SkyTheme.Color.Zone.ordered
+        guard colors.indices.contains(index) else { return SkyTheme.Color.Zone.base }
+        return colors[index]
+    }
+
+    private func color(for name: String) -> Color {
+        let index = bands.firstIndex { $0.name == name } ?? 0
+        return zoneColor(index)
+    }
+
+    private var chart: some View {
+        let segments = WorkoutDetailMath.zoneSegments(samples: samples, bands: bands)
+        let domain = plottedDomain
+        return Chart {
+            ForEach(segments) { segment in
+                ForEach(segment.samples) { sample in
+                    LineMark(
+                        x: .value("秒", sample.second),
+                        y: .value("值", invert ? -sample.value : sample.value),
+                        series: .value("段", segment.id)
+                    )
+                    .interpolationMethod(.linear)
+                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .foregroundStyle(color(for: segment.name))
+                }
+            }
+        }
+        .chartXScale(domain: xDomain)
+        .chartYScale(domain: domain)
+        .chartXAxis { timeAxis }
+        .chartYAxis { valueAxis }
+        .chartLegend(.hidden)
+    }
+
+    private var xDomain: ClosedRange<Double> {
+        let first = samples.first?.second ?? 0
+        let last = samples.last?.second ?? 0
+        return first...max(first + 1, last)
+    }
+
+    private var plottedDomain: ClosedRange<Double> {
+        let values = samples.map(\.value).filter { $0.isFinite && (invert ? ($0 > 0 && $0 < 3_600) : $0 > 0) }
+        let low = values.min() ?? (invert ? 300 : 0)
+        let high = values.max() ?? (invert ? 600 : 1)
+        if invert {
+            let pad = max((high - low) * 0.18, 15)
+            let lower = -(high + pad)
+            let upper = -(low - pad)
+            if upper > lower { return lower...upper }
+            return (lower - 1)...(lower + 1)
+        }
+        let span = high - low
+        let pad = span > 0 ? max(span * 0.18, 0.5) : max(abs(high) * 0.08, 1)
+        return (low - pad)...(high + pad)
+    }
+
+    private var timeAxis: some AxisContent {
+        AxisMarks(values: .automatic(desiredCount: 3)) { value in
+            AxisGridLine().foregroundStyle(SkyTheme.Color.separator.opacity(0.55))
+            AxisValueLabel {
+                if let second = value.as(Double.self) {
+                    Text(Format.clock(max(0, second)))
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                }
+            }
+        }
+    }
+
+    private var valueAxis: some AxisContent {
+        AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
+            AxisGridLine().foregroundStyle(SkyTheme.Color.separator.opacity(0.45))
+            AxisValueLabel {
+                if let number = value.as(Double.self) {
+                    Text(yText(number))
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                }
+            }
+        }
+    }
+
+    private func yText(_ number: Double) -> String {
+        if invert {
+            let label = Format.pace(-number)
+            return label == "—" ? "" : label
+        }
+        return String(Int(number.rounded()))
+    }
+}
+
+private struct ZoneShareRow: View {
+    var name: String
+    var range: String
+    var fraction: Double
+    var color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = max(0, min(1, fraction.isFinite ? fraction : 0)) * geo.size.width
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(SkyTheme.Color.separator.opacity(0.28))
+                    .frame(width: geo.size.width, height: geo.size.height)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(color.opacity(0.35))
+                    .frame(width: width, height: geo.size.height)
+                HStack(spacing: 8) {
+                    Text(name)
+                        .font(SkyTheme.Font.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                    Text(range)
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 4)
+                    Text(percentText)
+                        .font(SkyTheme.Font.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(SkyTheme.Color.ink)
+                        .monospacedDigit()
+                }
+                .padding(.horizontal, 8)
+            }
+        }
+        .frame(height: 32)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var percentText: String {
+        "\(Int((fraction * 100).rounded()))%"
+    }
+}
+
+private struct ElevationChartCard: View {
+    var points: [SeriesPoint]
+    var climb: String
+    var peak: String
+
+    private var samples: [ChartSample] {
+        WorkoutDetailMath.plotSamples(points)
+    }
+
+    private var showsChart: Bool { samples.count >= 2 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            DetailSectionTitle(title: "爬升高度")
+            if climb != "—" || peak != "—" {
+                HStack(alignment: .top, spacing: 8) {
+                    MetricHeadline(value: climb, unit: "米", label: "累计爬升", color: SkyTheme.Color.Metric.elevation)
+                    MetricHeadline(value: peak, unit: "米", label: "最高海拔", color: SkyTheme.Color.Metric.elevation)
+                }
+            }
+            if showsChart {
+                chart
+                    .frame(height: 168)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("爬升高度，累计爬升 \(climb) 米，最高海拔 \(peak) 米")
+            } else {
+                Text("这次没有采集到")
+                    .font(SkyTheme.Font.subheadline)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, SkyTheme.Spacing.related)
+            }
+        }
+        .detailCard()
+    }
+
+    private var chart: some View {
+        let domain = yDomain
+        return Chart(samples) { sample in
+            AreaMark(
+                x: .value("秒", sample.second),
+                yStart: .value("底", domain.lower),
+                yEnd: .value("值", sample.value)
+            )
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [
+                        SkyTheme.Color.Metric.elevation.opacity(0.28),
+                        SkyTheme.Color.Metric.elevation.opacity(0.04)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            LineMark(
+                x: .value("秒", sample.second),
+                y: .value("值", sample.value)
+            )
+            .interpolationMethod(.linear)
+            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+            .foregroundStyle(SkyTheme.Color.Metric.elevation)
+        }
+        .chartXScale(domain: xDomain)
+        .chartYScale(domain: domain.lower...domain.upper)
+        .chartXAxis { timeAxis }
+        .chartYAxis { valueAxis }
+        .chartLegend(.hidden)
+    }
+
+    private var xDomain: ClosedRange<Double> {
+        let first = samples.first?.second ?? 0
+        let last = samples.last?.second ?? 0
+        return first...max(first + 1, last)
+    }
+
+    private var yDomain: (lower: Double, upper: Double) {
+        let values = samples.map(\.value).filter(\.isFinite)
+        let low = values.min() ?? 0
+        let high = values.max() ?? 0
+        let span = high - low
+        let pad = span > 0 ? max(span * 0.18, 0.5) : max(abs(high) * 0.08, 1)
+        return (low - pad, high + pad)
+    }
+
+    private var timeAxis: some AxisContent {
+        AxisMarks(values: .automatic(desiredCount: 3)) { value in
+            AxisGridLine().foregroundStyle(SkyTheme.Color.separator.opacity(0.55))
+            AxisValueLabel {
+                if let second = value.as(Double.self) {
+                    Text(Format.clock(max(0, second)))
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                }
+            }
+        }
+    }
+
+    private var valueAxis: some AxisContent {
+        AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
+            AxisGridLine().foregroundStyle(SkyTheme.Color.separator.opacity(0.45))
+            AxisValueLabel {
+                if let number = value.as(Double.self) {
+                    Text(String(Int(number.rounded())))
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                }
+            }
+        }
+    }
+}
+
 private struct DetailChartCard: View {
     var title: String
     var points: [SeriesPoint]
     var leading: String?
     var trailing: String?
     var kind: Kind
-    var zones: [ZoneShare] = []
-    var zoneTitle: String?
     var valueDigits: Int = 0
 
     enum Kind {
@@ -777,9 +1235,6 @@ private struct DetailChartCard: View {
                     .frame(height: 168)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(chartLabel)
-                if let zoneTitle, !zones.isEmpty {
-                    zoneBlock(zoneTitle)
-                }
             } else {
                 if let leading {
                     Text(leading)
@@ -890,51 +1345,6 @@ private struct DetailChartCard: View {
         }
         return String(Int(number.rounded()))
     }
-
-    private func zoneBlock(_ title: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title)
-                .font(SkyTheme.Font.headline)
-                .foregroundStyle(SkyTheme.Color.ink)
-            ForEach(zones) { share in
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        Text(share.name)
-                            .frame(width: 48, alignment: .leading)
-                        Text(share.range)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(Format.clock(share.seconds))
-                            .monospacedDigit()
-                        Text(percentText(share.fraction))
-                            .monospacedDigit()
-                            .frame(width: 52, alignment: .trailing)
-                    }
-                    .font(SkyTheme.Font.caption)
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(SkyTheme.Color.separator.opacity(0.45))
-                            Capsule()
-                                .fill(SkyTheme.Color.primary)
-                                .frame(width: max(0, geo.size.width * share.fraction))
-                        }
-                    }
-                    .frame(height: 8)
-                    .accessibilityHidden(true)
-                }
-                .accessibilityElement(children: .combine)
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    private func percentText(_ fraction: Double) -> String {
-        guard fraction > 0 else { return "0%" }
-        return String(format: "%.1f%%", fraction * 100)
-    }
 }
 
 private struct DetailSectionTitle: View {
@@ -989,20 +1399,22 @@ private struct ZoneShare: Identifiable {
 }
 
 private enum WorkoutDetailMath {
+    /// Same draft cutoffs as `ZoneScale.pace`. Names are the shared zone language.
     static let paceBands: [ZoneBand] = [
-        ZoneBand(name: "区间 1", range: "≥7'00\"", lower: 420, upper: .infinity),
-        ZoneBand(name: "区间 2", range: "6'00\"–6'59\"", lower: 360, upper: 420),
-        ZoneBand(name: "区间 3", range: "5'30\"–5'59\"", lower: 330, upper: 360),
-        ZoneBand(name: "区间 4", range: "5'00\"–5'29\"", lower: 300, upper: 330),
-        ZoneBand(name: "区间 5", range: "<5'00\"", lower: 0.001, upper: 300)
+        ZoneBand(name: "有氧基础", range: "≥7'00\"", lower: 420, upper: .infinity),
+        ZoneBand(name: "有氧耐力", range: "6'00\"–6'59\"", lower: 360, upper: 420),
+        ZoneBand(name: "乳酸阈值", range: "5'30\"–5'59\"", lower: 330, upper: 360),
+        ZoneBand(name: "速度耐力", range: "5'00\"–5'29\"", lower: 300, upper: 330),
+        ZoneBand(name: "冲刺能力", range: "<5'00\"", lower: 0.001, upper: 300)
     ]
 
+    /// Same draft cutoffs as `ZoneScale.heart` (190 bpm reference, not a lab test).
     static let heartBands: [ZoneBand] = [
-        ZoneBand(name: "区间 1", range: "<114", lower: 0.001, upper: 114),
-        ZoneBand(name: "区间 2", range: "114–132", lower: 114, upper: 133),
-        ZoneBand(name: "区间 3", range: "133–151", lower: 133, upper: 152),
-        ZoneBand(name: "区间 4", range: "152–170", lower: 152, upper: 171),
-        ZoneBand(name: "区间 5", range: "≥171", lower: 171, upper: .infinity)
+        ZoneBand(name: "有氧基础", range: "<114", lower: 0.001, upper: 114),
+        ZoneBand(name: "有氧耐力", range: "114–132", lower: 114, upper: 133),
+        ZoneBand(name: "乳酸阈值", range: "133–151", lower: 133, upper: 152),
+        ZoneBand(name: "速度耐力", range: "152–170", lower: 152, upper: 171),
+        ZoneBand(name: "冲刺能力", range: "≥171", lower: 171, upper: .infinity)
     ]
 
     struct ElevationProfile {
@@ -1108,6 +1520,48 @@ private enum WorkoutDetailMath {
         return picked.enumerated().map { offset, point in
             ChartSample(id: offset, second: point.second, value: point.value)
         }
+    }
+
+    struct ZoneSegment: Identifiable {
+        var id: Int
+        var name: String
+        var samples: [ChartSample]
+    }
+
+    /// Contiguous runs of one zone. The boundary sample is repeated so the stroke stays continuous.
+    static func zoneSegments(samples: [ChartSample], bands: [ZoneBand]) -> [ZoneSegment] {
+        guard let first = samples.first, !bands.isEmpty else { return [] }
+        var segments: [ZoneSegment] = []
+        var name = zoneName(first.value, bands: bands)
+        var current: [ChartSample] = [first]
+        var nextSegment = 0
+        var nextID = (samples.map(\.id).max() ?? 0) + 1
+        for sample in samples.dropFirst() {
+            let sampleName = zoneName(sample.value, bands: bands)
+            if sampleName != name {
+                segments.append(ZoneSegment(id: nextSegment, name: name, samples: current))
+                nextSegment += 1
+                let bridge = ChartSample(
+                    id: nextID,
+                    second: current[current.count - 1].second,
+                    value: current[current.count - 1].value
+                )
+                nextID += 1
+                name = sampleName
+                current = [bridge, sample]
+            } else {
+                current.append(sample)
+            }
+        }
+        segments.append(ZoneSegment(id: nextSegment, name: name, samples: current))
+        return segments
+    }
+
+    private static func zoneName(_ value: Double, bands: [ZoneBand]) -> String {
+        if let band = bands.first(where: { $0.contains(value) }) {
+            return band.name
+        }
+        return bands[0].name
     }
 
     private static func routeElevation(_ workout: WorkoutRecord) -> [SeriesPoint] {

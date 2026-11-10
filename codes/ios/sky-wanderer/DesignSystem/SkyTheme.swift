@@ -24,6 +24,41 @@ enum SkyTheme {
         static let chartTrack = SkyHex.color(0x1E88FE)
         static let chartNeutral = SkyHex.color(0x8E8E93)
         static let chartNeutralMuted = SkyHex.color(0xC6C6C8)
+
+        /// Per-metric colors for the workout list and workout detail.
+        /// Number and unit share the color. Missing values stay `secondary`.
+        enum Metric {
+            /// 训练时间, 经过时间, list duration.
+            static let duration = SkyHex.color(0xA16207)
+            /// Distinct from brand `primary` `#1E88FE`.
+            static let distance = SkyHex.color(0x0277BD)
+            /// Pace, cadence, and stride.
+            static let pace = SkyHex.color(0x0B7F7A)
+            static let heartRate = SkyHex.color(0xD13924)
+            /// Climb and elevation.
+            static let elevation = SkyHex.color(0x15803D)
+            static let energy = SkyHex.color(0xC2183B)
+            static let load = SkyHex.color(0x6D28D9)
+            /// Training score stays brand primary.
+            static let score = SkyTheme.Color.primary
+        }
+
+        /// Heart-rate and pace zone colors, easy to hard, light-adapted for white cards.
+        /// Cutoffs stay in `ZoneScale`. These are only the marks.
+        enum Zone {
+            /// 有氧基础
+            static let base = SkyHex.color(0x1E88FE)
+            /// 有氧耐力
+            static let endurance = SkyHex.color(0x15803D)
+            /// 乳酸阈值
+            static let threshold = SkyHex.color(0xA16207)
+            /// 速度耐力
+            static let speed = SkyHex.color(0xC2410C)
+            /// 冲刺能力
+            static let sprint = SkyHex.color(0xD13924)
+
+            static let ordered: [SwiftUI.Color] = [base, endurance, threshold, speed, sprint]
+        }
     }
 
     /// SF Pro through the system font. Text styles follow Dynamic Type.
@@ -42,9 +77,10 @@ enum SkyTheme {
         static let footnote = skyFont(.footnote, .regular) // 13
         static let caption = skyFont(.caption, .regular) // 12
 
-        /// Metric figures use the surrounding style's size at `valueWeight`. Units use `unitStyle` in `unitColor`.
+        /// Colored workout metrics use `valueWeight` for the number and the unit, in `Color.Metric`.
+        /// Labels stay caption in `secondary`. `unitStyle` / `unitColor` remain for uncolored units elsewhere.
         enum Metric {
-            static let valueWeight = SwiftUI.Font.Weight.semibold
+            static let valueWeight = SwiftUI.Font.Weight.bold
             static let unitStyle = SkyTheme.Font.footnote
             static let unitColor = SkyTheme.Color.secondary
         }

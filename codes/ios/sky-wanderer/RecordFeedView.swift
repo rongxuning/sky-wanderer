@@ -497,7 +497,7 @@ struct RecordSummaryCard: View {
         // The 84pt thumbnail anchors the card at the default type size. Larger Dynamic Type grows the card.
         .frame(height: dynamicTypeSize <= .large ? RecordCardLayout.thumbnail : nil)
         .padding(RecordCardLayout.inset)
-        .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
+        .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(
             color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
             radius: SkyTheme.Shadow.card.radius,
@@ -521,7 +521,7 @@ struct RecordSummaryCard: View {
             Text(RecordCardText.clock(workout.trainingDuration))
                 .font(SkyTheme.Font.headline)
                 .fontWeight(.bold)
-                .foregroundStyle(SkyTheme.Color.ink)
+                .foregroundStyle(SkyTheme.Color.Metric.duration)
                 .monospacedDigit()
                 .lineLimit(1)
                 .layoutPriority(1)
@@ -546,49 +546,50 @@ struct RecordSummaryCard: View {
                 columnLabel("训练评分")
             }
             HStack(alignment: .firstTextBaseline, spacing: 0) {
-                smallMetric(heartText)
-                smallMetric(cadenceText)
-                columnValue(loadText, SkyTheme.Color.ink)
-                columnValue(scoreText, SkyTheme.Color.primary)
+                smallMetric(heartText, SkyTheme.Color.Metric.heartRate)
+                smallMetric(cadenceText, SkyTheme.Color.Metric.pace)
+                columnValue(loadText, SkyTheme.Color.Metric.load)
+                columnValue(scoreText, SkyTheme.Color.Metric.score)
             }
         }
     }
 
     private var distanceColumn: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(distanceValue)
-                .font(SkyTheme.Font.headline)
-                .fontWeight(.bold)
-                .foregroundStyle(SkyTheme.Color.ink)
-                .monospacedDigit()
-            if let distanceUnit {
+            if let distanceUnit, distanceValue != "—" {
                 Text(distanceUnit)
-                    .font(SkyTheme.Font.caption)
-                    .foregroundStyle(SkyTheme.Color.secondary)
             }
         }
+        .font(SkyTheme.Font.headline)
+        .fontWeight(.bold)
+        .foregroundStyle(figureColor(distanceValue, SkyTheme.Color.Metric.distance))
+        .monospacedDigit()
         .lineLimit(1)
-        .minimumScaleFactor(0.7)
+        .minimumScaleFactor(0.6)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var paceColumn: some View {
-        Text(RecordCardText.pace(workout.averagePaceSecPerKm))
-            .font(SkyTheme.Font.caption)
-            .foregroundStyle(SkyTheme.Color.secondary)
+        let text = RecordCardText.pace(workout.averagePaceSecPerKm)
+        return Text(text)
+            .font(SkyTheme.Font.headline)
+            .fontWeight(.bold)
+            .foregroundStyle(figureColor(text, SkyTheme.Color.Metric.pace))
             .monospacedDigit()
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .minimumScaleFactor(0.6)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func smallMetric(_ text: String) -> some View {
+    private func smallMetric(_ text: String, _ color: Color) -> some View {
         Text(text)
             .font(SkyTheme.Font.caption)
-            .foregroundStyle(SkyTheme.Color.secondary)
+            .fontWeight(.bold)
+            .foregroundStyle(figureColor(text, color))
             .monospacedDigit()
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .minimumScaleFactor(0.6)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -601,11 +602,15 @@ struct RecordSummaryCard: View {
             .frame(maxWidth: .infinity, alignment: .center)
     }
 
+    private func figureColor(_ text: String, _ color: Color) -> Color {
+        text == "—" ? SkyTheme.Color.secondary : color
+    }
+
     private func columnValue(_ text: String, _ color: Color) -> some View {
         Text(text)
             .font(SkyTheme.Font.headline)
             .fontWeight(.bold)
-            .foregroundStyle(color)
+            .foregroundStyle(figureColor(text, color))
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.7)
@@ -622,12 +627,12 @@ struct RecordSummaryCard: View {
 
     private var heartText: String {
         let value = Format.integer(workout.resolvedAverageHeartRate)
-        return value == "—" ? value : "\(value) bpm"
+        return value == "—" ? value : "\(value)次/分"
     }
 
     private var cadenceText: String {
         let value = Format.integer(workout.resolvedAverageCadence)
-        return value == "—" ? value : "\(value) spm"
+        return value == "—" ? value : "\(value)步/分"
     }
 
     private var loadText: String {
@@ -682,16 +687,14 @@ private enum RecordCardText {
         return "\(startFormatter.string(from: date))（周\(weekdays[index])）"
     }
 
-    /// Prime marks, no `/km`. Gray caption in the card.
+    /// `14'13"`, no `/公里`. The detail screen keeps the full unit.
     static func pace(_ secondsPerKm: Double) -> String {
-        guard secondsPerKm.isFinite, secondsPerKm > 0, secondsPerKm < 3_600 else { return "—" }
-        let total = Int(secondsPerKm.rounded())
-        return "\(total / 60)′\(String(format: "%02d", total % 60))″"
+        Format.pace(secondsPerKm)
     }
 
     static func distance(_ meters: Double) -> (value: String, unit: String?) {
         guard meters > 1 else { return ("—", nil) }
-        return (String(format: "%.1f", meters / 1000), "km")
+        return (String(format: "%.1f", meters / 1000), "公里")
     }
 }
 
