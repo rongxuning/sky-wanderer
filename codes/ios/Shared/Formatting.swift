@@ -59,6 +59,28 @@ enum Format {
         return formatter.string(from: date)
     }
 
+    /// Groups newest-first dates into 「yyyy年M月」 spans.
+    /// Each span starts at the newest date of that month, so a section header sits above
+    /// that record. The title is not delayed until the oldest date in the month.
+    static func recordMonthSpans(dates: [Date]) -> [RecordMonthSpan] {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy年M月"
+        var spans: [RecordMonthSpan] = []
+        var index = 0
+        while index < dates.count {
+            let title = formatter.string(from: dates[index])
+            var end = index + 1
+            while end < dates.count, formatter.string(from: dates[end]) == title {
+                end += 1
+            }
+            spans.append(RecordMonthSpan(title: title, lowerBound: index, upperBound: end))
+            index = end
+        }
+        return spans
+    }
+
     /// Home record cards. Today and yesterday use Shanghai local days, matching `time`.
     static func relativeDayTime(_ date: Date, now: Date = Date()) -> String {
         var calendar = Calendar(identifier: .gregorian)
@@ -148,6 +170,16 @@ enum Format {
         if trimmed.isEmpty { return numbers }
         return "\(trimmed) · \(numbers)"
     }
+}
+
+/// One year-month in a newest-first record list. Indexes point into that same date array.
+struct RecordMonthSpan: Equatable, Identifiable {
+    var title: String
+    var lowerBound: Int
+    var upperBound: Int
+
+    var id: String { "\(lowerBound)-\(title)" }
+    var range: Range<Int> { lowerBound..<upperBound }
 }
 
 extension KilometerSplit {

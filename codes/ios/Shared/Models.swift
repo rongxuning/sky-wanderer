@@ -965,6 +965,10 @@ struct WorkoutDenylist: Codable, Hashable {
 /// Resting card offset after a horizontal drag. `0` is closed.
 /// A negative value only means the delete button is visible. Callers must not delete from it.
 enum RecordCardSwipe {
+    /// Travel, in points, before a drag may choose an axis.
+    /// Below this, and whenever vertical travel wins, the list scroll keeps the touch.
+    static let axisThreshold: Double = 18
+
     static func restingOffset(base: Double, translation: Double, predicted: Double, revealed: Double) -> Double {
         guard revealed > 0 else { return 0 }
         let next = base + translation
@@ -973,6 +977,53 @@ enum RecordCardSwipe {
             return -revealed
         }
         return 0
+    }
+
+    /// True only when sideways travel has passed `threshold` and beats vertical travel.
+    /// A tie fails closed: the list scroll keeps the gesture.
+    static func claimsHorizontal(dx: Double, dy: Double, threshold: Double = axisThreshold) -> Bool {
+        let horizontal = abs(dx)
+        return horizontal >= threshold && horizontal > abs(dy)
+    }
+
+    /// True when vertical travel has passed `threshold` and is at least the sideways travel.
+    static func yieldsToVerticalScroll(dx: Double, dy: Double, threshold: Double = axisThreshold) -> Bool {
+        let vertical = abs(dy)
+        return vertical >= threshold && vertical >= abs(dx)
+    }
+
+    /// Whether the delete pan may leave `.possible`. Vertical and diagonal pans return false
+    /// and never claim the touch, so the list scroll keeps it.
+    static func shouldBeginDeletePan(
+        translationX: Double,
+        translationY: Double,
+        velocityX: Double,
+        velocityY: Double
+    ) -> Bool {
+        let travel = (translationX * translationX + translationY * translationY).squareRoot()
+        if travel >= 8 {
+            return claimsHorizontal(dx: translationX, dy: translationY, threshold: 8)
+        }
+        // A fast sideways flick can be obvious before the finger has moved 8pt.
+        return claimsHorizontal(dx: velocityX, dy: velocityY, threshold: 120)
+    }
+
+    /// Where the finger would be after a short deceleration. Fed to `restingOffset`.
+    static func predictedTranslation(translation: Double, velocity: Double) -> Double {
+        translation + velocity * 0.2
+    }
+}
+
+/// Even samples of a route for the records-list thumbnail.
+/// The first and last points stay put so the line still starts and finishes on the real track.
+enum RecordTrackPath {
+    static func simplified(_ points: [GeoPoint], limit: Int = 180) -> [GeoPoint] {
+        guard limit >= 2, points.count > limit else { return points }
+        let step = Double(points.count - 1) / Double(limit - 1)
+        return (0..<limit).map { index in
+            let position = min(points.count - 1, Int((Double(index) * step).rounded()))
+            return points[position]
+        }
     }
 }
 

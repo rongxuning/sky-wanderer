@@ -2,7 +2,8 @@ import Foundation
 
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/TrainingEstimate.swift \
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/Database.swift \
-//   codes/ios/Shared/AccountIdentity.swift codes/ios/workout-delete-check/main.swift \
+//   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Formatting.swift \
+//   codes/ios/workout-delete-check/main.swift \
 //   -o /tmp/workout-delete-check && /tmp/workout-delete-check
 
 /// SampleLibrary's preset route names this. The check does not compile LiveSession.
@@ -284,6 +285,93 @@ check(
     RecordCardSwipe.restingOffset(base: 0, translation: 40, predicted: 80, revealed: 80) == 0,
     "a rightward swipe does not reveal delete"
 )
+
+check(
+    RecordCardSwipe.claimsHorizontal(dx: -40, dy: 6),
+    "a sideways drag past the threshold claims the swipe"
+)
+check(
+    !RecordCardSwipe.claimsHorizontal(dx: -12, dy: 2),
+    "a short sideways drag does not claim yet"
+)
+check(
+    !RecordCardSwipe.claimsHorizontal(dx: -30, dy: 48),
+    "vertical travel does not claim the swipe"
+)
+check(
+    !RecordCardSwipe.claimsHorizontal(dx: -24, dy: -24),
+    "a diagonal drag fails closed and does not claim"
+)
+check(
+    RecordCardSwipe.yieldsToVerticalScroll(dx: -8, dy: 40),
+    "vertical travel belongs to the list scroll"
+)
+check(
+    RecordCardSwipe.yieldsToVerticalScroll(dx: -20, dy: 20),
+    "a tie at the threshold belongs to the list scroll"
+)
+check(
+    !RecordCardSwipe.yieldsToVerticalScroll(dx: -40, dy: 8),
+    "a horizontal drag does not yield to the list scroll"
+)
+check(
+    RecordCardSwipe.shouldBeginDeletePan(translationX: -16, translationY: 3, velocityX: -40, velocityY: 10),
+    "a horizontal pan may begin"
+)
+check(
+    !RecordCardSwipe.shouldBeginDeletePan(translationX: -3, translationY: 22, velocityX: -10, velocityY: 240),
+    "a vertical pan does not begin"
+)
+check(
+    !RecordCardSwipe.shouldBeginDeletePan(translationX: -9, translationY: -9, velocityX: -200, velocityY: -40),
+    "a diagonal pan does not begin"
+)
+check(
+    RecordCardSwipe.shouldBeginDeletePan(translationX: -1, translationY: 0.2, velocityX: -220, velocityY: 30),
+    "a fast sideways flick may begin before the finger has traveled far"
+)
+let flicked = RecordCardSwipe.predictedTranslation(translation: -30, velocity: -200)
+check(
+    RecordCardSwipe.restingOffset(base: 0, translation: -30, predicted: flicked, revealed: 80) == -80,
+    "a flick still opens the delete button"
+)
+let nudged = RecordCardSwipe.predictedTranslation(translation: -10, velocity: -20)
+check(
+    RecordCardSwipe.restingOffset(base: 0, translation: -10, predicted: nudged, revealed: 80) == 0,
+    "a short slow drag stays closed"
+)
+
+var shanghai = Calendar(identifier: .gregorian)
+shanghai.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+func shanghaiDate(year: Int, month: Int, day: Int) -> Date {
+    shanghai.date(from: DateComponents(year: year, month: month, day: day, hour: 9))!
+}
+let novemberNewest = makeWorkout(start: shanghaiDate(year: 2026, month: 11, day: 2))
+let novemberOlder = makeWorkout(start: shanghaiDate(year: 2026, month: 11, day: 1))
+let octoberNewest = makeWorkout(start: shanghaiDate(year: 2026, month: 10, day: 31))
+let monthSpans = Format.recordMonthSpans(dates: [
+    novemberNewest.start,
+    novemberOlder.start,
+    octoberNewest.start
+])
+check(monthSpans.count == 2, "two year-months become two sections")
+check(monthSpans.first?.title == "2026年11月", "the first section is the newest month")
+check(monthSpans.first?.lowerBound == 0 && monthSpans.first?.upperBound == 2, "November's header starts at the newest record")
+check(monthSpans.last?.title == "2026年10月", "the next section is the older month")
+check(monthSpans.last?.lowerBound == 2, "October's header starts at October's newest record, not its oldest")
+check(
+    Format.recordMonthSpans(dates: [octoberNewest.start]).first?.title == Format.monthTitle(octoberNewest.start),
+    "section titles match the month label"
+)
+
+let longTrack = (0..<1000).map { index in
+    GeoPoint(latitude: 31 + Double(index) * 0.0001, longitude: 121, altitude: 0, timestamp: nil)
+}
+let simplifiedTrack = RecordTrackPath.simplified(longTrack, limit: 180)
+check(simplifiedTrack.count == 180, "a long route samples down to 180 points")
+check(simplifiedTrack.first == longTrack.first, "the sample keeps the start")
+check(simplifiedTrack.last == longTrack.last, "the sample keeps the end")
+check(RecordTrackPath.simplified(Array(longTrack.prefix(12))).count == 12, "a short route is not resampled")
 
 if failures.isEmpty {
     print("workout-delete-check ok")
