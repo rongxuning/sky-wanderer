@@ -793,7 +793,7 @@ final class ElevationTrackRenderer: MKOverlayRenderer {
         context.setLineWidth(4 / max(zoomScale, 0.000001))
         context.setLineCap(.round)
         context.setLineJoin(.round)
-        for run in track.runs where MKMapRectIntersectsRect(run.bounds, visible) {
+        for run in track.runs where run.bounds.intersects(visible) {
             guard let first = run.mapPoints.first else { continue }
             context.beginPath()
             context.setStrokeColor(run.color.cgColor)
