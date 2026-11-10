@@ -14,7 +14,8 @@ struct Database {
     var seeded: Bool = false
     /// Planned routes saved on this device. Missing in older files.
     var routes: [SavedRoute] = []
-    /// True after the phone has offered the bundled sample GPX once.
+    /// True after the bundled 徐汇滨江 sample has been retired.
+    /// Older builds set this when they inserted that sample. Launches now remove it and set this so it is not inserted again.
     var sampleRouteSeeded: Bool = false
     /// Workouts the user removed on this phone. Missing in older files.
     /// Health imports are remembered by `healthKitUUID`. Device-only rows are remembered by id.
@@ -48,6 +49,24 @@ extension Database {
         workouts.append(record)
         workouts.sort { $0.start > $1.start }
         return true
+    }
+
+    /// The first-launch sample GPX. A user import uses a UUID, including one the user named 徐汇滨江.
+    static func isSeededSampleRoute(_ route: SavedRoute) -> Bool {
+        route.kind == .gpx && route.id == SavedRoute.sampleGPXID
+    }
+
+    /// Drops that sample and records that it must not be inserted again.
+    /// Returns GPX filenames that belonged to the sample, so the caller can delete those files only.
+    @discardableResult
+    mutating func retireSeededSampleRoute() -> [String] {
+        let filenames = routes.compactMap { route -> String? in
+            guard Self.isSeededSampleRoute(route) else { return nil }
+            return route.gpxFilename
+        }
+        routes.removeAll { Self.isSeededSampleRoute($0) }
+        sampleRouteSeeded = true
+        return filenames
     }
 }
 

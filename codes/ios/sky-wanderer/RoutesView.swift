@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 extension GPXFile {
@@ -16,55 +17,31 @@ struct RoutesLibraryView: View {
     @EnvironmentObject private var draft: WorkoutDraft
     @State private var importing = false
     @State private var importError: String?
+    @State private var revealedRouteID: String?
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
-            if embeddedInHome, !app.importedRoutes.isEmpty {
-                HStack {
-                    Button {
-                        importing = true
-                    } label: {
-                        Text("导入")
-                            .font(SkyTheme.Font.callout)
-                            .foregroundStyle(SkyTheme.Color.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("导入 GPX")
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                .padding(.top, 2)
-                .padding(.bottom, 4)
+            HStack {
+                Spacer(minLength: 0)
+                RouteImportButton { importing = true }
             }
-            Group {
-                if app.importedRoutes.isEmpty {
-                    emptyState
-                } else {
-                    routeList
-                }
-            }
-        }
-        .background {
-            if embeddedInHome {
-                SkyTheme.Color.grouped
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.top, SkyTheme.Spacing.related)
+            .padding(.bottom, SkyTheme.Spacing.related)
+            if app.importedRoutes.isEmpty {
+                emptyState
             } else {
-                CanvasBackground()
+                routeList
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SkyTheme.Color.grouped.ignoresSafeArea())
         .navigationTitle(embeddedInHome ? "" : "路线")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(embeddedInHome ? .hidden : .visible, for: .navigationBar)
         .navigationBarHidden(embeddedInHome)
-        .toolbar {
-            if !embeddedInHome {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("导入") { importing = true }
-                        .accessibilityLabel("导入 GPX")
-                }
-            }
-        }
         .fileImporter(isPresented: $importing, allowedContentTypes: GPXFile.types) { result in
             importFile(result)
         }
@@ -79,56 +56,49 @@ struct RoutesLibraryView: View {
         .task {
             await OfflineTileStore.prefetch(app.importedRoutes.map(\.points))
         }
+        .onChange(of: app.importedRoutes.map(\.id)) { _, ids in
+            if let revealedRouteID, !ids.contains(revealedRouteID) {
+                self.revealedRouteID = nil
+            }
+        }
     }
 
+    /// One sentence. The circular import control above is the only call to action.
     private var emptyState: some View {
-        VStack(spacing: 14) {
-            Text("还没有导入的路线")
-                .font(.system(size: 17, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniInk)
-            Text("选择一个 GPX 文件，路线会留在这台手机上。")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniMuted)
-                .multilineTextAlignment(.center)
-            Button {
-                importing = true
-            } label: {
-                Text("导入 GPX")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniCobalt)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Text("还没有导入的路线")
+            .font(SkyTheme.Font.headline)
+            .foregroundStyle(SkyTheme.Color.ink)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var routeList: some View {
-        List {
-            ForEach(app.importedRoutes) { route in
-                NavigationLink(value: MapRoute.detail(route.id)) {
-                    RouteRow(route: route, selected: draft.routeID == route.id)
+        ScrollView {
+            LazyVStack(spacing: SkyTheme.Spacing.related) {
+                ForEach(app.importedRoutes) { route in
+                    RouteSwipeCard(
+                        route: route,
+                        selected: draft.routeID == route.id,
+                        revealedID: $revealedRouteID,
+                        onDelete: { delete(route) }
+                    )
                 }
-                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button("删除", role: .destructive) {
-                        if draft.routeID == route.id {
-                            draft.routeID = PlannedRoute.free.id
-                        }
-                        app.deleteRoute(id: route.id)
-                    }
-                }
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             }
-            Text("地图会缓存在这台手机上，没有网络也能看。")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniMuted)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.bottom, SkyTheme.Spacing.screenInset)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func delete(_ route: SavedRoute) {
+        if draft.routeID == route.id {
+            draft.routeID = PlannedRoute.free.id
+        }
+        if revealedRouteID == route.id {
+            revealedRouteID = nil
+        }
+        app.deleteRoute(id: route.id)
     }
 
     private func importFile(_ result: Result<URL, Error>) {
@@ -155,95 +125,327 @@ struct RoutesLibraryView: View {
     }
 }
 
-private struct RouteRow: View {
-    var route: SavedRoute
-    var selected: Bool
+/// Circular primary control. The drawn circle is 36pt; the hit target stays 44pt.
+private struct RouteImportButton: View {
+    var action: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            RouteSketch(points: route.points)
-                .frame(width: 72, height: 72)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(route.name)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniInk)
-                    .lineLimit(1)
-                Text("导入时间 \(importTime(route))")
-                    .foregroundStyle(Color.omniMuted)
-                Text("距离 \(routeKilometers(RouteStats.distance(route.points)))")
-                    .foregroundStyle(Color.omniInk)
-                Text("爬升 \(routeMeters(RouteStats.ascent(route.points)))")
-                    .foregroundStyle(Color.omniInk)
-                Text("创建人 \(route.creatorLabel)")
-                    .foregroundStyle(Color.omniInk)
-                    .lineLimit(1)
-            }
-            .font(.system(size: 13, weight: .semibold, design: .rounded))
-            Spacer(minLength: 0)
-            if selected {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Color.omniCobalt)
-                    .accessibilityLabel("已用于训练")
-            }
+        Button(action: action) {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(SkyTheme.Color.onPrimary)
+                .frame(width: 36, height: 36)
         }
-        .padding(12)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(selected ? Color.omniCobalt : Color.black.opacity(0.06), lineWidth: selected ? 1.5 : 1)
-        )
-        .accessibilityElement(children: .combine)
+        .buttonStyle(RouteImportButtonStyle())
+        .accessibilityLabel("导入 GPX")
     }
 }
 
-struct RouteSketch: View {
-    var points: [GeoPoint]
+private struct RouteImportButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                configuration.isPressed ? SkyTheme.Color.primaryPressed : SkyTheme.Color.primary,
+                in: Circle()
+            )
+            .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin, alignment: .trailing)
+            .contentShape(Rectangle())
+    }
+}
+
+private struct RouteSwipeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
+/// Same reveal width as the record list, so the red 删除 control matches that card.
+private enum RouteSwipeMetrics {
+    static let buttonWidth: CGFloat = 72
+    static let gap: CGFloat = SkyTheme.Spacing.related
+    static var revealed: CGFloat { buttonWidth + gap }
+}
+
+/// Slides a route card left to reveal 删除. Releasing only opens or closes that button.
+/// The pan does not begin for a vertical or diagonal move, so the list scroll keeps that touch.
+private struct RouteSwipeCard: View {
+    var route: SavedRoute
+    var selected: Bool
+    @Binding var revealedID: String?
+    var onDelete: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var offset: CGFloat = 0
+    @State private var suppressNavigation = false
+    @State private var deleteArmed = false
+    @State private var gestureToken = 0
+    @State private var rowHeight: CGFloat = 0
+    @State private var dragBase: CGFloat = 0
+
+    private var snap: Animation {
+        reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.32, dampingFraction: 0.86)
+    }
 
     var body: some View {
-        Canvas { context, size in
-            guard let first = points.first else { return }
-            if points.count == 1 {
-                let dot = CGRect(x: size.width / 2 - 3, y: size.height / 2 - 3, width: 6, height: 6)
-                context.fill(Path(ellipseIn: dot), with: .color(Color.omniCobalt))
-                return
+        NavigationLink(value: MapRoute.detail(route.id)) {
+            RouteSummaryCard(route: route, selected: selected)
+        }
+        .buttonStyle(.plain)
+        .allowsHitTesting(!suppressNavigation && offset == 0)
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(key: RouteSwipeHeightKey.self, value: geo.size.height)
             }
-            let midLatitude = points.map(\.latitude).reduce(0, +) / Double(points.count)
-            let cosLat = cos(midLatitude * .pi / 180)
-            let east = points.map { ($0.longitude - first.longitude) * 111_320 * cosLat }
-            let north = points.map { ($0.latitude - first.latitude) * 111_320 }
-            let minX = east.min() ?? 0
-            let maxX = east.max() ?? 0
-            let minY = north.min() ?? 0
-            let maxY = north.max() ?? 0
-            let spanX = max(maxX - minX, 1)
-            let spanY = max(maxY - minY, 1)
-            let pad: CGFloat = 8
-            let width = max(size.width - pad * 2, 1)
-            let height = max(size.height - pad * 2, 1)
-            let scale = min(width / spanX, height / spanY)
-            let usedW = spanX * scale
-            let usedH = spanY * scale
-            let originX = pad + (width - usedW) / 2
-            let originY = pad + (height - usedH) / 2
-            var path = Path()
-            for index in points.indices {
-                let x = originX + (east[index] - minX) * scale
-                let y = originY + (maxY - north[index]) * scale
-                let point = CGPoint(x: x, y: y)
-                if index == 0 {
-                    path.move(to: point)
-                } else {
-                    path.addLine(to: point)
+        }
+        .offset(x: offset)
+        .background(alignment: .trailing) {
+            deleteButton
+        }
+        .overlay {
+            if offset != 0 {
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { close() }
+                    Color.clear
+                        .frame(width: RouteSwipeMetrics.revealed)
+                        .allowsHitTesting(false)
                 }
             }
-            context.stroke(
-                path,
-                with: .color(Color.omniCobalt),
-                style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
-            )
         }
-        .background(SkyHomeColor.chip, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .accessibilityHidden(true)
+        .overlay(alignment: .trailing) {
+            if deleteArmed {
+                Color.clear
+                    .frame(width: RouteSwipeMetrics.buttonWidth, height: rowHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onDelete() }
+                    .accessibilityLabel("删除")
+            }
+        }
+        .contentShape(Rectangle())
+        // Attach the representable with gesture(_:). simultaneousGesture would fight the scroll.
+        .gesture(deletePan)
+        .accessibilityAction(named: Text("删除")) {
+            onDelete()
+        }
+        .onPreferenceChange(RouteSwipeHeightKey.self) { height in
+            if height > 0, height != rowHeight {
+                rowHeight = height
+            }
+        }
+        .onChange(of: revealedID) { _, id in
+            guard id != route.id, offset != 0 else { return }
+            close()
+        }
+    }
+
+    private var deleteButton: some View {
+        Text("删除")
+            .font(SkyTheme.Font.subheadline)
+            .fontWeight(.semibold)
+            .foregroundStyle(SkyTheme.Color.onPrimary)
+            .frame(width: RouteSwipeMetrics.buttonWidth)
+            .frame(height: rowHeight > 0 ? rowHeight : nil)
+            .background(
+                SkyTheme.Color.danger,
+                in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
+            )
+            .opacity(offset < -4 ? 1 : 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+
+    private var deletePan: RecordDeletePan {
+        RecordDeletePan(
+            onBegan: {
+                dragBase = offset
+                gestureToken += 1
+                deleteArmed = false
+                suppressNavigation = true
+                revealedID = route.id
+            },
+            onChanged: { translation in
+                let next = dragBase + translation
+                offset = min(0, max(-RouteSwipeMetrics.revealed, next))
+            },
+            onEnded: { translation, velocity in
+                let predicted = RecordCardSwipe.predictedTranslation(
+                    translation: Double(translation),
+                    velocity: Double(velocity)
+                )
+                let resting = RecordCardSwipe.restingOffset(
+                    base: Double(dragBase),
+                    translation: Double(translation),
+                    predicted: predicted,
+                    revealed: Double(RouteSwipeMetrics.revealed)
+                )
+                let open = resting < 0
+                withAnimation(snap) {
+                    offset = CGFloat(resting)
+                }
+                if open {
+                    revealedID = route.id
+                } else if revealedID == route.id {
+                    revealedID = nil
+                }
+                let token = gestureToken
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(120))
+                    guard token == gestureToken else { return }
+                    deleteArmed = open && offset != 0
+                    if offset == 0 {
+                        suppressNavigation = false
+                    }
+                }
+            }
+        )
+    }
+
+    private func close() {
+        withAnimation(snap) { offset = 0 }
+        deleteArmed = false
+        suppressNavigation = false
+        if revealedID == route.id {
+            revealedID = nil
+        }
+    }
+}
+
+/// Same measurements as a record card. The track sits in that box and does not add height.
+private enum RouteCardLayout {
+    static let track: CGFloat = 84
+    static let corner: CGFloat = 20
+    static let horizontalInset: CGFloat = SkyTheme.Spacing.cardPadding
+    static let verticalInset: CGFloat = 10
+    static let rowSpacing: CGFloat = 4
+}
+
+private struct RouteSummaryCard: View {
+    var route: SavedRoute
+    var selected: Bool
+
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: RouteCardLayout.corner, style: .continuous)
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            if route.points.count >= 2 {
+                RecordTrackLine(points: route.points)
+                    .frame(width: RouteCardLayout.track, height: RouteCardLayout.track)
+                    .padding(.trailing, RouteCardLayout.horizontalInset)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: RouteCardLayout.rowSpacing) {
+                nameRow
+                Text(RouteCardText.imported(route))
+                    .font(SkyTheme.Font.footnote)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    metric(RouteCardText.distance(route.points), SkyTheme.Color.Metric.distance)
+                    metric(RouteCardText.climb(route.points), SkyTheme.Color.Metric.elevation)
+                }
+                Text(RouteCardText.creator(route))
+                    .font(SkyTheme.Font.footnote)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, RouteCardLayout.horizontalInset)
+            .padding(.vertical, RouteCardLayout.verticalInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .clipShape(cardShape)
+        .overlay {
+            if selected {
+                cardShape.strokeBorder(SkyTheme.Color.primary, lineWidth: 1.5)
+            }
+        }
+        .shadow(
+            color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
+            radius: SkyTheme.Shadow.card.radius,
+            y: SkyTheme.Shadow.card.y
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private var nameRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
+            Text(route.name)
+                .font(SkyTheme.Font.headline)
+                .fontWeight(.bold)
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(1)
+            if selected {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(SkyTheme.Color.primary)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private func metric(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .font(SkyTheme.Font.headline)
+            .fontWeight(.bold)
+            .foregroundStyle(color)
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+
+    private var accessibilitySummary: String {
+        var parts = [
+            route.name,
+            RouteCardText.imported(route),
+            "距离 \(RouteCardText.distance(route.points))",
+            "爬升 \(RouteCardText.climb(route.points))",
+            RouteCardText.creator(route)
+        ]
+        if selected {
+            parts.append("已用于训练")
+        }
+        return parts.joined(separator: "，")
+    }
+}
+
+private enum RouteCardDate {
+    static func string(from date: Date) -> String {
+        formatter.string(from: date)
+    }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter
+    }()
+}
+
+private enum RouteCardText {
+    static func imported(_ route: SavedRoute) -> String {
+        guard let importedAt = route.importedAt else { return "—" }
+        return RouteCardDate.string(from: importedAt)
+    }
+
+    static func distance(_ points: [GeoPoint]) -> String {
+        "\(Format.kilometers(RouteStats.distance(points)))公里"
+    }
+
+    static func climb(_ points: [GeoPoint]) -> String {
+        "\(Int(RouteStats.ascent(points).rounded()))米"
+    }
+
+    static func creator(_ route: SavedRoute) -> String {
+        "创建人 \(route.creatorLabel)"
     }
 }
 
@@ -261,6 +463,8 @@ struct RouteDetailView: View {
     @State private var showsKilometerMarkers = false
     @State private var editingTitle = false
     @State private var titleDraft = ""
+    /// UIKit's latest title string. A class so keystrokes do not re-render the field and move the caret.
+    @State private var titleBuffer = RouteTitleBuffer()
     @FocusState private var titleFocused: Bool
 
     private var route: SavedRoute? {
@@ -313,6 +517,23 @@ struct RouteDetailView: View {
             Task { @MainActor in
                 if editingTitle { titleFocused = true }
             }
+        }
+        .onChange(of: titleFocused) { _, focused in
+            // A tap beside the field often only resigns it. The button action never runs.
+            // Commit on the next turn, after textDidEndEditing has filled the buffer.
+            guard !focused else { return }
+            Task { @MainActor in
+                guard editingTitle else { return }
+                commitTitle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidChangeNotification)) { note in
+            guard editingTitle, let field = note.object as? UITextField else { return }
+            titleBuffer.text = RouteTitleField.shownText(in: field)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidEndEditingNotification)) { note in
+            guard editingTitle, let field = note.object as? UITextField else { return }
+            titleBuffer.text = RouteTitleField.shownText(in: field)
         }
         .onDisappear { commitTitle() }
     }
@@ -373,18 +594,16 @@ struct RouteDetailView: View {
     /// System text field: the caret, delete, and the copy / paste / cut menu stay the platform ones.
     private func titleCapsule(_ route: SavedRoute) -> some View {
         HStack(spacing: 4) {
-            Button {
+            RouteTitleIconButton(
+                systemName: "chevron.left",
+                pointSize: 17,
+                tint: Color.omniInk,
+                accessibilityLabel: "返回"
+            ) {
                 commitTitle()
                 dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Color.omniInk)
-                    .frame(width: 36, height: 40)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("返回")
+            .frame(width: 36, height: 40)
             if editingTitle {
                 TextField(
                     "路线名称",
@@ -409,21 +628,20 @@ struct RouteDetailView: View {
                     .truncationMode(.tail)
                     .layoutPriority(-1)
             }
-            Button {
+            RouteTitleIconButton(
+                systemName: editingTitle ? "square.and.arrow.down" : "pencil",
+                pointSize: 15,
+                tint: editingTitle ? SkyTheme.Color.primary : Color.omniInk,
+                accessibilityLabel: editingTitle ? "保存" : "编辑路线名称"
+            ) {
                 if editingTitle {
                     commitTitle()
                 } else {
                     beginTitleEdit(route)
                 }
-            } label: {
-                Image(systemName: editingTitle ? "square.and.arrow.down" : "pencil")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(editingTitle ? SkyTheme.Color.primary : Color.omniInk)
-                    .frame(width: 36, height: 40)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(editingTitle ? "保存" : "编辑路线名称")
+            .frame(width: 36, height: 40)
+            .layoutPriority(1)
         }
         .padding(.leading, 6)
         .padding(.trailing, 6)
@@ -432,16 +650,25 @@ struct RouteDetailView: View {
 
     private func beginTitleEdit(_ route: SavedRoute) {
         titleDraft = route.name
+        titleBuffer.text = route.name
         editingTitle = true
     }
 
     /// Done and save both commit. A cleared field keeps the previous title.
+    ///
+    /// The save control used to read `titleDraft` and then remove the field in the same turn.
+    /// UIKit writes that binding when editing ends, which is after a neighbor's action — and a
+    /// SwiftUI button beside a focused field often never receives the tap. `renameRoute` then
+    /// sees the old name and does not write. Read the live field, or the last text UIKit posted,
+    /// before leaving edit mode.
     private func commitTitle() {
         guard editingTitle else { return }
-        let trimmed = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = RouteTitleField.liveText() ?? titleBuffer.text ?? titleDraft
+        let trimmed = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         editingTitle = false
         titleFocused = false
         guard !trimmed.isEmpty else { return }
+        titleDraft = trimmed
         app.renameRoute(id: routeID, name: trimmed)
     }
 
@@ -508,34 +735,60 @@ struct RouteDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
+    private var zoomScaleText: String {
+        String(format: "%.1f×", multiplier)
+    }
+
+    /// Vertical drag handle shown only while the magnifier is armed. Same scale math as the map drag.
+    private var zoomScaleLine: some View {
+        ZStack {
+            Capsule()
+                .fill(SkyTheme.Color.primary)
+                .frame(width: 2, height: 128)
+            Text(zoomScaleText)
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(SkyTheme.Color.ink)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(SkyTheme.Color.card.opacity(0.94), in: Capsule())
+        }
+        .frame(width: 42, height: 128)
+        .contentShape(Rectangle())
+        .gesture(zoomSlide)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("缩放倍数")
+        .accessibilityValue(String(format: "%.1f倍", multiplier))
+        .accessibilityHint("上下滑动调整比例")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                multiplier = min(16, multiplier * 1.25)
+            case .decrement:
+                multiplier = max(0.4, multiplier / 1.25)
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private var zoomSlide: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                if zoomDragBase == nil {
+                    handleZoomDrag(.began)
+                }
+                handleZoomDrag(.changed(value.translation.height))
+            }
+            .onEnded { _ in
+                handleZoomDrag(.ended)
+            }
+    }
+
     private func toolColumn(markerCount: Int) -> some View {
         VStack(spacing: 10) {
             if zoomArmed {
-                Text(String(format: "%.1f×", multiplier))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(Color.omniInk)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .accessibilityLabel("缩放倍数")
-                    .accessibilityValue(String(format: "%.1f倍", multiplier))
-                    .accessibilityAdjustableAction { direction in
-                        switch direction {
-                        case .increment:
-                            multiplier = min(16, multiplier * 1.25)
-                        case .decrement:
-                            multiplier = max(0.4, multiplier / 1.25)
-                        @unknown default:
-                            break
-                        }
-                    }
-                Text("上下拖动")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniInk)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.92), in: Capsule())
+                zoomScaleLine
             }
             if showsKilometerMarkers, markerCount == 0 {
                 Text("不足 1 公里，没有路程点")
@@ -546,9 +799,17 @@ struct RouteDetailView: View {
                     .background(Color.white.opacity(0.92), in: Capsule())
                     .fixedSize(horizontal: true, vertical: false)
             }
-            toolButton(system: "plus.magnifyingglass", label: "缩放", hint: "点按后上下拖动地图", active: zoomArmed) {
+            toolButton(
+                system: "plus.magnifyingglass",
+                label: "缩放",
+                hint: zoomArmed ? "再点一次结束滑动" : "点按后上下滑动调整比例",
+                active: zoomArmed,
+                title: zoomArmed ? nil : zoomScaleText
+            ) {
+                zoomDragBase = nil
                 zoomArmed.toggle()
             }
+            .accessibilityValue(String(format: "%.1f倍", multiplier))
             toolButton(
                 system: "chart.xyaxis.line",
                 label: "海拔分析",
@@ -584,17 +845,29 @@ struct RouteDetailView: View {
         hint: String,
         active: Bool,
         tinted: Bool = false,
+        title: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         let foreground = active ? (tinted ? SkyTheme.Color.primary : Color.white) : Color.omniInk
         let fill = active ? (tinted ? SkyTheme.Color.recordCard : Color.omniCobalt) : Color.white
         return Button(action: action) {
-            Image(systemName: system)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(foreground)
-                .frame(width: 42, height: 42)
-                .background(fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
+            Group {
+                if let title {
+                    Text(title)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .allowsTightening(true)
+                } else {
+                    Image(systemName: system)
+                        .font(.system(size: 18, weight: .semibold))
+                }
+            }
+            .foregroundStyle(foreground)
+            .frame(width: 42, height: 42)
+            .background(fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -624,6 +897,103 @@ struct RouteDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(CanvasBackground())
+    }
+}
+
+/// Last title UIKit reported. Held by reference so writing it does not rebuild the text field.
+private final class RouteTitleBuffer {
+    var text: String?
+}
+
+/// Reads the system text field that is actually editing. The SwiftUI binding can lag that field.
+private enum RouteTitleField {
+    static func shownText(in field: UITextField) -> String {
+        let raw = field.text ?? ""
+        guard let marked = field.markedTextRange else { return raw }
+        let start = field.offset(from: field.beginningOfDocument, to: marked.start)
+        let end = field.offset(from: field.beginningOfDocument, to: marked.end)
+        let ns = raw as NSString
+        guard start >= 0, end >= start, end <= ns.length else { return raw }
+        return ns.replacingCharacters(in: NSRange(location: start, length: end - start), with: "")
+    }
+
+    static func liveText() -> String? {
+        guard let field = firstField() else { return nil }
+        return shownText(in: field)
+    }
+
+    private static func firstField() -> UITextField? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        for scene in scenes {
+            let windows = scene.windows
+            var ordered: [UIWindow] = []
+            ordered.append(contentsOf: windows.filter(\.isKeyWindow))
+            ordered.append(contentsOf: windows.filter { !$0.isKeyWindow })
+            for window in ordered {
+                guard let hit = window.firstResponderView() else { continue }
+                var view: UIView? = hit
+                while let current = view {
+                    if let field = current as? UITextField { return field }
+                    view = current.superview
+                }
+            }
+        }
+        return nil
+    }
+}
+
+private extension UIView {
+    func firstResponderView() -> UIView? {
+        if isFirstResponder { return self }
+        for child in subviews {
+            if let found = child.firstResponderView() { return found }
+        }
+        return nil
+    }
+}
+
+/// UIKit button. A SwiftUI button next to a focused text field often only resigns the keyboard.
+private struct RouteTitleIconButton: UIViewRepresentable {
+    var systemName: String
+    var pointSize: CGFloat
+    var tint: Color
+    var accessibilityLabel: String
+    var action: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(action: action)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
+        button.backgroundColor = .clear
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.action = action
+        let symbol = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .semibold)
+        let image = UIImage(systemName: systemName, withConfiguration: symbol)
+        var config = UIButton.Configuration.plain()
+        config.image = image
+        config.baseForegroundColor = UIColor(tint)
+        config.background.backgroundColor = .clear
+        config.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+        button.configuration = config
+        button.removeTarget(nil, action: nil, for: .touchUpInside)
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
+        button.accessibilityLabel = accessibilityLabel
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        CGSize(width: 36, height: 40)
+    }
+
+    final class Coordinator: NSObject {
+        var action: () -> Void
+        init(action: @escaping () -> Void) { self.action = action }
+        @objc func tap() { action() }
     }
 }
 

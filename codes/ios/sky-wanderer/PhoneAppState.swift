@@ -27,51 +27,33 @@ final class PhoneAppState: ObservableObject {
 
     init() {
         var loaded: Database
+        let retiredSampleFiles: [String]
         if var existing = AppFiles.load(filename), existing.seeded {
             if existing.metricOrder.isEmpty {
                 existing.metricOrder = LiveBlock.standard
             }
             existing.workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
             Self.ensurePreset(&existing)
-            Self.ensureSampleRoute(&existing)
+            retiredSampleFiles = existing.retireSeededSampleRoute()
             loaded = existing
         } else {
             var fresh = Database()
             fresh.posts = SampleLibrary.posts()
             fresh.seeded = true
             Self.ensurePreset(&fresh)
-            Self.ensureSampleRoute(&fresh)
+            retiredSampleFiles = fresh.retireSeededSampleRoute()
             loaded = fresh
         }
         SessionContinuity.reconcile(&loaded, keychain: SessionKeychain.read())
         database = loaded
         AppFiles.save(loaded, name: filename)
+        for name in retiredSampleFiles {
+            RouteGPXStore.delete(filename: name)
+        }
         SessionKeychain.store(SessionContinuity.credential(in: loaded))
         Task { await self.confirmRemoteSession() }
         let routePoints = database.routes.filter { $0.kind == .gpx }.map(\.points)
         Task { await OfflineTileStore.prefetch(routePoints) }
-    }
-
-    /// Inserts the bundled GPX once, so the routes list is usable before a manual import.
-    private static func ensureSampleRoute(_ database: inout Database) {
-        if database.sampleRouteSeeded { return }
-        if database.routes.contains(where: { $0.kind == .gpx }) {
-            database.sampleRouteSeeded = true
-            return
-        }
-        guard let track = GPXFile.parse(SampleGPX.data).first, track.points.count >= 2 else { return }
-        database.routes.append(
-            SavedRoute(
-                id: SavedRoute.sampleGPXID,
-                name: track.name,
-                points: track.points,
-                kind: .gpx,
-                importedAt: Date(),
-                creator: track.creator,
-                waypoints: track.waypoints
-            )
-        )
-        database.sampleRouteSeeded = true
     }
 
     private static func ensurePreset(_ database: inout Database) {
