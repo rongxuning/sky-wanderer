@@ -238,6 +238,68 @@ check(RouteGPXStore.load(filename: "gpx/phone.json") == nil, "non-gpx name is re
 RouteGPXStore.delete(filename: "../phone.json")
 RouteGPXStore.delete(filename: nil)
 
+check(ElevationScale.bounds([]) == nil, "no elevation bounds")
+let ranged = [point(0, 0, 4), point(0, 0.01, 9), point(0, 0.02, 4)]
+let rangedBounds = ElevationScale.bounds(ranged)
+check(rangedBounds?.low == 4 && rangedBounds?.high == 9, "bounds use this route")
+check(ElevationScale.rgb(unit: 0) == .low, "low is green")
+check(ElevationScale.rgb(unit: 0.5) == .mid, "middle is yellow")
+check(ElevationScale.rgb(unit: 1) == .high, "high is red")
+check(ElevationScale.rgb(altitude: 4, low: 4, high: 9) == .low, "route low is green")
+check(ElevationScale.rgb(altitude: 6.5, low: 4, high: 9) == .mid, "route middle is yellow")
+check(ElevationScale.rgb(altitude: 9, low: 4, high: 9) == .high, "route high is red")
+check(ElevationScale.rgb(unit: 0.25) == ElevationRGB.low.mixed(with: .mid, fraction: 0.5), "quarter mixes green and yellow")
+check(ElevationScale.unit(altitude: 100, low: 10, high: 10.2) == 0.5, "flat route stays the middle color")
+check(ElevationScale.unit(altitude: -5, low: 0, high: 10) == 0, "below the route clamps low")
+check(ElevationScale.unit(altitude: 40, low: 0, high: 10) == 1, "above the route clamps high")
+
+let wave = [point(0, 0, 5), point(0, 0.01, 1), point(0, 0.02, 9), point(0, 0.03, 4)]
+let profile = RouteStats.altitudeProfile(wave, limit: 2)
+check(profile.contains { $0.altitudeMeters == 1 }, "profile keeps the lowest altitude")
+check(profile.contains { $0.altitudeMeters == 9 }, "profile keeps the highest altitude")
+check(profile.first?.distanceKilometers == 0, "profile starts at the route start")
+near(profile.last?.distanceKilometers ?? -1, RouteStats.distance(wave) / 1000, 0.000001, "profile distance is the path")
+check(zip(profile, profile.dropFirst()).allSatisfy { $0.distanceKilometers <= $1.distanceKilometers }, "profile distance does not go backwards")
+
+check(RouteKilometers.markers(along: []).isEmpty, "no markers without points")
+check(RouteKilometers.markers(along: [point(0, 0, 1)]).isEmpty, "no markers for one point")
+let shortHop = [point(0, 0, 1), point(0, 0.001, 2)]
+check(RouteStats.distance(shortHop) < 1000, "short hop is under a kilometer")
+check(RouteKilometers.markers(along: shortHop).isEmpty, "partial kilometer has no marker")
+
+let start = point(0, 0, 100)
+let far = point(0, 0.02, 220)
+let back = point(0, 0, 140)
+let outAndBack = [start, far, back]
+let pathMeters = RouteStats.distance(outAndBack)
+let straightMeters = RouteStats.metersBetween(start, back)
+check(straightMeters < 1, "out and back ends where it started")
+check(pathMeters > 3000, "path is the walked distance")
+let markers = RouteKilometers.markers(along: outAndBack)
+check(markers.count == Int(pathMeters / 1000), "one marker per completed kilometer \(markers.count)")
+check(markers.map(\.kilometer) == Array(1...markers.count), "markers are numbered 1, 2, 3")
+check(markers.allSatisfy { $0.distanceMeters == Double($0.kilometer) * 1000 }, "markers sit on whole kilometers")
+check(markers.last.map { pathMeters + 0.001 >= $0.distanceMeters } ?? false, "no marker past the path")
+check(markers.last.map { pathMeters - $0.distanceMeters < 1000 } ?? false, "the last full kilometer is included")
+let outbound = RouteStats.metersBetween(start, far)
+let returning = markers.filter { $0.distanceMeters > outbound + 0.5 }
+check(!returning.isEmpty, "later kilometers continue on the way back")
+check(returning.allSatisfy { $0.longitude < far.longitude && $0.longitude >= start.longitude - 0.0000001 }, "return markers stay on the path")
+
+let leg = RouteStats.metersBetween(start, far)
+let span = [start, far]
+let spanMarkers = RouteKilometers.markers(along: span)
+check(spanMarkers.count == Int(leg / 1000), "long segment still counts path distance")
+for marker in spanMarkers {
+    let fraction = marker.distanceMeters / leg
+    let latitude = start.latitude + (far.latitude - start.latitude) * fraction
+    let longitude = start.longitude + (far.longitude - start.longitude) * fraction
+    near(marker.latitude, latitude, 0.0000001, "km \(marker.kilometer) latitude")
+    near(marker.longitude, longitude, 0.0000001, "km \(marker.kilometer) longitude")
+    let altitude = start.altitude + (far.altitude - start.altitude) * fraction
+    near(marker.altitude, altitude, 0.001, "km \(marker.kilometer) altitude")
+}
+
 if failures.isEmpty {
     print("route-checkpoint-check ok")
 } else {
