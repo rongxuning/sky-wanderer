@@ -852,6 +852,64 @@ near(mergeRoutes[0].factOverrides?.totals?.distanceMeters ?? -1, 42, 0.001, "cut
 check(mergeRoutes[0].cutoffResolved == false, "a missing file stays unresolved")
 check(mergeRoutes[0].waypoints.map(\.name) == ["CP1", "CP2"], "cutoff merge does not rewrite names")
 
+var sharedPlace = SavedRoute(
+    id: "same-place",
+    name: "同点",
+    points: lineForProgress,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "甲", latitude: 0, longitude: 0.01, elevation: nil),
+        RouteWaypoint(name: "乙", latitude: 0, longitude: 0.01, elevation: nil, cutoff: "12:00")
+    ]
+)
+let sharedRows = RouteCheckpoints.progress(waypoints: sharedPlace.waypoints, points: sharedPlace.points)
+check(sharedRows.map(\.name) == ["甲", "乙"], "same place keeps both names \(sharedRows.map(\.name))")
+RouteFacts.applyWaypoint(
+    &sharedPlace,
+    progress: sharedRows[0],
+    name: .set("甲改"),
+    cutoff: .set("07:00"),
+    segmentDistance: .set(111),
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+let otherCard = RouteFacts.displayWaypoint(sharedRows[1], route: sharedPlace)
+check(otherCard.name == "乙", "the other card at the same place keeps its name")
+check(otherCard.cutoff == "12:00", "the other card at the same place keeps its cutoff")
+near(otherCard.segmentDistanceMeters, sharedRows[1].segmentDistanceMeters, 0.01, "the other card segment stays computed")
+let otherPin = RouteCheckpointMark(
+    id: "w1",
+    name: "乙",
+    latitude: 0,
+    longitude: 0.01,
+    distanceMeters: 0,
+    changeMeters: 0,
+    snappedIndex: 1,
+    synthetic: false
+)
+check(RouteFacts.markName(otherPin, route: sharedPlace) == "乙", "the other pin does not take the renamed card")
+RouteFacts.applyWaypoint(
+    &sharedPlace,
+    progress: sharedRows[1],
+    name: .set("乙改"),
+    cutoff: .set("12:00"),
+    segmentDistance: .set(222),
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(sharedPlace.factOverrides?.waypoints.count == 2, "same place stores two overrides")
+check(RouteFacts.displayWaypoint(sharedRows[0], route: sharedPlace).name == "甲改", "the first card keeps its own name")
+near(RouteFacts.displayWaypoint(sharedRows[0], route: sharedPlace).segmentDistanceMeters, 111, 0.001, "the first card keeps its own segment")
+check(RouteFacts.displayWaypoint(sharedRows[1], route: sharedPlace).name == "乙改", "the second card keeps its own name")
+near(RouteFacts.displayWaypoint(sharedRows[1], route: sharedPlace).segmentDistanceMeters, 222, 0.001, "the second card keeps its own segment")
+check(RouteFacts.displayWaypoint(sharedRows[1], route: sharedPlace).cutoff == "12:00", "an invalid cutoff leaves the file time")
+
 check(RouteFacts.parseMeters("  ", kilometers: true) == .clear, "blank distance clears")
 check(RouteFacts.parseMeters("1.25", kilometers: true) == .set(1250), "kilometers become meters")
 check(RouteFacts.parseMeters("1.25 公里", kilometers: true) == .set(1250), "unit text is ignored")

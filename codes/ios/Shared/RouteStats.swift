@@ -680,8 +680,9 @@ enum RouteFacts {
     /// Pin label. A renamed card uses the override. 起点 / 终点 stay as drawn.
     static func markName(_ mark: RouteCheckpointMark, route: SavedRoute) -> String {
         guard !mark.synthetic, let overrides = route.factOverrides else { return mark.name }
-        let near = overrides.waypoints.filter { close($0, latitude: mark.latitude, longitude: mark.longitude) }
-        let chosen = near.first { $0.sourceName == mark.name } ?? (near.count == 1 ? near[0] : nil)
+        let chosen = overrides.waypoints.first {
+            $0.sourceName == mark.name && close($0, latitude: mark.latitude, longitude: mark.longitude)
+        }
         if let name = chosen?.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
             return name
         }
@@ -803,15 +804,10 @@ enum RouteFacts {
         _ overrides: RouteFactOverrides,
         progress: RouteWaypointProgress
     ) -> Int? {
-        let named = overrides.waypoints.indices.filter { index in
+        overrides.waypoints.indices.first { index in
             let item = overrides.waypoints[index]
             return item.sourceName == progress.name && close(item, latitude: progress.latitude, longitude: progress.longitude)
         }
-        if let index = named.first { return index }
-        let near = overrides.waypoints.indices.filter { index in
-            close(overrides.waypoints[index], latitude: progress.latitude, longitude: progress.longitude)
-        }
-        return near.count == 1 ? near[0] : nil
     }
 
     private static func close(

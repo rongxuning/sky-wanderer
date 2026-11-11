@@ -399,20 +399,20 @@ struct OfflineRouteMap: UIViewRepresentable {
                 tileEpoch: tileEpoch,
                 map: map
             )
-            return
-        }
-        if coordinator.checkpointKey != checkpointKey {
-            coordinator.replaceCheckpoints(checkpoints, on: map)
-        }
-        if coordinator.showsKilometers != showsKilometerMarkers {
-            coordinator.setKilometers(showsKilometerMarkers, points: points, on: map)
-        }
-        if coordinator.tileEpoch != tileEpoch {
-            coordinator.tileEpoch = tileEpoch
-            coordinator.replaceTiles(on: map)
-        }
-        if abs(coordinator.appliedMultiplier - zoomMultiplier) > 0.02 {
-            coordinator.apply(multiplier: zoomMultiplier, map: map)
+        } else {
+            if coordinator.checkpointKey != checkpointKey {
+                coordinator.replaceCheckpoints(checkpoints, on: map)
+            }
+            if coordinator.showsKilometers != showsKilometerMarkers {
+                coordinator.setKilometers(showsKilometerMarkers, points: points, on: map)
+            }
+            if coordinator.tileEpoch != tileEpoch {
+                coordinator.tileEpoch = tileEpoch
+                coordinator.replaceTiles(on: map)
+            }
+            if abs(coordinator.appliedMultiplier - zoomMultiplier) > 0.02 {
+                coordinator.apply(multiplier: zoomMultiplier, map: map)
+            }
         }
         let inset = max(0, legalBottomInset)
         if abs(map.layoutMargins.bottom - inset) > 0.5 {
