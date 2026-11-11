@@ -671,33 +671,44 @@ struct PlannedRoute: Identifiable, Hashable {
 /// A missing field means “use the track-computed value”.
 /// Segment and cumulative numbers are independent: saving one does not change the other.
 /// Clearing a field removes only that override. Nothing here is written back to the GPX file.
+/// `finish` is the synthetic 终点 card. It is not one of `waypoints`, so a real point named 终点 stays separate.
 struct RouteFactOverrides: Codable, Hashable {
     var totals: RouteTotalOverrides?
     var waypoints: [RouteWaypointFactOverride]
+    var finish: RouteFinishFactOverride?
 
-    init(totals: RouteTotalOverrides? = nil, waypoints: [RouteWaypointFactOverride] = []) {
+    init(
+        totals: RouteTotalOverrides? = nil,
+        waypoints: [RouteWaypointFactOverride] = [],
+        finish: RouteFinishFactOverride? = nil
+    ) {
         self.totals = totals
         self.waypoints = waypoints
+        self.finish = finish
     }
 
     var isEmpty: Bool {
-        (totals == nil || totals?.isEmpty == true) && waypoints.allSatisfy(\.isEmpty)
+        (totals == nil || totals?.isEmpty == true)
+            && waypoints.allSatisfy(\.isEmpty)
+            && (finish == nil || finish?.isEmpty == true)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case totals, waypoints
+        case totals, waypoints, finish
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         totals = try container.decodeIfPresent(RouteTotalOverrides.self, forKey: .totals)
         waypoints = try container.decodeIfPresent([RouteWaypointFactOverride].self, forKey: .waypoints) ?? []
+        finish = try container.decodeIfPresent(RouteFinishFactOverride.self, forKey: .finish)
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(totals, forKey: .totals)
         try container.encode(waypoints, forKey: .waypoints)
+        try container.encodeIfPresent(finish, forKey: .finish)
     }
 }
 
@@ -729,6 +740,24 @@ struct RouteWaypointFactOverride: Codable, Hashable {
 
     var isEmpty: Bool {
         name == nil && cutoff == nil
+            && segmentDistanceMeters == nil && segmentAscentMeters == nil && segmentDescentMeters == nil
+            && cumulativeDistanceMeters == nil && cumulativeAscentMeters == nil && cumulativeDescentMeters == nil
+    }
+}
+
+/// Edits for the synthetic 终点 card. One slot per route, with no name: the title stays 终点.
+/// A waypoint override still matches `sourceName` plus coordinates and never reads this slot.
+struct RouteFinishFactOverride: Codable, Hashable {
+    var cutoff: String? = nil
+    var segmentDistanceMeters: Double? = nil
+    var segmentAscentMeters: Double? = nil
+    var segmentDescentMeters: Double? = nil
+    var cumulativeDistanceMeters: Double? = nil
+    var cumulativeAscentMeters: Double? = nil
+    var cumulativeDescentMeters: Double? = nil
+
+    var isEmpty: Bool {
+        cutoff == nil
             && segmentDistanceMeters == nil && segmentAscentMeters == nil && segmentDescentMeters == nil
             && cumulativeDistanceMeters == nil && cumulativeAscentMeters == nil && cumulativeDescentMeters == nil
     }
