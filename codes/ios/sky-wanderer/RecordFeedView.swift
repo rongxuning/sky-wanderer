@@ -155,142 +155,17 @@ struct RecordFeedView: View {
     }
 }
 
-/// Analysis tab. Same summary the records segment used to show, with no page title.
+/// Analysis tab. No page title. Opening the tab still imports from Apple Health once.
 struct AnalysisPage: View {
     @EnvironmentObject private var app: PhoneAppState
 
     var body: some View {
-        RecordStatsPage()
+        AnalysisBoard()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(SkyTheme.Color.grouped)
             .task {
                 await app.importFromApple()
             }
-    }
-}
-
-private struct RecordStatsPage: View {
-    @EnvironmentObject private var app: PhoneAppState
-    @State private var window: StatsWindow = .week
-
-    private var stats: TrainingStats {
-        app.stats(for: window)
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            periodSwitcher
-                .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                .padding(.top, SkyTheme.Spacing.related)
-                .padding(.bottom, SkyTheme.Spacing.screenInset)
-                .frame(maxWidth: .infinity)
-                .background(SkyTheme.Color.grouped)
-                .zIndex(1)
-            ScrollView {
-                statsGrid
-                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                    .padding(.bottom, SkyTheme.Spacing.section)
-            }
-            .scrollIndicators(.hidden)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var periodSwitcher: some View {
-        HStack(spacing: 4) {
-            ForEach(StatsWindow.allCases) { item in
-                let selected = window == item
-                Button {
-                    window = item
-                } label: {
-                    Text(item.rawValue)
-                        .font(SkyTheme.Font.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(selected ? SkyTheme.Color.onPrimary : SkyTheme.Color.secondary)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 36)
-                        .background {
-                            if selected {
-                                Capsule().fill(SkyTheme.Color.primary)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.rawValue)
-                .accessibilityAddTraits(selected ? .isSelected : [])
-            }
-        }
-        .padding(4)
-        .background(SkyTheme.Color.card, in: Capsule(style: .continuous))
-        .animation(.easeInOut(duration: 0.18), value: window)
-    }
-
-    private var statsGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
-            alignment: .leading,
-            spacing: SkyTheme.Spacing.screenInset
-        ) {
-            cell("总距离", distanceText)
-            cell("平均配速", RecordCardText.pace(stats.averagePaceSecPerKm))
-            cell("平均心率", Format.integer(stats.averageHeartRate))
-            cell("总爬升", metersText(stats.elevationGainMeters))
-            cell("平均步频", Format.integer(stats.averageCadence))
-            cell("平均步幅", strideText)
-            cell("总负荷", loadText)
-            cell("训练评分", scoreText)
-        }
-        .padding(SkyTheme.Spacing.cardPadding)
-        .background(SkyTheme.Color.card, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
-        .shadow(
-            color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
-            radius: SkyTheme.Shadow.card.radius,
-            y: SkyTheme.Shadow.card.y
-        )
-    }
-
-    private func cell(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(SkyTheme.Font.title3)
-                .fontWeight(.bold)
-                .foregroundStyle(SkyTheme.Color.ink)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(title)
-                .font(SkyTheme.Font.caption)
-                .foregroundStyle(SkyTheme.Color.secondary)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var distanceText: String {
-        guard stats.distanceMeters > 1 else { return "—" }
-        return String(format: "%.1f km", stats.distanceMeters / 1000)
-    }
-
-    private func metersText(_ meters: Double) -> String {
-        guard meters > 0 else { return "—" }
-        return "\(Int(meters.rounded())) m"
-    }
-
-    private var strideText: String {
-        guard stats.averageStrideMeters > 0 else { return "—" }
-        return "\(Int((stats.averageStrideMeters * 100).rounded())) cm"
-    }
-
-    private var loadText: String {
-        guard stats.totalSessionLoad > 0 else { return "—" }
-        return String(Int(stats.totalSessionLoad.rounded()))
-    }
-
-    private var scoreText: String {
-        guard stats.trainingScore > 0 else { return "—" }
-        return String(Int(stats.trainingScore.rounded()))
     }
 }
 
