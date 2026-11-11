@@ -44,6 +44,15 @@ check(oldRoute.creator == "阿宁", "old creator")
 check(oldRoute.waypoints.isEmpty, "old waypoints default to empty")
 check(oldRoute.gpxFilename == nil, "old file reference defaults to nil")
 check(oldRoute.importedAt == nil, "old import time stays nil")
+check(oldRoute.cutoffResolved == false, "old route has not read a cutoff")
+
+let legacyPoint = try! JSONDecoder().decode(
+    RouteWaypoint.self,
+    from: Data("{\"name\":\"CP1\",\"latitude\":1,\"longitude\":2}".utf8)
+)
+check(legacyPoint.name == "CP1", "old waypoint name")
+check(legacyPoint.elevation == nil, "old waypoint elevation stays nil")
+check(legacyPoint.cutoff == nil, "old waypoint cutoff stays nil")
 
 let round = SavedRoute(
     id: "new",
@@ -62,6 +71,20 @@ check(roundAgain.waypoints.first?.longitude == 2, "round trip longitude")
 check(roundAgain.waypoints.first?.elevation == 9, "round trip elevation")
 check(roundAgain.gpxFilename == "gpx/new.gpx", "round trip file name")
 check(roundAgain.points.count == 2, "round trip points")
+check(roundAgain.waypoints.first?.cutoff == nil, "round trip without a cutoff stays nil")
+check(roundAgain.cutoffResolved == false, "round trip defaults cutoff unresolved")
+
+let timed = SavedRoute(
+    id: "timed",
+    name: "时",
+    points: [point(1, 2, 3)],
+    kind: .gpx,
+    waypoints: [RouteWaypoint(name: "CP1", latitude: 1, longitude: 2, elevation: 9, cutoff: "08:30")],
+    cutoffResolved: true
+)
+let timedAgain = try! JSONDecoder().decode(SavedRoute.self, from: JSONEncoder().encode(timed))
+check(timedAgain.waypoints.first?.cutoff == "08:30", "round trip keeps a cutoff")
+check(timedAgain.cutoffResolved, "round trip keeps cutoff resolved")
 
 let climb = [point(0, 0, 0), point(0, 0.01, 10), point(0, 0.02, 4), point(0, 0.03, 8)]
 near(RouteStats.ascent(climb), 14, 0.001, "ascent")
@@ -347,6 +370,275 @@ alreadyImported.routes = [savedRoute(id: "user-9", name: "导入路线")]
 check(alreadyImported.retireSeededSampleRoute().isEmpty, "no seed file when the user already imported")
 check(alreadyImported.routes.map(\.id) == ["user-9"], "retire does not insert a sample beside a user route")
 check(alreadyImported.sampleRouteSeeded, "flag is set so a later launch cannot insert the sample")
+
+func expectCutoff(_ text: String, _ expected: String?, _ message: String, bare: Bool = false) {
+    let actual = bare
+        ? RouteCutoff.parse(notes: [], bareTimes: [text])
+        : RouteCutoff.parse(notes: [text])
+    check(actual == expected, "\(message): \(actual ?? "nil") != \(expected ?? "nil")")
+}
+
+expectCutoff("关门时间：08:00", "08:00", "colon cutoff")
+expectCutoff("关门时间:8:05", "08:05", "single hour digit")
+expectCutoff("关门时间：１４：３０", "14:30", "fullwidth digits")
+expectCutoff("关门 14：30", "14:30", "fullwidth colon")
+expectCutoff("关门时间14点30分", "14:30", "点分")
+expectCutoff("关门时间 9点半", "09:30", "半")
+expectCutoff("关门时间下午2:30", "14:30", "afternoon")
+expectCutoff("关门时间：下午三点半", "15:30", "chinese afternoon")
+expectCutoff("关门时间十五点三十分", "15:30", "chinese hour")
+expectCutoff("关门时间：次日1:05", "次日 01:05", "next day")
+expectCutoff("关门时间 次日 1:20", "次日 01:20", "next day with space")
+expectCutoff("14:30关门", "14:30", "time before keyword")
+expectCutoff("关门时间12:00-18:30", "18:30", "range uses the closing time")
+expectCutoff("关门时间10:00至14:30", "14:30", "至 range")
+expectCutoff("关门时间大约 14:30", "14:30", "大约")
+expectCutoff("关门时刻 23:59:30", "23:59:30", "seconds stay when they are not zero")
+expectCutoff("关门时间：08:00:00", "08:00", "zero seconds are dropped")
+expectCutoff("关门时间 24:00", "24:00", "24:00 is kept")
+expectCutoff("Cut-off time: 7:05", "07:05", "english cut-off")
+expectCutoff("CUTOFF 18:00", "18:00", "english cutoff")
+expectCutoff("关门时间待定", nil, "no time")
+expectCutoff("关门", nil, "keyword alone")
+expectCutoff("补给：水", nil, "unrelated note")
+expectCutoff("集合时间 6:00", nil, "a time without 关门 is not a cutoff")
+expectCutoff("开门 6:00", nil, "open time is not a cutoff")
+expectCutoff("关门时间 25:00", nil, "hour out of range")
+expectCutoff("关门时间 12:99", nil, "minute out of range")
+expectCutoff("下午12:00关门", "12:00", "noon stays 12")
+expectCutoff("14:30", nil, "bare time in a note is not a cutoff")
+expectCutoff("14:30", "14:30", "element named cutoff can be a bare time", bare: true)
+expectCutoff("10:00-16:00", "16:00", "bare range uses the end", bare: true)
+
+let cutoffTrack = parse("""
+<gpx creator="Sky">
+  <wpt lat="0" lon="0"><ele>1</ele><time>2024-11-11T00:00:00Z</time><name>起终点</name><cmt>关门时间：08:00</cmt></wpt>
+  <wpt lat="0" lon="0.01"><name>CP1</name><cmt>补给</cmt><desc>关门时间：下午2:30</desc></wpt>
+  <wpt lat="0" lon="0.02"><name>CP2</name><desc>无关门</desc><extensions><cutoff>16:00</cutoff></extensions></wpt>
+  <trk><name>关门</name><trkseg>
+    <trkpt lat="0" lon="0"><ele>100</ele></trkpt>
+    <trkpt lat="0" lon="0.01"><ele>150</ele><name>中</name><cmt>关门 9点半</cmt></trkpt>
+    <trkpt lat="0" lon="0.02"><ele>120</ele></trkpt>
+    <trkpt lat="0" lon="0.03"><ele>180</ele></trkpt>
+  </trkseg></trk>
+</gpx>
+""")
+check(cutoffTrack.count == 1, "cutoff file is one track")
+check(cutoffTrack[0].waypoints.map(\.name) == ["起终点", "中", "CP1", "CP2"], "cutoff names \(cutoffTrack[0].waypoints.map(\.name))")
+check(cutoffTrack[0].waypoints.map(\.cutoff) == ["08:00", "09:30", "14:30", "16:00"], "cutoff values \(String(describing: cutoffTrack[0].waypoints.map(\.cutoff)))")
+let orderedCutoff = RouteCheckpoints.ordered(cutoffTrack[0].waypoints, along: cutoffTrack[0].points)
+check(orderedCutoff.map(\.cutoff) == ["08:00", "09:30", "14:30", "16:00"], "ordering keeps cutoff")
+
+let noTime = parse("""
+<gpx><wpt lat="1" lon="1"><name>点</name><time>2024-01-01T08:00:00Z</time><cmt>集合时间 6:00</cmt></wpt>
+<trk><name>无</name><trkseg>
+  <trkpt lat="1" lon="1"><ele>1</ele></trkpt>
+  <trkpt lat="1" lon="2"><ele>2</ele></trkpt>
+</trkseg></trk></gpx>
+""")
+check(noTime.first?.waypoints.count == 1, "named waypoint still imports")
+check(noTime.first?.waypoints.first?.cutoff == nil, "gps time and 集合时间 are not a cutoff")
+
+let lineForProgress = [point(0, 0, 100), point(0, 0.01, 150), point(0, 0.02, 120), point(0, 0.03, 180)]
+let progress = RouteCheckpoints.progress(
+    waypoints: [
+        RouteWaypoint(name: "终", latitude: 0, longitude: 0.03, elevation: nil, cutoff: nil),
+        RouteWaypoint(name: "起", latitude: 0, longitude: 0, elevation: nil, cutoff: "08:00"),
+        RouteWaypoint(name: "泉", latitude: 0, longitude: 0.01, elevation: nil, cutoff: "  "),
+    ],
+    points: lineForProgress
+)
+check(progress.map(\.name) == ["起", "泉", "终"], "progress follows the track \(progress.map(\.name))")
+check(progress[0].cutoff == "08:00", "progress keeps cutoff")
+check(progress[1].cutoff == nil, "blank cutoff is nil")
+check(progress[2].cutoff == nil, "missing cutoff is nil")
+near(progress[0].distanceMeters, 0, 0.001, "start distance")
+near(progress[0].ascentMeters, 0, 0.001, "start ascent")
+near(progress[0].descentMeters, 0, 0.001, "start descent")
+let middleSlice = Array(lineForProgress[0...1])
+near(progress[1].distanceMeters, RouteStats.distance(middleSlice), 0.01, "middle distance")
+near(progress[1].ascentMeters, RouteStats.ascent(middleSlice), 0.001, "middle ascent")
+near(progress[1].descentMeters, RouteStats.descent(middleSlice), 0.001, "middle descent")
+near(progress[2].distanceMeters, RouteStats.distance(lineForProgress), 0.01, "end distance matches the totals")
+near(progress[2].ascentMeters, RouteStats.ascent(lineForProgress), 0.001, "end ascent matches the totals")
+near(progress[2].descentMeters, RouteStats.descent(lineForProgress), 0.001, "end descent matches the totals")
+check(progress[2].ascentMeters > progress[1].ascentMeters, "later point keeps the earlier climb")
+let onlySpring = RouteCheckpoints.progress(
+    waypoints: [RouteWaypoint(name: "泉", latitude: 0.0002, longitude: 0.01, elevation: 999)],
+    points: lineForProgress
+)
+check(onlySpring.map(\.name) == ["泉"], "progress does not invent start or finish")
+check(RouteCheckpoints.progress(waypoints: [], points: lineForProgress).isEmpty, "no waypoints means no progress rows")
+let dropped = RouteCheckpoints.progress(
+    waypoints: [RouteWaypoint(name: "坏", latitude: 999, longitude: 0, elevation: nil, cutoff: "01:00")],
+    points: lineForProgress
+)
+check(dropped.isEmpty, "an invalid waypoint is not a card")
+
+let backfillXML = """
+<gpx creator="Sky">
+  <wpt lat="0" lon="0"><name>起</name><cmt>关门时间：08:00</cmt></wpt>
+  <wpt lat="0" lon="0.02"><name>终</name><desc>补给点</desc></wpt>
+  <trk><name>回填</name><trkseg>
+    <trkpt lat="0" lon="0"><ele>1</ele></trkpt>
+    <trkpt lat="0" lon="0.01"><ele>4</ele></trkpt>
+    <trkpt lat="0" lon="0.02"><ele>2</ele></trkpt>
+  </trkseg></trk>
+</gpx>
+"""
+let backfillParsed = parse(backfillXML)
+check(backfillParsed[0].waypoints.map(\.cutoff) == ["08:00", nil], "parsed backfill cutoffs \(String(describing: backfillParsed[0].waypoints.map(\.cutoff)))")
+let backfillName = RouteGPXStore.save(Data(backfillXML.utf8), routeID: "cutoff-backfill")
+var stripped = backfillParsed[0].waypoints
+stripped[0].cutoff = nil
+var backfillRoutes = [
+    SavedRoute(
+        id: "cutoff-backfill",
+        name: "改名",
+        points: backfillParsed[0].points,
+        kind: .gpx,
+        waypoints: stripped,
+        gpxFilename: backfillName
+    )
+]
+RouteGPXStore.mergeCutoffs(into: &backfillRoutes)
+check(backfillRoutes[0].waypoints[0].cutoff == "08:00", "backfill copies cutoff from the file")
+check(backfillRoutes[0].waypoints[1].cutoff == nil, "backfill does not invent a cutoff")
+check(backfillRoutes[0].waypoints[0].name == "起", "backfill keeps the saved name")
+check(backfillRoutes[0].cutoffResolved, "a read file is resolved")
+check(backfillRoutes[0].points.count == 3, "backfill does not replace the track")
+RouteGPXStore.delete(filename: backfillName)
+RouteGPXStore.mergeCutoffs(into: &backfillRoutes)
+check(backfillRoutes[0].waypoints[0].cutoff == "08:00", "a resolved route is not parsed again")
+
+var renamedPoint = stripped
+renamedPoint[0].name = "起点"
+renamedPoint[0].cutoff = nil
+let renamedFile = RouteGPXStore.save(Data(backfillXML.utf8), routeID: "cutoff-rename")
+var renamedRoutes = [
+    SavedRoute(
+        id: "cutoff-rename",
+        name: "回填",
+        points: backfillParsed[0].points,
+        kind: .gpx,
+        waypoints: renamedPoint,
+        gpxFilename: renamedFile
+    )
+]
+RouteGPXStore.mergeCutoffs(into: &renamedRoutes)
+check(renamedRoutes[0].waypoints[0].cutoff == "08:00", "same place still receives cutoff when the name differs")
+check(renamedRoutes[0].waypoints[0].name == "起点", "a different saved name is kept")
+RouteGPXStore.delete(filename: renamedFile)
+
+let emptyFile = RouteGPXStore.save(Data(backfillXML.utf8), routeID: "cutoff-empty")
+var emptyRoutes = [
+    SavedRoute(
+        id: "cutoff-empty",
+        name: "回填",
+        points: backfillParsed[0].points,
+        kind: .gpx,
+        gpxFilename: emptyFile
+    )
+]
+RouteGPXStore.mergeCutoffs(into: &emptyRoutes)
+check(emptyRoutes[0].waypoints.isEmpty, "backfill does not add waypoints")
+check(emptyRoutes[0].cutoffResolved, "a file with no saved waypoints is still resolved")
+RouteGPXStore.delete(filename: emptyFile)
+
+let plainXML = """
+<gpx><wpt lat="0" lon="0"><name>泉</name><desc>补给点</desc></wpt>
+<trk><name>无门</name><trkseg>
+  <trkpt lat="0" lon="0"><ele>1</ele></trkpt>
+  <trkpt lat="0" lon="0.02"><ele>2</ele></trkpt>
+</trkseg></trk></gpx>
+"""
+let plainName = RouteGPXStore.save(Data(plainXML.utf8), routeID: "cutoff-none")
+let plainParsed = parse(plainXML)
+var plainRoutes = [
+    SavedRoute(
+        id: "cutoff-none",
+        name: "无门",
+        points: plainParsed[0].points,
+        kind: .gpx,
+        waypoints: [RouteWaypoint(name: "泉", latitude: 0, longitude: 0, elevation: nil)],
+        gpxFilename: plainName
+    )
+]
+RouteGPXStore.mergeCutoffs(into: &plainRoutes)
+check(plainRoutes[0].waypoints[0].cutoff == nil, "a file without 关门 stays blank")
+check(plainRoutes[0].cutoffResolved, "a file without 关门 is not read on every launch")
+RouteGPXStore.delete(filename: plainName)
+
+var kept = plainRoutes
+kept[0].cutoffResolved = false
+kept[0].waypoints[0].cutoff = "09:00"
+let keptName = RouteGPXStore.save(Data(backfillXML.utf8), routeID: "cutoff-keep")
+kept[0].gpxFilename = keptName
+kept[0].points = backfillParsed[0].points
+RouteGPXStore.mergeCutoffs(into: &kept)
+check(kept[0].waypoints[0].cutoff == "09:00", "an existing cutoff is not replaced")
+RouteGPXStore.delete(filename: keptName)
+
+let splitXML = """
+<gpx creator="Sky">
+  <wpt lat="0" lon="0"><name>甲</name><cmt>关门 08:00</cmt></wpt>
+  <wpt lat="1" lon="1"><name>乙</name><cmt>关门 18:00</cmt></wpt>
+  <trk><name>甲线</name><trkseg>
+    <trkpt lat="0" lon="0"><ele>1</ele></trkpt>
+    <trkpt lat="0" lon="0.01"><ele>2</ele></trkpt>
+  </trkseg></trk>
+  <trk><name>乙线</name><trkseg>
+    <trkpt lat="1" lon="1"><ele>3</ele></trkpt>
+    <trkpt lat="1" lon="1.01"><ele>4</ele></trkpt>
+  </trkseg></trk>
+</gpx>
+"""
+let splitParsed = parse(splitXML)
+check(splitParsed.count == 2, "two tracks for cutoff backfill")
+let splitName = RouteGPXStore.save(Data(splitXML.utf8), routeID: "cutoff-split")
+func cleared(_ waypoints: [RouteWaypoint]) -> [RouteWaypoint] {
+    waypoints.map { waypoint in
+        var copy = waypoint
+        copy.cutoff = nil
+        return copy
+    }
+}
+var splitRoutes = [
+    SavedRoute(
+        id: "cutoff-split-a",
+        name: "甲线",
+        points: splitParsed[0].points,
+        kind: .gpx,
+        waypoints: cleared(splitParsed[0].waypoints),
+        gpxFilename: splitName
+    ),
+    SavedRoute(
+        id: "cutoff-split-b",
+        name: "乙线",
+        points: splitParsed[1].points,
+        kind: .gpx,
+        waypoints: cleared(splitParsed[1].waypoints),
+        gpxFilename: splitName
+    )
+]
+RouteGPXStore.mergeCutoffs(into: &splitRoutes)
+check(splitRoutes[0].waypoints.map(\.cutoff) == ["08:00"], "first track keeps its own cutoff \(String(describing: splitRoutes[0].waypoints.map(\.cutoff)))")
+check(splitRoutes[1].waypoints.map(\.cutoff) == ["18:00"], "second track keeps its own cutoff \(String(describing: splitRoutes[1].waypoints.map(\.cutoff)))")
+RouteGPXStore.delete(filename: splitName)
+
+var missingFile = [
+    SavedRoute(
+        id: "cutoff-missing",
+        name: "缺",
+        points: backfillParsed[0].points,
+        kind: .gpx,
+        waypoints: [RouteWaypoint(name: "起", latitude: 0, longitude: 0, elevation: nil)],
+        gpxFilename: "gpx/cutoff-missing.gpx"
+    )
+]
+RouteGPXStore.mergeCutoffs(into: &missingFile)
+check(missingFile[0].waypoints[0].cutoff == nil, "a missing file does not invent a cutoff")
+check(missingFile[0].cutoffResolved == false, "a missing file can be read later")
 
 if failures.isEmpty {
     print("route-checkpoint-check ok")

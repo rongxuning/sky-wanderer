@@ -658,12 +658,15 @@ struct PlannedRoute: Identifiable, Hashable {
 }
 
 /// A named point from a GPX file. `elevation` is the GPX `<ele>` in meters.
+/// `cutoff` is the 关门时间 read from the point's comment or description. Nil when the file has none.
 /// Old saves have no waypoint list and decode as an empty array.
+/// A waypoint saved before cutoff existed decodes with `cutoff == nil`.
 struct RouteWaypoint: Codable, Hashable {
     var name: String
     var latitude: Double
     var longitude: Double
     var elevation: Double?
+    var cutoff: String? = nil
 }
 
 /// A route kept on this device. There is no server.
@@ -681,6 +684,9 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     var waypoints: [RouteWaypoint]
     /// Original GPX relative to Application Support, `gpx/<id>.gpx`. Nil when this route has no stored file.
     var gpxFilename: String?
+    /// True after the stored GPX has been read for 关门时间.
+    /// Older saves decode as false, so the next launch can fill `RouteWaypoint.cutoff` without a new import.
+    var cutoffResolved: Bool
 
     enum Kind: String, Codable {
         /// The one running route the phone editor can change.
@@ -699,7 +705,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         importedAt: Date? = nil,
         creator: String = "",
         waypoints: [RouteWaypoint] = [],
-        gpxFilename: String? = nil
+        gpxFilename: String? = nil,
+        cutoffResolved: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -709,6 +716,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         self.creator = creator
         self.waypoints = waypoints
         self.gpxFilename = gpxFilename
+        self.cutoffResolved = cutoffResolved
     }
 
     var creatorLabel: String {
@@ -717,7 +725,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, points, kind, importedAt, creator, waypoints, gpxFilename
+        case id, name, points, kind, importedAt, creator, waypoints, gpxFilename, cutoffResolved
     }
 
     init(from decoder: Decoder) throws {
@@ -730,6 +738,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         creator = try container.decodeIfPresent(String.self, forKey: .creator) ?? ""
         waypoints = try container.decodeIfPresent([RouteWaypoint].self, forKey: .waypoints) ?? []
         gpxFilename = try container.decodeIfPresent(String.self, forKey: .gpxFilename)
+        cutoffResolved = try container.decodeIfPresent(Bool.self, forKey: .cutoffResolved) ?? false
     }
 
     func encode(to encoder: Encoder) throws {
@@ -742,6 +751,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         try container.encode(creator, forKey: .creator)
         try container.encode(waypoints, forKey: .waypoints)
         try container.encodeIfPresent(gpxFilename, forKey: .gpxFilename)
+        try container.encode(cutoffResolved, forKey: .cutoffResolved)
     }
 }
 
