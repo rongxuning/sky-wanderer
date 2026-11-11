@@ -45,9 +45,15 @@ extension Database {
            workouts.contains(where: { $0.healthKitUUID == healthID }) {
             return false
         }
+        var record = record
+        if RecordMotivation.storedLine(record.motivationLine) == nil,
+           let previous = workouts.first(where: { $0.id == record.id }) {
+            record.motivationLine = RecordMotivation.storedLine(previous.motivationLine)
+        }
         workouts.removeAll { $0.id == record.id }
         workouts.append(record)
         workouts.sort { $0.start > $1.start }
+        RecordMotivation.assignMissing(&workouts)
         return true
     }
 

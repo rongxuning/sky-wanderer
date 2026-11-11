@@ -46,6 +46,7 @@ final class PhoneAppState: ObservableObject {
             loaded = fresh
         }
         SessionContinuity.reconcile(&loaded, keychain: SessionKeychain.read())
+        RecordMotivation.assignMissing(&loaded.workouts)
         database = loaded
         AppFiles.save(loaded, name: filename)
         for name in retiredSampleFiles {

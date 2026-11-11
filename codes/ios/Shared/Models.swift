@@ -364,6 +364,9 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     /// Lap or segment marks. Empty when this file was saved before laps were stored,
     /// or when the workout had none. Equal 1 km laps override the distance curve.
     var lapMarks: [WorkoutLapMark] = []
+    /// List-card line already chosen for this workout.
+    /// Missing, or blank, in phone files saved before lines were stored: the row is still unassigned.
+    var motivationLine: String? = nil
 
     /// Wall-clock span from `start` to `end`, including any pauses.
     var elapsedDuration: TimeInterval { end.timeIntervalSince(start) }
@@ -569,7 +572,7 @@ extension WorkoutRecord {
         case route, splits, heartRate, cadenceSeries, paceSeries
         case stride, elevation, groundContact, power, verticalOscillation
         case origin, healthKitUUID, trainingDurationSeconds, conditions, startPlace
-        case distanceProgress, pauseIntervals, lapMarks
+        case distanceProgress, pauseIntervals, lapMarks, motivationLine
     }
 
     init(from decoder: Decoder) throws {
@@ -601,6 +604,12 @@ extension WorkoutRecord {
         distanceProgress = try container.decodeIfPresent([SeriesPoint].self, forKey: .distanceProgress) ?? []
         pauseIntervals = try container.decodeIfPresent([WorkoutPause].self, forKey: .pauseIntervals) ?? []
         lapMarks = try container.decodeIfPresent([WorkoutLapMark].self, forKey: .lapMarks) ?? []
+        if let raw = try container.decodeIfPresent(String.self, forKey: .motivationLine) {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            motivationLine = trimmed.isEmpty ? nil : trimmed
+        } else {
+            motivationLine = nil
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -632,6 +641,7 @@ extension WorkoutRecord {
         try container.encode(distanceProgress, forKey: .distanceProgress)
         try container.encode(pauseIntervals, forKey: .pauseIntervals)
         try container.encode(lapMarks, forKey: .lapMarks)
+        try container.encodeIfPresent(motivationLine, forKey: .motivationLine)
     }
 }
 
@@ -1097,40 +1107,452 @@ enum RecordCardSwipe {
     }
 }
 
-/// One short line per workout on the record list. The choice is a pure function of a
-/// stable id, so a refresh does not rotate it. `Hasher` is salted per process and is not used.
+/// Short lines for the record list. A stored line stays with that workout.
+/// A new row takes one unused library line. The pick is FNV-1a over the Health id,
+/// or the workout id when there is no Health id, among the lines not yet stored.
+/// `Hasher` is salted per process and is not used.
 enum RecordMotivation {
     static let lines: [String] = [
-        "山高路远，行则将至",
-        "慢慢跑，也能跑很远",
-        "把今天跑完，就是胜利",
-        "每一步都算数",
-        "出发，就是最好的开始",
-        "路在脚下，心在远方",
-        "不怕走得慢，只怕停下",
-        "风过林间，步履更稳",
-        "今天的路，是明天的风景",
-        "走完这一段，再看远方",
-        "山还在，人就继续走",
-        "先迈出去，路会打开",
+        "晨光只沾到半面山坡",
+        "露水还挂在草叶尖上",
+        "天色刚亮路就已经醒",
+        "第一缕风从谷口过来",
+        "阳光顺着树缝往下漏",
+        "雾气贴着河面慢慢移",
+        "东边的云先被照亮了",
+        "影子还短人已经出门",
+        "新鞋印留在湿润土上",
+        "脚掌躲开松动的石头",
+        "袜口进了一点点细沙",
+        "脚趾还记得那块尖石",
+        "泥点溅到小腿的外侧",
+        "鞋带在第三孔重新系好",
+        "脚热起来风就刚好",
+        "落脚处选在草根旁边",
+        "松枝擦过帽檐的边缘",
+        "桦树皮在光里发白",
+        "枯叶在脚下沙沙地响",
+        "树根横出来当成台阶",
+        "林荫把热气挡在外面",
+        "一根藤挂在路的左侧",
+        "高处的鸟巢并不受惊",
+        "树脂气味一点点近了",
+        "溪声比人先到达桥边",
+        "跳石只有一块也够用",
+        "水面反光晃到眼睛",
+        "浅滩的水没过鞋边",
+        "泉眼旁边的石头冰手",
+        "河风比林里更直一些",
+        "桥板响了一声人过去",
+        "水雾沾在眉毛上边",
+        "下游的弯还能看见",
+        "石壁把风收成一条缝",
+        "岩层的纹路横着走",
+        "青苔告诉这里常年阴",
+        "碎石路要看清落点",
+        "圆石头踩上去容易滑",
+        "崖边的土很松要靠里",
+        "鞍部的风换了方向",
+        "岭脊细得只容一人",
+        "远处积雪还不着急",
+        "坡度缓下来肩可以松",
+        "上到能看见下一条沟",
+        "山梁像一条安静的线",
+        "拐过岩壁风突然小了",
+        "这段碎石终于到头",
+        "海拔是一点点挪上去",
+        "回头时云已经低于脚",
+        "帽檐压低只看前方三步",
+        "口袋里的纸条还是干的",
+        "水袋轻了步子仍在",
+        "手心的盐是路留下的",
+        "背包不再左右晃动",
+        "肩带勒过的地方松一松",
+        "手腕上的汗已经凉了",
+        "呼吸比刚才更长一点",
+        "心跳稳了步幅自己出来",
+        "话先留到平路再讲",
+        "旁边的影子不必去追",
+        "这一公里交给双脚",
+        "跑过树影再回到土路",
+        "平地用来把气喘匀",
+        "弯道之后把视线放开",
+        "草地比石头更吃力",
+        "晒热的石板有点烫脚",
+        "阴坡里步子可以缓",
+        "开阔处天显得更低",
+        "分叉口选更安静的那条",
+        "窄路把肩膀收进来",
+        "逆风的一段低下头",
+        "顺风时也不把步子拉开",
+        "雨丝斜着人照直走",
+        "雷在山后脚下仍是干的",
+        "云影从坡上滑过去",
+        "落日把最后的坡照暖",
+        "黄昏的土还带着温",
+        "夜色还早岭线还亮着",
+        "傍晚的风比早晨软",
+        "星子还没出来人已下山",
+        "月色够看清路就行",
+        "今天的弯比昨天熟",
+        "地图上的折线变短了",
+        "路条被汗浸软了边",
+        "旧脚印被新土盖住",
+        "石堆说明有人来过",
+        "木牌的漆已经斑驳",
+        "铁丝网沿着山沟走",
+        "羊肠小道贴着山坡",
+        "田埂跑完就接上土坡",
+        "村口的狗并不追人",
+        "炊烟在很远的地方",
+        "桥下的脚步声会停一下",
+        "里程留在鞋底纹路里",
+        "这一程只和这条沟作伴",
+        "远峰还是蓝的不必追",
+        "下一座山先放在眼里",
+        "把山顶从目光里拿开",
+        "只关心脚下接下来三步",
+        "远处的村子先不靠近",
+        "鹰在头顶转了一圈",
+        "松鼠窜过并不停留",
+        "蝉声把整个午后填满",
+        "草籽沾在袜筒上也无妨",
+        "蒲公英擦着小腿过去",
+        "蕨类挡住半条小路",
+        "蘑菇长在倒木旁边",
+        "野花不采只是路过",
+        "蜘蛛网在晨光里发亮",
+        "落叶盖住的坑绕开",
+        "蚂蚁的队伍让到一边",
+        "蝴蝶停在帽檐上片刻",
+        "山雀换了一拨人还在",
+        "风把尘土从膝前吹走",
+        "云缝里漏下一块光",
+        "雾走了路自己还在",
+        "雨停后石面要踩实",
+        "冰雹并没有下到这边",
+        "潮气贴着裤腿往上",
+        "干草的味道在风里",
+        "泥土是软的步子就沉",
+        "沙地让脚下的节奏变慢",
+        "雪线还在上面人在下面",
+        "霜还没化就先出发",
+        "冰渣还在阴处留着",
+        "开春的泥比寒天更滑",
+        "夏天的林荫值得绕路",
+        "秋叶把路铺成另一种颜色",
+        "冬天的呼气在眼前白一下",
+        "季节换了鞋还是这双",
+        "同一条岭今天重新认识",
+        "去年的标记还在树上",
+        "新踩出来的岔路先不试",
+        "熟悉的弯仍要看脚下",
+        "第一次走就放慢些",
+        "回头的方向留给下山",
+        "上山的时候少说两句",
+        "下山同样把步子放稳",
+        "平路不是用来冲的",
+        "陡坡用更短的步子",
+        "碎石段把眼睛放低",
+        "土路段可以把肩放松",
+        "过桥时脚步放轻一点",
+        "钻林子时低头看藤",
+        "走出林子天就宽了",
+        "进沟里风会小下来",
+        "登到脊上风又大了",
+        "下到谷底再慢慢起来",
+        "沿溪走了很长一段",
+        "离开水声之后更静",
+        "绕开塌方的那一角",
+        "跨过倒在路上的树",
+        "扶一下岩石再继续",
+        "手杖点在稳的地方",
+        "没带杖就双手帮忙平衡",
+        "休息只是站着喝水",
+        "歇半步并不是停住",
+        "站定看一眼然后再迈",
+        "坐下的石头还是温的",
+        "站起来时腿并不沉",
+        "补给放在能看见的侧袋",
+        "帽子摘下来扇了两下",
+        "袖口卷到不挡手腕",
+        "拉链拉开一点来散热",
+        "头巾吸走额上的汗",
+        "眼镜起雾就拿下来",
+        "耳机里什么都不放",
+        "只听自己的脚步和风",
+        "数呼吸比数公里轻松",
+        "先不看还剩下多少路",
+        "这一段的名字叫慢慢",
+        "跑的时候也像在走",
+        "走的时候心并不赶",
+        "徒步把下午拉得很长",
+        "跑步只穿过这片开阔",
+        "两种走法都算在路上",
+        "今天用跑把平地吃掉",
+        "坡上改成走肩就松了",
+        "走跑交替肩更轻松",
+        "步频跟着胸口的起伏",
+        "快慢交给脚下的土路",
+        "别人的脚步在另一条沟",
+        "自己的步子自己最熟",
+        "四下无人也能听清风",
+        "独自一人山就更大",
+        "结伴时把话留短些",
+        "前后错开一小段距离",
+        "等同伴时抬头看云",
+        "被等的那个人也不急",
+        "会合点是那棵歪脖子树",
+        "分开走最后还是同路",
+        "孩子的步子更碎也更欢",
+        "老人的杖点得很稳",
+        "谁快谁慢都不叫一声",
+        "让出路给下山的人",
+        "碰面点个头就过去",
+        "狗在前面轻轻探路",
+        "人在后面跟着脚印",
+        "背包重一点路仍认人",
+        "轻装的时候更要低头",
+        "相机仍留在袋子里",
+        "风景留在行进里看",
+        "拍照的弯先放过去",
+        "记下的是脚的感觉",
+        "回来再讲给别人听",
+        "眼下只把这块路走实",
+        "看看影子就知道早晚",
+        "时间落在影子的长度上",
+        "正午的影缩成一小团",
+        "下午的光变斜之后更软",
+        "早晨的冷留在袖口",
+        "中午的热留在帽檐",
+        "一天就这样被路切开",
+        "每过一个垭口天就不同",
+        "同一座山上下两重天",
+        "阴坡和阳坡差一件衣服",
+        "风口处把帽子按住",
+        "背风的凹地可以喘匀",
+        "暴露的脊线低下身子",
+        "树木突然变矮就快到顶",
+        "草甸开了就知道高了",
+        "石海要一个一个踩",
+        "流石坡上不停留太久",
+        "碎屑在脚下轻轻滑",
+        "大块岩石拿来借力",
+        "岩缝里先不要伸手",
+        "稳的平面才放整只脚",
+        "先用脚掌试探再踩实",
+        "后脚抬起时不带碎石",
+        "拐过碎石膝盖仍轻松",
+        "走过草甸步子自然打开",
+        "手臂掠过身边的草尖",
+        "肩线在风里保持平着",
+        "目光只落在近处的路",
+        "嘴里的气在冷风里白",
+        "舌头顶着上颚并不渴",
+        "口水还够就先不喝",
+        "到泉边再小口补上",
+        "清水要留给后半程",
+        "食物撕开一条小口",
+        "带咸味的更好吃一些",
+        "甜的留到腿软的时候",
+        "吃完擦擦手再往前",
+        "垃圾塞回自己的口袋",
+        "果皮也不留在石头上",
+        "路还是来时的样子",
+        "人过了草会慢慢弹起",
+        "尘土落下就是没人了",
+        "风把泥上的痕迹吹淡",
+        "雨会把地上的鞋印收走",
+        "明天的人看见的是新土",
+        "走路的人只管这个弯",
+        "腿上的累来自刚才的坡",
+        "明天的坡还没到脚下",
+        "此刻的风正在耳边",
+        "这一步是热的下一步还不知道",
+        "脚知道的比眼睛多",
+        "眼睛负责三步之内",
+        "耳朵负责后面有没有人",
+        "鼻子负责松脂和土",
+        "皮肤负责风的方向",
+        "全部感官都在这条路上",
+        "每块石头都有自己的位置",
+        "山把人收成一个小点",
+        "人把山走成一条线",
+        "这条线还没走到头",
+        "土沾在鞋边就算记下",
+        "画到林子边上歇口气",
+        "再从亮处一步步回去",
+        "回家的路也是山的一部分",
+        "门口的石阶算最后一级",
+        "鞋脱下来土还沾着",
+        "袜子上的草籽抖一抖",
+        "水杯空了肩却松了",
+        "两条腿沉得刚刚好",
+        "明天还想再走一条",
+        "今晚先把这条记住",
+        "梦里如果还有坡也不奇怪",
+        "醒来时窗外并没有雾",
+        "山在别处人在屋里",
+        "屋里仍能听见自己的呼吸",
+        "那口气是路上带回来的",
+        "肩上的红印慢慢会褪",
+        "脚上的热要到夜里才散",
+        "窗边的鞋还朝外放着",
+        "下次出门它还认得路",
+        "这条路也认得这双鞋",
+        "如此来回并不喧哗",
+        "山野就喜欢这种来回",
+        "人不多话路就显得长",
+        "话少的时候景更清楚",
+        "看清楚脚下就够了",
+        "多说的话也会被风带走",
+        "被山风卷走的只是热汗",
+        "留下的是还在移动的鞋",
+        "人还在岭上风也在",
+        "脚还抬得起来就往前",
+        "放脚的声音轻得刚好",
+        "轻到只有自己听见",
+        "听见脚步就明白没停",
+        "不停就能遇上前面的光",
+        "光在树和树的中间",
+        "中间刚好够一个人过",
+        "独自穿过时林子很静",
+        "快慢之外人还在路上",
+        "人在就因为脚还踩土",
+        "土是凉的心是稳的",
+        "稳的步子能走很远的弯",
+        "弯多也不换成直线",
+        "直线不属于这座山",
+        "山要的是顺着它的人",
+        "顺着它风也会帮忙",
+        "帮忙的方式是推一下背",
+        "背后的风只轻轻一推",
+        "这里用不着逞快的步子",
+        "用得上的是还能迈的腿",
+        "腿还热路就还没有结束",
+        "路还长着就先不看表",
+        "表上的数字不如石头真实",
+        "那块石头就挡在前面",
+        "前面还有一小段平的",
+        "平的地方把气接上",
+        "接上之后再遇坡也不慌",
+        "从容着走会省一点力",
+        "更远的岭先不去想",
+        "目标小到只剩下一块石头",
+        "过完这块就换下一块",
+        "一块一块天就暗了",
+        "暗了就把头灯留到真正需要",
+        "需要之前天光还够用",
+        "够用的光里把路走完这一截",
+        "这一截有个小小的水洼",
+        "小水洼照出一段云",
+        "云走得慢人也不催它",
+        "不催的步伐最像这条路",
+        "这步伐和山路很合",
     ]
 
-    /// Health id when the row has one; otherwise the stored workout id.
-    /// Import keeps the Health id. Merge keeps the stored id. Either seed survives a refresh.
-    static func line(for workoutID: UUID, healthKitUUID: String? = nil) -> String {
-        let key = WorkoutDenylist.healthIdentity(healthKitUUID) ?? workoutID.uuidString
-        return lines[index(for: key)]
+    private static let lineSet = Set(lines)
+    private static let overflowScenes = [
+        "山径上", "林路边", "石阶旁", "溪岸边", "岭脊上", "谷道里",
+        "松荫下", "风口处", "土路间", "云阶旁", "竹影里", "崖边路",
+    ]
+    private static let overflowPaces = ["慢慢", "从容", "稳步", "轻轻", "安静", "照常"]
+    private static let overflowTails = ["再走", "续行", "前行", "走着"]
+
+    /// Blank text counts as unassigned, including values saved as spaces.
+    static func storedLine(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// FNV-1a over the UTF-8 key. Stable across launches.
+    /// Health id when the row has one; otherwise the stored workout id.
+    /// `avoiding` is the set of lines already stored on other rows.
+    static func line(for workoutID: UUID, healthKitUUID: String? = nil, avoiding used: Set<String> = []) -> String {
+        let key = WorkoutDenylist.healthIdentity(healthKitUUID) ?? workoutID.uuidString
+        return claim(key: key, used: used)
+    }
+
+    /// FNV-1a over the UTF-8 key, folded into the full library. Stable across launches.
     static func index(for key: String) -> Int {
         guard !lines.isEmpty else { return 0 }
+        return Int(fnv(key) % UInt64(lines.count))
+    }
+
+    /// Fills rows that do not yet have a line. Rows that already have one are left as stored.
+    /// Pending rows are ordered by Health id, then workout id, so a new row cannot move the others.
+    static func assignMissing(_ workouts: inout [WorkoutRecord]) {
+        var used = Set<String>()
+        for workout in workouts {
+            if let line = storedLine(workout.motivationLine) {
+                used.insert(line)
+            }
+        }
+        let pending = workouts.indices.filter { storedLine(workouts[$0].motivationLine) == nil }
+            .sorted { left, right in
+                let leftKey = identityKey(workouts[left])
+                let rightKey = identityKey(workouts[right])
+                if leftKey != rightKey { return leftKey < rightKey }
+                return workouts[left].id.uuidString < workouts[right].id.uuidString
+            }
+        for index in pending {
+            let line = claim(key: identityKey(workouts[index]), used: used)
+            workouts[index].motivationLine = line
+            used.insert(line)
+        }
+    }
+
+    private static func identityKey(_ workout: WorkoutRecord) -> String {
+        WorkoutDenylist.healthIdentity(workout.healthKitUUID) ?? workout.id.uuidString
+    }
+
+    private static func claim(key: String, used: Set<String>) -> String {
+        let remaining = lines.filter { !used.contains($0) }
+        if !remaining.isEmpty {
+            return remaining[Int(fnv(key) % UInt64(remaining.count))]
+        }
+        let span = overflowScenes.count * overflowPaces.count * overflowTails.count
+        let hash = fnv(key)
+        let limit = span * 32 + used.count + 8
+        var probe = 0
+        while probe < limit {
+            let slot = Int((hash &+ UInt64(probe)) % UInt64(span))
+            let round = probe / span
+            let candidate = overflowLine(slot: slot, round: round)
+            if candidate.count <= 16, !used.contains(candidate), !lineSet.contains(candidate) {
+                return candidate
+            }
+            probe += 1
+        }
+        var n = 0
+        while true {
+            let candidate = "续\(n)"
+            if candidate.count <= 16, !used.contains(candidate), !lineSet.contains(candidate) {
+                return candidate
+            }
+            n += 1
+        }
+    }
+
+    /// Fixed scene, pace, and ending. A later round appends a count so the line stays unique.
+    private static func overflowLine(slot: Int, round: Int) -> String {
+        let sceneCount = overflowScenes.count
+        let paceCount = overflowPaces.count
+        let scene = overflowScenes[slot % sceneCount]
+        let pace = overflowPaces[(slot / sceneCount) % paceCount]
+        let tail = overflowTails[(slot / (sceneCount * paceCount)) % overflowTails.count]
+        let base = scene + pace + "地" + tail
+        if round <= 0 { return base }
+        return base + String(round + 1)
+    }
+
+    private static func fnv(_ key: String) -> UInt64 {
         var hash: UInt64 = 14_695_981_039_346_656_037
         for byte in key.utf8 {
             hash ^= UInt64(byte)
             hash &*= 1_099_511_628_211
         }
-        return Int(hash % UInt64(lines.count))
+        return hash
     }
 }
 
@@ -1158,6 +1580,7 @@ enum WorkoutImport {
     /// otherwise from `distanceProgress`, and from the route when that curve is still missing.
     /// Drops bundled sample workouts, including the fixed sample ids, so the list keeps real sessions.
     /// `denylist` keeps user-deleted Health workouts from being appended or refreshed.
+    /// A stored list-card line stays on the existing row. A newly appended row gets one unused line.
     static func merge(
         _ imported: [WorkoutRecord],
         into workouts: inout [WorkoutRecord],
@@ -1174,6 +1597,7 @@ enum WorkoutImport {
         }
         workouts.removeAll { SampleLibrary.isSeededWorkout($0) || denylist.blocks($0) }
         workouts.sort { $0.start > $1.start }
+        RecordMotivation.assignMissing(&workouts)
     }
 
     static func merging(_ existing: WorkoutRecord, with imported: WorkoutRecord) -> WorkoutRecord {
@@ -1199,6 +1623,9 @@ enum WorkoutImport {
         fill(&merged.distanceProgress, imported.distanceProgress)
         fill(&merged.pauseIntervals, imported.pauseIntervals)
         fill(&merged.lapMarks, imported.lapMarks)
+        if RecordMotivation.storedLine(merged.motivationLine) == nil {
+            merged.motivationLine = RecordMotivation.storedLine(imported.motivationLine)
+        }
         return merged
     }
 

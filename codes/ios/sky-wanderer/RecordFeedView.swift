@@ -718,7 +718,7 @@ struct RecordSummaryCard: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// Sport title on the left. The stable quote is right-aligned on the same row.
+    /// Sport title on the left. The stored line is right-aligned on the same row.
     private var titleRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
             Text(workout.sport.title)
@@ -756,7 +756,10 @@ struct RecordSummaryCard: View {
     }
 
     private var quote: String {
-        RecordMotivation.line(for: workout.id, healthKitUUID: workout.healthKitUUID)
+        if let stored = RecordMotivation.storedLine(workout.motivationLine) {
+            return stored
+        }
+        return RecordMotivation.line(for: workout.id, healthKitUUID: workout.healthKitUUID)
     }
 
     private var distanceColumn: some View {

@@ -11,8 +11,10 @@ final class WatchAppState: ObservableObject {
         if var loaded = AppFiles.load(filename), loaded.seeded {
             let before = loaded.workouts.count
             loaded.workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
+            let needsLines = loaded.workouts.contains { RecordMotivation.storedLine($0.motivationLine) == nil }
+            RecordMotivation.assignMissing(&loaded.workouts)
             database = loaded
-            if loaded.workouts.count != before {
+            if loaded.workouts.count != before || needsLines {
                 AppFiles.save(loaded, name: filename)
             }
         } else {
@@ -60,12 +62,24 @@ final class WatchAppState: ObservableObject {
     func add(_ record: WorkoutRecord) {
         guard !SampleLibrary.isSeededWorkout(record) else { return }
         mutate { database in
+            let previous = database.workouts.first { existing in
+                if existing.id == record.id { return true }
+                if let healthID = record.healthKitUUID, existing.healthKitUUID == healthID {
+                    return true
+                }
+                return false
+            }
             database.workouts.removeAll { $0.id == record.id }
             if let healthID = record.healthKitUUID {
                 database.workouts.removeAll { $0.healthKitUUID == healthID }
             }
+            var record = record
+            if RecordMotivation.storedLine(record.motivationLine) == nil {
+                record.motivationLine = RecordMotivation.storedLine(previous?.motivationLine)
+            }
             database.workouts.append(record)
             database.workouts.sort { $0.start > $1.start }
+            RecordMotivation.assignMissing(&database.workouts)
         }
     }
 
