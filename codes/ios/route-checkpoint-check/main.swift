@@ -3,7 +3,8 @@ import Foundation
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/SampleLibrary.swift \
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Database.swift \
 //   codes/ios/Shared/TrainingEstimate.swift codes/ios/Shared/GPXFile.swift \
-//   codes/ios/Shared/RouteStats.swift codes/ios/Shared/RouteGPXStore.swift \
+//   codes/ios/Shared/Formatting.swift codes/ios/Shared/RouteStats.swift \
+//   codes/ios/Shared/RouteGPXStore.swift \
 //   codes/ios/route-checkpoint-check/main.swift \
 //   -o /tmp/route-checkpoint-check && /tmp/route-checkpoint-check
 
@@ -1228,21 +1229,56 @@ check(RouteFacts.displayFinish(decodedComputed!, route: decodedFinish).name == "
 
 let axisRoute = midRoute
 let axisMarks = ElevationProfileAxis.marks(for: axisRoute)
-check(axisMarks.map(\.name) == ["泉水", "CP2", "终点"], "axis uses the display name and the finish \(axisMarks.map(\.name))")
-check(axisMarks.last?.id == "finish", "the synthetic end has a stable axis id")
+let axisKilometers = [midRows[0].distanceMeters, midRows[1].distanceMeters].map(Format.kilometers)
+check(axisMarks.map(\.name) == axisKilometers, "axis labels are cumulative kilometers \(axisMarks.map(\.name))")
+check(axisMarks.map(\.id) == ["w0", "w1"], "axis keeps the two intermediate waypoints in track order \(axisMarks.map(\.id))")
+check(axisMarks.allSatisfy { $0.id != "finish" }, "the finish tick is omitted because it repeats the route total")
+check(axisMarks.allSatisfy { !$0.name.contains("公里") && $0.name != "泉水" && $0.name != "CP2" && $0.name != "终点" }, "axis text is the number only \(axisMarks.map(\.name))")
 near(axisMarks[0].distanceMeters, midRows[0].distanceMeters, 0.01, "first tick sits on CP1")
 near(axisMarks[1].distanceMeters, midRows[1].distanceMeters, 0.01, "second tick sits on CP2")
-near(axisMarks[2].distanceMeters, wholeDistance, 0.01, "finish tick sits at the track end")
 for mark in axisMarks {
     let span = max(wholeDistance, 0.000001)
     near(mark.fraction * span, mark.distanceMeters, 0.02, "tick fraction matches \(mark.name)")
+    check(mark.name == Format.kilometers(mark.distanceMeters), "tick text uses Format.kilometers")
 }
-near(axisMarks[2].fraction, 1, 0.000001, "finish tick is the end of the axis")
 let endedMarks = ElevationProfileAxis.marks(for: endedRoute)
-check(endedMarks.map(\.name) == ["CP1", "终点站"], "no synthetic end tick when the last waypoint is the end \(endedMarks.map(\.name))")
+check(endedMarks.map(\.name) == [Format.kilometers(endedRows[0].distanceMeters)], "the ending waypoint is omitted when its kilometers match the total \(endedMarks.map(\.name))")
 check(endedMarks.allSatisfy { $0.id != "finish" }, "the ending waypoint is not the synthetic finish tick")
-near(endedMarks[1].distanceMeters, endedRows[1].distanceMeters, 0.01, "ending waypoint tick uses its own distance")
+near(endedMarks[0].distanceMeters, endedRows[0].distanceMeters, 0.01, "the earlier tick keeps its own distance")
 check(ElevationProfileAxis.marks(for: bareRoute).isEmpty, "no waypoints means no axis ticks")
+check(ElevationProfileAxis.marks(for: startOnly).isEmpty, "a start waypoint and the finish both repeat 0 and the total")
+
+// Equirectangular meters at the equator: longitude degrees = meters / 111_320.
+func axisLongitude(_ meters: Double) -> Double { meters / 111_320 }
+let edgeMeters = [0.0, 4.0, 20.0, 500.0, 996.0, 1000.0]
+let edgeLine = edgeMeters.map { point(0, axisLongitude($0), 10) }
+let edgeRoute = SavedRoute(
+    id: "axis-edge",
+    name: "边界",
+    points: edgeLine,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "起点", latitude: 0, longitude: axisLongitude(0), elevation: nil),
+        RouteWaypoint(name: "几乎零", latitude: 0, longitude: axisLongitude(4), elevation: nil),
+        RouteWaypoint(name: "近处", latitude: 0, longitude: axisLongitude(20), elevation: nil),
+        RouteWaypoint(name: "中间", latitude: 0, longitude: axisLongitude(500), elevation: nil),
+        RouteWaypoint(name: "几乎终点", latitude: 0, longitude: axisLongitude(996), elevation: nil)
+    ]
+)
+let edgeRows = RouteCheckpoints.progress(waypoints: edgeRoute.waypoints, points: edgeRoute.points)
+let edgeTotal = RouteStats.distance(edgeLine)
+check(edgeRows.count == 5, "edge fixture snaps one row per waypoint")
+check(Format.kilometers(edgeRows[0].distanceMeters) == "0.00", "the start formats as 0.00")
+check(Format.kilometers(edgeRows[1].distanceMeters) == "0.00", "four meters still formats as 0.00")
+check(Format.kilometers(edgeRows[2].distanceMeters) == "0.02", "twenty meters formats as 0.02")
+check(Format.kilometers(edgeRows[3].distanceMeters) == "0.50", "five hundred meters formats as 0.50")
+check(Format.kilometers(edgeRows[4].distanceMeters) == Format.kilometers(edgeTotal), "four meters short of the end formats as the total")
+let edgeMarks = ElevationProfileAxis.marks(for: edgeRoute)
+check(edgeMarks.map(\.name) == ["0.02", "0.50"], "only intermediate kilometers are drawn \(edgeMarks.map(\.name))")
+check(edgeMarks.map(\.id) == ["w2", "w3"], "endpoint collisions drop the tick as well as the label \(edgeMarks.map(\.id))")
+check(edgeMarks.allSatisfy { !$0.name.contains("起点") && !$0.name.contains("几乎") && !$0.name.contains("中间") }, "edge ticks do not use waypoint names")
+near(edgeMarks[0].distanceMeters, edgeRows[2].distanceMeters, 0.01, "the 0.02 tick stays on its waypoint")
+near(edgeMarks[1].distanceMeters, edgeRows[3].distanceMeters, 0.01, "the 0.50 tick stays on its waypoint")
 
 let sparseMarks = [
     ElevationAxisMark(id: "a", name: "甲", distanceMeters: 20, fraction: 0.2),
@@ -1268,6 +1304,19 @@ for (mark, label) in zip(denseMarks, denseLabels) {
     check(label.id == mark.id, "dense label keeps \(mark.id)")
     near(label.tickFraction, mark.fraction, 0.000001, "dense tick stays on \(mark.name)")
 }
+let kilometerMarks = [
+    ElevationAxisMark(id: "a", name: "4.20", distanceMeters: 4200, fraction: 0.13),
+    ElevationAxisMark(id: "b", name: "12.80", distanceMeters: 12800, fraction: 0.40),
+    ElevationAxisMark(id: "c", name: "21.50", distanceMeters: 21500, fraction: 0.67)
+]
+let kilometerLabels = ElevationProfileAxis.labels(kilometerMarks, plotWidth: 260, labelWidth: { Double($0.count) * 6.5 })
+check(kilometerLabels.map(\.lane) == [0, 0, 0], "short kilometer labels stay on one row \(kilometerLabels.map(\.lane))")
+let crowdedMarks = [
+    ElevationAxisMark(id: "a", name: "10.00", distanceMeters: 10000, fraction: 0.50),
+    ElevationAxisMark(id: "b", name: "10.20", distanceMeters: 10200, fraction: 0.51)
+]
+let crowdedLabels = ElevationProfileAxis.labels(crowdedMarks, plotWidth: 260, labelWidth: { Double($0.count) * 6.5 })
+check(crowdedLabels.map(\.lane) == [0, 1], "overlapping kilometer labels use another row \(crowdedLabels.map(\.lane))")
 
 if failures.isEmpty {
     print("route-checkpoint-check ok")

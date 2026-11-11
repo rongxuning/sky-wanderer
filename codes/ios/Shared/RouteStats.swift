@@ -937,6 +937,7 @@ enum RouteFacts {
 
 struct ElevationAxisMark: Equatable, Identifiable {
     var id: String
+    /// Cumulative kilometers from `Format.kilometers`, with no unit suffix.
     var name: String
     var distanceMeters: Double
     var fraction: Double
@@ -952,32 +953,34 @@ struct ElevationAxisLabel: Equatable, Identifiable {
     var lane: Int
 }
 
-/// Checkpoint ticks for the elevation profile. Real waypoints use their display names.
-/// A synthetic 终点 pin adds one more tick at the end of the axis. Nothing is dropped.
+/// Checkpoint ticks for the elevation profile, in track order.
+/// Real waypoints keep their snapped distances. A synthetic finish tick is added at the
+/// track end when a finish card exists. The text under a tick is that distance in
+/// kilometers (`Format.kilometers`), with no 「公里」 suffix — the axis already prints
+/// 0 on the left and the total on the right. A mark whose two-decimal label would
+/// repeat either of those is omitted, tick included. Intermediate checkpoints stay.
 enum ElevationProfileAxis {
     static func marks(for route: SavedRoute) -> [ElevationAxisMark] {
         let points = route.points
         let total = RouteStats.distance(points)
         let rows = RouteCheckpoints.progress(waypoints: route.waypoints, points: points)
         var marks = rows.map { row in
-            ElevationAxisMark(
-                id: "w\(row.id)",
-                name: RouteFacts.displayWaypoint(row, route: route).name,
-                distanceMeters: row.distanceMeters,
-                fraction: fraction(row.distanceMeters, total: total)
-            )
+            kilometerMark(id: "w\(row.id)", distanceMeters: row.distanceMeters, total: total)
         }
         if RouteCheckpoints.finish(waypoints: route.waypoints, points: points) != nil {
-            marks.append(
-                ElevationAxisMark(
-                    id: "finish",
-                    name: RouteFinishProgress.title,
-                    distanceMeters: total,
-                    fraction: total > 0 ? 1 : 0
-                )
-            )
+            marks.append(kilometerMark(id: "finish", distanceMeters: total, total: total))
         }
-        return marks
+        let endpointLabels = [Format.kilometers(0), Format.kilometers(total)]
+        return marks.filter { !endpointLabels.contains($0.name) }
+    }
+
+    private static func kilometerMark(id: String, distanceMeters: Double, total: Double) -> ElevationAxisMark {
+        ElevationAxisMark(
+            id: id,
+            name: Format.kilometers(distanceMeters),
+            distanceMeters: distanceMeters,
+            fraction: fraction(distanceMeters, total: total)
+        )
     }
 
     /// Every mark keeps its tick. Labels nudge a few points, then step down a lane, rather than disappearing.
