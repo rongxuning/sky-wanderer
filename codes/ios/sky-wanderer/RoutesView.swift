@@ -1282,7 +1282,7 @@ private struct ElevationProfileChart: View {
         .frame(height: chartHeight)
     }
 
-    /// Ticks and short names sit under the curve, on the same distance scale, and leave 0 / total in place.
+    /// Kilometer ticks sit under the curve, on the same distance scale, and leave 0 / total in place.
     private var distanceAxis: some View {
         VStack(alignment: .leading, spacing: 1) {
             if !axisMarks.isEmpty {
@@ -1362,8 +1362,14 @@ private struct ElevationProfileChart: View {
         return 1 + CGFloat(min(1, max(0, fraction))) * inner
     }
 
-    private static func estimatedLabelWidth(_ name: String) -> Double {
-        Double(max(name.count, 1)) * 10
+    /// 10pt semibold rounded. Digits are narrower than a full em, so measuring the
+    /// kilometer string keeps a single row until two numbers would actually touch.
+    private static func estimatedLabelWidth(_ label: String) -> Double {
+        let system = UIFont.systemFont(ofSize: 10, weight: .semibold)
+        let descriptor = system.fontDescriptor.withDesign(.rounded) ?? system.fontDescriptor
+        let font = UIFont(descriptor: descriptor, size: 10)
+        let measured = (label as NSString).size(withAttributes: [.font: font]).width
+        return max(ceil(measured) + 1, 8)
     }
 
     private func profile(low: Double, high: Double) -> some View {
@@ -1449,9 +1455,9 @@ private struct ElevationProfileChart: View {
     private var accessibilityText: String {
         guard let bounds else { return "海拔剖面" }
         let base = "海拔剖面，最低 \(meterText(bounds.low)) 米，最高 \(meterText(bounds.high)) 米"
-        let names = axisMarks.map(\.name)
-        guard !names.isEmpty else { return base }
-        return base + "，路点 " + names.joined(separator: "、")
+        let distances = axisMarks.map(\.name)
+        guard !distances.isEmpty else { return base }
+        return base + "，" + distances.joined(separator: "、") + " 公里"
     }
 
     private func meterText(_ meters: Double) -> String {
