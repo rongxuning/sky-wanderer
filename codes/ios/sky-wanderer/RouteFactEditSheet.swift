@@ -3,6 +3,7 @@ import SwiftUI
 enum RouteFactEditTarget: Identifiable, Hashable {
     case totals
     case waypoint(Int)
+    case finish
 
     var id: String {
         switch self {
@@ -10,6 +11,8 @@ enum RouteFactEditTarget: Identifiable, Hashable {
             return "totals"
         case .waypoint(let index):
             return "waypoint-\(index)"
+        case .finish:
+            return "finish"
         }
     }
 }
@@ -45,7 +48,9 @@ struct RouteFactEditSheet: View {
                 case .totals:
                     totalsFields
                 case .waypoint:
-                    waypointFields
+                    waypointFields(showsName: true)
+                case .finish:
+                    waypointFields(showsName: false)
                 }
                 if let error {
                     Text(error)
@@ -82,6 +87,8 @@ struct RouteFactEditSheet: View {
             let progress = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
             guard let row = progress.first(where: { $0.id == id }) else { return "编辑检查点" }
             return "编辑 \(RouteFacts.displayWaypoint(row, route: route).name)"
+        case .finish:
+            return "编辑终点"
         }
     }
 
@@ -94,20 +101,21 @@ struct RouteFactEditSheet: View {
         }
     }
 
-    private var waypointFields: some View {
-        Group {
+    @ViewBuilder
+    private func waypointFields(showsName: Bool) -> some View {
+        if showsName {
             textField("名称", text: $name)
-            textField("关门时间", text: $cutoff)
-            Section("本段") {
-                numberField("距离", text: $segmentDistance, unit: "公里")
-                numberField("爬升", text: $segmentAscent, unit: "米")
-                numberField("下降", text: $segmentDescent, unit: "米")
-            }
-            Section("累积") {
-                numberField("累积距离", text: $cumulativeDistance, unit: "公里")
-                numberField("累积爬升", text: $cumulativeAscent, unit: "米")
-                numberField("累积下降", text: $cumulativeDescent, unit: "米")
-            }
+        }
+        textField("关门时间", text: $cutoff)
+        Section("本段") {
+            numberField("距离", text: $segmentDistance, unit: "公里")
+            numberField("爬升", text: $segmentAscent, unit: "米")
+            numberField("下降", text: $segmentDescent, unit: "米")
+        }
+        Section("累积") {
+            numberField("累积距离", text: $cumulativeDistance, unit: "公里")
+            numberField("累积爬升", text: $cumulativeAscent, unit: "米")
+            numberField("累积下降", text: $cumulativeDescent, unit: "米")
         }
     }
 
@@ -146,6 +154,16 @@ struct RouteFactEditSheet: View {
             guard let row = progress.first(where: { $0.id == id }) else { return }
             let shown = RouteFacts.displayWaypoint(row, route: route)
             name = shown.name
+            cutoff = shown.cutoff ?? ""
+            segmentDistance = Format.kilometers(shown.segmentDistanceMeters)
+            segmentAscent = metersText(shown.segmentAscentMeters)
+            segmentDescent = metersText(shown.segmentDescentMeters)
+            cumulativeDistance = Format.kilometers(shown.cumulativeDistanceMeters)
+            cumulativeAscent = metersText(shown.cumulativeAscentMeters)
+            cumulativeDescent = metersText(shown.cumulativeDescentMeters)
+        case .finish:
+            guard let finish = RouteCheckpoints.finish(waypoints: route.waypoints, points: route.points) else { return }
+            let shown = RouteFacts.displayFinish(finish, route: route)
             cutoff = shown.cutoff ?? ""
             segmentDistance = Format.kilometers(shown.segmentDistanceMeters)
             segmentAscent = metersText(shown.segmentAscentMeters)
@@ -199,6 +217,35 @@ struct RouteFactEditSheet: View {
                 &route,
                 progress: row,
                 name: RouteFacts.parseLabel(name),
+                cutoff: RouteFacts.parseLabel(cutoff),
+                segmentDistance: segmentDistanceChange,
+                segmentAscent: segmentAscentChange,
+                segmentDescent: segmentDescentChange,
+                cumulativeDistance: cumulativeDistanceChange,
+                cumulativeAscent: cumulativeAscentChange,
+                cumulativeDescent: cumulativeDescentChange
+            )
+        case .finish:
+            guard RouteCheckpoints.finish(waypoints: route.waypoints, points: route.points) != nil else {
+                dismiss()
+                return
+            }
+            let segmentDistanceChange = RouteFacts.parseMeters(segmentDistance, kilometers: true)
+            let segmentAscentChange = RouteFacts.parseMeters(segmentAscent, kilometers: false)
+            let segmentDescentChange = RouteFacts.parseMeters(segmentDescent, kilometers: false)
+            let cumulativeDistanceChange = RouteFacts.parseMeters(cumulativeDistance, kilometers: true)
+            let cumulativeAscentChange = RouteFacts.parseMeters(cumulativeAscent, kilometers: false)
+            let cumulativeDescentChange = RouteFacts.parseMeters(cumulativeDescent, kilometers: false)
+            guard valid(
+                segmentDistanceChange,
+                segmentAscentChange,
+                segmentDescentChange,
+                cumulativeDistanceChange,
+                cumulativeAscentChange,
+                cumulativeDescentChange
+            ) else { return }
+            RouteFacts.applyFinish(
+                &route,
                 cutoff: RouteFacts.parseLabel(cutoff),
                 segmentDistance: segmentDistanceChange,
                 segmentAscent: segmentAscentChange,

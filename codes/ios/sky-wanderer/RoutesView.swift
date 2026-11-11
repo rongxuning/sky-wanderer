@@ -697,11 +697,11 @@ struct RouteDetailView: View {
     private func floatingChrome(_ route: SavedRoute, bottomInset: CGFloat) -> some View {
         Group {
             if showsChart {
-                ElevationProfileChart(points: route.points)
+                ElevationProfileChart(route: route)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 188)
+                    .fixedSize(horizontal: false, vertical: true)
                     .routeGlassCard()
             } else {
                 routeFactPager(route)
@@ -718,15 +718,12 @@ struct RouteDetailView: View {
     }
 
     private func factPages(_ route: SavedRoute) -> [RouteFactPage] {
-        var pages = [RouteFactPage(id: 0, kind: .totals)]
-        let progress = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
-        for (offset, item) in progress.enumerated() {
-            pages.append(RouteFactPage(id: offset + 1, kind: .waypoint(item)))
+        RouteFacts.cards(for: route).enumerated().map { offset, card in
+            RouteFactPage(id: offset, card: card)
         }
-        return pages
     }
 
-    /// Totals, then one card per real waypoint. Dots sit under the pages, still on the glass.
+    /// Totals, then one card per real waypoint, then 终点 when the last waypoint is short of the track end.
     private func routeFactPager(_ route: SavedRoute) -> some View {
         let pages = factPages(route)
         let showsIndicator = pages.count > 1
@@ -774,11 +771,13 @@ struct RouteDetailView: View {
     }
 
     private func openEditor(_ page: RouteFactPage) {
-        switch page.kind {
+        switch page.card {
         case .totals:
             editTarget = .totals
         case .waypoint(let progress):
             editTarget = .waypoint(progress.id)
+        case .finish:
+            editTarget = .finish
         }
     }
 
@@ -791,7 +790,7 @@ struct RouteDetailView: View {
         spacing: CGFloat
     ) -> some View {
         VStack(alignment: .leading, spacing: spacing) {
-            switch page.kind {
+            switch page.card {
             case .totals:
                 let totals = RouteFacts.displayTotals(route)
                 Text("总数据")
@@ -815,37 +814,64 @@ struct RouteDetailView: View {
                 }
                 factMetric("创建人", route.creatorLabel, SkyTheme.Color.ink, label: label, valueSize: value)
             case .waypoint(let progress):
-                let shown = RouteFacts.displayWaypoint(progress, route: route)
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(shown.name)
-                        .font(.system(size: title, weight: .bold, design: .rounded))
-                        .foregroundStyle(SkyTheme.Color.ink)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    Spacer(minLength: 8)
-                    Text(shown.cutoff ?? "—")
-                        .font(.system(size: value, weight: .bold, design: .rounded))
-                        .foregroundStyle(SkyTheme.Color.ink)
-                        .lineLimit(1)
-                }
-                .accessibilityElement(children: .combine)
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: spacing) {
-                        factMetric("距离", routeKilometers(shown.segmentDistanceMeters), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
-                        factMetric("爬升", routeMeters(shown.segmentAscentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
-                        factMetric("下降", routeMeters(shown.segmentDescentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: spacing) {
-                        factMetric("累积距离", routeKilometers(shown.cumulativeDistanceMeters), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
-                        factMetric("累积爬升", routeMeters(shown.cumulativeAscentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
-                        factMetric("累积下降", routeMeters(shown.cumulativeDescentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                checkpointFacts(
+                    RouteFacts.displayWaypoint(progress, route: route),
+                    title: title,
+                    label: label,
+                    value: value,
+                    spacing: spacing
+                )
+            case .finish(let finish):
+                checkpointFacts(
+                    RouteFacts.displayFinish(finish, route: route),
+                    title: title,
+                    label: label,
+                    value: value,
+                    spacing: spacing
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Shared body of a waypoint card and the finish card. The title is the display name; 终点 does not rename.
+    private func checkpointFacts(
+        _ shown: RouteFacts.Waypoint,
+        title: CGFloat,
+        label: CGFloat,
+        value: CGFloat,
+        spacing: CGFloat
+    ) -> some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(shown.name)
+                    .font(.system(size: title, weight: .bold, design: .rounded))
+                    .foregroundStyle(SkyTheme.Color.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 8)
+                Text(RouteFacts.cutoffLabel(shown.cutoff))
+                    .font(.system(size: value, weight: .bold, design: .rounded))
+                    .foregroundStyle(SkyTheme.Color.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .accessibilityElement(children: .combine)
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: spacing) {
+                    factMetric("距离", routeKilometers(shown.segmentDistanceMeters), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
+                    factMetric("爬升", routeMeters(shown.segmentAscentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                    factMetric("下降", routeMeters(shown.segmentDescentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: spacing) {
+                    factMetric("累积距离", routeKilometers(shown.cumulativeDistanceMeters), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
+                    factMetric("累积爬升", routeMeters(shown.cumulativeAscentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                    factMetric("累积下降", routeMeters(shown.cumulativeDescentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     private func factPageIndicator(count: Int) -> some View {
@@ -1183,17 +1209,27 @@ private extension View {
 }
 
 private struct RouteFactPage: Identifiable {
-    enum Kind {
-        case totals
-        case waypoint(RouteWaypointProgress)
-    }
-
     var id: Int
-    var kind: Kind
+    var card: RouteDetailCard
+}
+
+private struct PlotWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
 }
 
 private struct ElevationProfileChart: View {
-    var points: [GeoPoint]
+    var route: SavedRoute
+    @State private var plotWidth: CGFloat = 0
+
+    private var points: [GeoPoint] { route.points }
+
+    private var axisMarks: [ElevationAxisMark] {
+        ElevationProfileAxis.marks(for: route)
+    }
 
     private var samples: [RouteAltitudeSample] {
         // Every stored point, so the profile uses the same altitudes as the colored track.
@@ -1237,22 +1273,96 @@ private struct ElevationProfileChart: View {
                     .frame(minHeight: 64)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(accessibilityText)
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("0")
-                    Spacer(minLength: 8)
-                    Text("\(distanceLabel) 公里")
-                        .lineLimit(1)
-                        .multilineTextAlignment(.trailing)
-                }
-                .padding(.trailing, 50)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniMuted)
-                .accessibilityHidden(true)
+                distanceAxis
             }
         }
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
         .padding(.top, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(height: chartHeight)
+    }
+
+    /// Ticks and short names sit under the curve, on the same distance scale, and leave 0 / total in place.
+    private var distanceAxis: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            if !axisMarks.isEmpty {
+                tickBand
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("0")
+                Spacer(minLength: 8)
+                Text("\(distanceLabel) 公里")
+                    .lineLimit(1)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+        .padding(.trailing, 50)
+        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .foregroundStyle(Color.omniMuted)
+        .accessibilityHidden(true)
+    }
+
+    private var tickBand: some View {
+        Canvas { context, size in
+            let placed = placedLabels(plotWidth: size.width)
+            for item in placed {
+                let tickX = axisX(item.tickFraction, width: size.width)
+                var tick = Path()
+                tick.move(to: CGPoint(x: tickX, y: 0))
+                tick.addLine(to: CGPoint(x: tickX, y: 5))
+                context.stroke(tick, with: .color(Color.omniMuted), style: StrokeStyle(lineWidth: 1))
+                let label = Text(item.name)
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.omniMuted)
+                let resolved = context.resolve(label)
+                let center = axisX(item.labelFraction, width: size.width)
+                resolved.draw(
+                    at: CGPoint(x: center, y: 7 + CGFloat(item.lane) * 14 + 6),
+                    anchor: .center
+                )
+            }
+        }
+        .frame(height: tickBandHeight)
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(key: PlotWidthKey.self, value: geo.size.width)
+            }
+        }
+        .onPreferenceChange(PlotWidthKey.self) { plotWidth = $0 }
+    }
+
+    private var chartHeight: CGFloat {
+        let ticks = (samples.count >= 2 && bounds != nil) ? tickBandHeight : 0
+        return 172 + ticks
+    }
+
+    private var tickBandHeight: CGFloat {
+        guard !axisMarks.isEmpty else { return 0 }
+        return 7 + CGFloat(laneCount) * 14
+    }
+
+    private var laneCount: Int {
+        guard !axisMarks.isEmpty else { return 0 }
+        let placed = placedLabels(plotWidth: plotWidth > 1 ? plotWidth : 1)
+        return (placed.map(\.lane).max() ?? 0) + 1
+    }
+
+    private func placedLabels(plotWidth: CGFloat) -> [ElevationAxisLabel] {
+        ElevationProfileAxis.labels(
+            axisMarks,
+            plotWidth: Double(plotWidth),
+            labelWidth: Self.estimatedLabelWidth
+        )
+    }
+
+    /// Same inset the curve uses, so a tick lands on that waypoint's distance.
+    private func axisX(_ fraction: Double, width: CGFloat) -> CGFloat {
+        let inner = max(width - 2, 1)
+        return 1 + CGFloat(min(1, max(0, fraction))) * inner
+    }
+
+    private static func estimatedLabelWidth(_ name: String) -> Double {
+        Double(max(name.count, 1)) * 10
     }
 
     private func profile(low: Double, high: Double) -> some View {
@@ -1337,7 +1447,10 @@ private struct ElevationProfileChart: View {
 
     private var accessibilityText: String {
         guard let bounds else { return "海拔剖面" }
-        return "海拔剖面，最低 \(meterText(bounds.low)) 米，最高 \(meterText(bounds.high)) 米"
+        let base = "海拔剖面，最低 \(meterText(bounds.low)) 米，最高 \(meterText(bounds.high)) 米"
+        let names = axisMarks.map(\.name)
+        guard !names.isEmpty else { return base }
+        return base + "，路点 " + names.joined(separator: "、")
     }
 
     private func meterText(_ meters: Double) -> String {

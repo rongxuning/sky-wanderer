@@ -323,6 +323,25 @@ struct RouteWaypointProgress: Identifiable, Hashable {
     var longitude: Double
 }
 
+/// The stretch from the last real waypoint to the track end.
+/// Cumulative figures are the whole track, computed on their own, not copied from the totals card.
+struct RouteFinishProgress: Hashable {
+    static let title = "终点"
+    var segmentDistanceMeters: Double
+    var segmentAscentMeters: Double
+    var segmentDescentMeters: Double
+    var distanceMeters: Double
+    var ascentMeters: Double
+    var descentMeters: Double
+}
+
+/// One page of the route detail pager: totals, a real waypoint, or the synthetic finish.
+enum RouteDetailCard: Hashable {
+    case totals
+    case waypoint(RouteWaypointProgress)
+    case finish(RouteFinishProgress)
+}
+
 /// Places GPX checkpoints on a track and splits the line into 起点 / CP / 终点 segments.
 enum RouteCheckpoints {
     /// Route order. Empty names become CP1, CP2, skipping labels the file already used.
@@ -408,6 +427,30 @@ enum RouteCheckpoints {
                 longitude: item.waypoint.longitude
             )
         }
+    }
+
+    /// Last real waypoint → track end, when that stretch is not already the last waypoint card.
+    /// Nil when there is no real waypoint, or the last one already snaps to the final track point
+    /// (the same rule `layout` uses before it adds a synthetic 终点 pin).
+    /// Segment figures are that last snapped point to the track end.
+    /// Cumulative figures are the whole track from `RouteStats`, not the totals card.
+    static func finish(waypoints: [RouteWaypoint], points: [GeoPoint]) -> RouteFinishProgress? {
+        guard points.count >= 2 else { return nil }
+        let rows = progress(waypoints: waypoints, points: points)
+        guard let last = rows.last else { return nil }
+        let drawn = layout(waypoints: waypoints, points: points)
+        guard let end = drawn.marks.last, end.synthetic, end.id == "end" else { return nil }
+        let distance = RouteStats.distance(points)
+        let ascent = RouteStats.ascent(points)
+        let descent = RouteStats.descent(points)
+        return RouteFinishProgress(
+            segmentDistanceMeters: distance - last.distanceMeters,
+            segmentAscentMeters: ascent - last.ascentMeters,
+            segmentDescentMeters: descent - last.descentMeters,
+            distanceMeters: distance,
+            ascentMeters: ascent,
+            descentMeters: descent
+        )
     }
 
     /// Real checkpoints, plus 起点 / 终点 when those ends are not already waypoints.
@@ -615,6 +658,7 @@ enum RouteFactTextChange: Equatable {
 
 /// Resolves the route detail card. Overrides live on `SavedRoute` and never touch the GPX.
 /// Segment and cumulative overrides are stored independently.
+/// The synthetic 终点 card has its own override slot and is not matched like a waypoint.
 enum RouteFacts {
     struct Totals: Equatable {
         var distanceMeters: Double
@@ -653,6 +697,25 @@ enum RouteFacts {
         return .set(trimmed)
     }
 
+    /// Shown beside a waypoint or finish title. A blank field in the editor still clears the override.
+    static let missingCutoffLabel = "暂无关门时间"
+
+    static func cutoffLabel(_ cutoff: String?) -> String {
+        let trimmed = cutoff?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? missingCutoffLabel : trimmed
+    }
+
+    /// Totals, then each real waypoint, then 终点 when the last waypoint does not land on the track end.
+    static func cards(for route: SavedRoute) -> [RouteDetailCard] {
+        var cards: [RouteDetailCard] = [.totals]
+        let rows = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
+        cards.append(contentsOf: rows.map { .waypoint($0) })
+        if let finish = RouteCheckpoints.finish(waypoints: route.waypoints, points: route.points) {
+            cards.append(.finish(finish))
+        }
+        return cards
+    }
+
     static func displayTotals(_ route: SavedRoute) -> Totals {
         let totals = route.factOverrides?.totals
         return Totals(
@@ -674,6 +737,21 @@ enum RouteFacts {
             cumulativeDistanceMeters: stored?.cumulativeDistanceMeters ?? progress.distanceMeters,
             cumulativeAscentMeters: stored?.cumulativeAscentMeters ?? progress.ascentMeters,
             cumulativeDescentMeters: stored?.cumulativeDescentMeters ?? progress.descentMeters
+        )
+    }
+
+    /// The finish card. The title is always 终点. Numbers fall back to the track, never to the totals override.
+    static func displayFinish(_ finish: RouteFinishProgress, route: SavedRoute) -> Waypoint {
+        let stored = route.factOverrides?.finish
+        return Waypoint(
+            name: RouteFinishProgress.title,
+            cutoff: stored?.cutoff,
+            segmentDistanceMeters: stored?.segmentDistanceMeters ?? finish.segmentDistanceMeters,
+            segmentAscentMeters: stored?.segmentAscentMeters ?? finish.segmentAscentMeters,
+            segmentDescentMeters: stored?.segmentDescentMeters ?? finish.segmentDescentMeters,
+            cumulativeDistanceMeters: stored?.cumulativeDistanceMeters ?? finish.distanceMeters,
+            cumulativeAscentMeters: stored?.cumulativeAscentMeters ?? finish.ascentMeters,
+            cumulativeDescentMeters: stored?.cumulativeDescentMeters ?? finish.descentMeters
         )
     }
 
@@ -745,6 +823,32 @@ enum RouteFacts {
         } else if !row.isEmpty {
             overrides.waypoints.append(row)
         }
+        commit(overrides, to: &route)
+    }
+
+    /// Writes the synthetic 终点 card. Does nothing when that card is not shown.
+    /// A segment change does not rewrite the cumulative fields, and neither field touches totals or waypoints.
+    static func applyFinish(
+        _ route: inout SavedRoute,
+        cutoff: RouteFactTextChange,
+        segmentDistance: RouteFactFieldChange,
+        segmentAscent: RouteFactFieldChange,
+        segmentDescent: RouteFactFieldChange,
+        cumulativeDistance: RouteFactFieldChange,
+        cumulativeAscent: RouteFactFieldChange,
+        cumulativeDescent: RouteFactFieldChange
+    ) {
+        guard let finish = RouteCheckpoints.finish(waypoints: route.waypoints, points: route.points) else { return }
+        var overrides = route.factOverrides ?? RouteFactOverrides()
+        var row = overrides.finish ?? RouteFinishFactOverride()
+        assign(cutoff, computed: nil, to: &row.cutoff)
+        assign(segmentDistance, computed: finish.segmentDistanceMeters, kilometers: true, to: &row.segmentDistanceMeters)
+        assign(segmentAscent, computed: finish.segmentAscentMeters, kilometers: false, to: &row.segmentAscentMeters)
+        assign(segmentDescent, computed: finish.segmentDescentMeters, kilometers: false, to: &row.segmentDescentMeters)
+        assign(cumulativeDistance, computed: finish.distanceMeters, kilometers: true, to: &row.cumulativeDistanceMeters)
+        assign(cumulativeAscent, computed: finish.ascentMeters, kilometers: false, to: &row.cumulativeAscentMeters)
+        assign(cumulativeDescent, computed: finish.descentMeters, kilometers: false, to: &row.cumulativeDescentMeters)
+        overrides.finish = row
         commit(overrides, to: &route)
     }
 
@@ -824,6 +928,119 @@ enum RouteFacts {
         if copy.totals?.isEmpty == true {
             copy.totals = nil
         }
+        if copy.finish?.isEmpty == true {
+            copy.finish = nil
+        }
         route.factOverrides = copy.isEmpty ? nil : copy
+    }
+}
+
+struct ElevationAxisMark: Equatable, Identifiable {
+    var id: String
+    var name: String
+    var distanceMeters: Double
+    var fraction: Double
+}
+
+struct ElevationAxisLabel: Equatable, Identifiable {
+    var id: String
+    var name: String
+    /// Where the tick is drawn, along the distance axis. This stays on the waypoint.
+    var tickFraction: Double
+    /// Where the short label is drawn. It may shift a little so neighbors stay readable.
+    var labelFraction: Double
+    var lane: Int
+}
+
+/// Checkpoint ticks for the elevation profile. Real waypoints use their display names.
+/// A synthetic 终点 pin adds one more tick at the end of the axis. Nothing is dropped.
+enum ElevationProfileAxis {
+    static func marks(for route: SavedRoute) -> [ElevationAxisMark] {
+        let points = route.points
+        let total = RouteStats.distance(points)
+        let rows = RouteCheckpoints.progress(waypoints: route.waypoints, points: points)
+        var marks = rows.map { row in
+            ElevationAxisMark(
+                id: "w\(row.id)",
+                name: RouteFacts.displayWaypoint(row, route: route).name,
+                distanceMeters: row.distanceMeters,
+                fraction: fraction(row.distanceMeters, total: total)
+            )
+        }
+        if RouteCheckpoints.finish(waypoints: route.waypoints, points: points) != nil {
+            marks.append(
+                ElevationAxisMark(
+                    id: "finish",
+                    name: RouteFinishProgress.title,
+                    distanceMeters: total,
+                    fraction: total > 0 ? 1 : 0
+                )
+            )
+        }
+        return marks
+    }
+
+    /// Every mark keeps its tick. Labels nudge a few points, then step down a lane, rather than disappearing.
+    static func labels(
+        _ marks: [ElevationAxisMark],
+        plotWidth: Double,
+        labelWidth: (String) -> Double,
+        gap: Double = 3
+    ) -> [ElevationAxisLabel] {
+        func make(_ mark: ElevationAxisMark, center: Double, lane: Int) -> ElevationAxisLabel {
+            let fraction = plotWidth > 1 ? center / plotWidth : mark.fraction
+            return ElevationAxisLabel(
+                id: mark.id,
+                name: mark.name,
+                tickFraction: mark.fraction,
+                labelFraction: min(1, max(0, fraction)),
+                lane: lane
+            )
+        }
+        guard plotWidth > 1 else {
+            return marks.map { make($0, center: 0, lane: 0) }
+        }
+        var boxes: [(lane: Int, lo: Double, hi: Double)] = []
+        var placed: [ElevationAxisLabel] = []
+        let shiftLimit = 28.0
+        let shiftStep = 4.0
+        for mark in marks {
+            let width = min(max(labelWidth(mark.name), 8), plotWidth)
+            let half = width / 2
+            let tickX = min(max(mark.fraction, 0), 1) * plotWidth
+            var resolved: (center: Double, lane: Int)?
+            let laneLimit = max(marks.count, 1)
+            search: for lane in 0..<laneLimit {
+                var shift = 0.0
+                while shift <= shiftLimit {
+                    let deltas: [Double] = shift == 0 ? [0] : [shift, -shift]
+                    for delta in deltas {
+                        let center = min(max(tickX + delta, half), plotWidth - half)
+                        let lo = center - half
+                        let hi = center + half
+                        let blocked = boxes.contains { box in
+                            box.lane == lane && hi + gap > box.lo && lo < box.hi + gap
+                        }
+                        if !blocked {
+                            resolved = (center, lane)
+                            break search
+                        }
+                    }
+                    shift += shiftStep
+                }
+            }
+            let choice = resolved ?? (
+                min(max(tickX, half), plotWidth - half),
+                (boxes.map(\.lane).max() ?? -1) + 1
+            )
+            boxes.append((choice.lane, choice.center - half, choice.center + half))
+            placed.append(make(mark, center: choice.center, lane: choice.lane))
+        }
+        return placed
+    }
+
+    private static func fraction(_ distance: Double, total: Double) -> Double {
+        guard total > 0 else { return 0 }
+        return min(1, max(0, distance / total))
     }
 }

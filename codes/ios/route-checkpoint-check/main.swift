@@ -665,6 +665,7 @@ near(decodedFacts.factOverrides?.waypoints.first?.cumulativeDescentMeters ?? -1,
 let factsAgain = try! JSONDecoder().decode(SavedRoute.self, from: JSONEncoder().encode(decodedFacts))
 near(factsAgain.factOverrides?.waypoints.first?.segmentDistanceMeters ?? -1, 400, 0.001, "override round trip")
 check(factsAgain.waypoints.isEmpty, "overrides do not invent waypoints")
+check(factsAgain.factOverrides?.finish == nil, "old facts have no finish override")
 
 var trail = SavedRoute(
     id: "trail",
@@ -920,6 +921,353 @@ check(RouteFacts.parseMeters("-3", kilometers: false) == .invalid, "negative is 
 check(RouteFacts.parseLabel("  大坑头 ") == .set("大坑头"), "trimmed label")
 check(RouteFacts.parseLabel("—") == .clear, "dash label clears")
 check(RouteFacts.parseLabel("") == .clear, "empty label clears")
+
+func hasFinishCard(_ cards: [RouteDetailCard]) -> Bool {
+    cards.contains { card in
+        if case .finish = card { return true }
+        return false
+    }
+}
+
+func cardTitles(_ route: SavedRoute) -> [String] {
+    RouteFacts.cards(for: route).map { card in
+        switch card {
+        case .totals:
+            return "总数据"
+        case .waypoint(let row):
+            return row.name
+        case .finish:
+            return "终点"
+        }
+    }
+}
+
+let finishLine = [point(0, 0, 100), point(0, 0.01, 160), point(0, 0.02, 140), point(0, 0.03, 200)]
+var midRoute = SavedRoute(
+    id: "finish-mid",
+    name: "中段",
+    points: finishLine,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "CP1", latitude: 0, longitude: 0.01, elevation: nil, cutoff: "09:00"),
+        RouteWaypoint(name: "CP2", latitude: 0, longitude: 0.02, elevation: nil)
+    ]
+)
+let midRows = RouteCheckpoints.progress(waypoints: midRoute.waypoints, points: midRoute.points)
+check(midRows.map(\.name) == ["CP1", "CP2"], "finish fixture follows the track")
+let wholeDistance = RouteStats.distance(finishLine)
+let wholeAscent = RouteStats.ascent(finishLine)
+let wholeDescent = RouteStats.descent(finishLine)
+check(midRows[1].distanceMeters + 1 < wholeDistance, "fixture last waypoint stops short of the end")
+let computedFinish = RouteCheckpoints.finish(waypoints: midRoute.waypoints, points: midRoute.points)
+check(computedFinish != nil, "a last waypoint short of the end adds a finish")
+if let computedFinish {
+    near(computedFinish.segmentDistanceMeters, wholeDistance - midRows[1].distanceMeters, 0.01, "finish segment distance is the last waypoint to the end")
+    near(computedFinish.segmentAscentMeters, wholeAscent - midRows[1].ascentMeters, 0.001, "finish segment climb is the last waypoint to the end")
+    near(computedFinish.segmentDescentMeters, wholeDescent - midRows[1].descentMeters, 0.001, "finish segment descent is the last waypoint to the end")
+    near(computedFinish.distanceMeters, wholeDistance, 0.01, "finish cumulative distance is the whole track")
+    near(computedFinish.ascentMeters, wholeAscent, 0.001, "finish cumulative climb is the whole track")
+    near(computedFinish.descentMeters, wholeDescent, 0.001, "finish cumulative descent is the whole track")
+    check(cardTitles(midRoute) == ["总数据", "CP1", "CP2", "终点"], "finish card follows the last waypoint \(cardTitles(midRoute))")
+    if case .finish(let card) = RouteFacts.cards(for: midRoute).last {
+        near(card.segmentDistanceMeters, computedFinish.segmentDistanceMeters, 0.01, "finish card uses the last segment")
+        near(card.distanceMeters, wholeDistance, 0.01, "finish card cumulative is the track total")
+    } else {
+        check(false, "the last card is the finish")
+    }
+    let shownBeforeTotals = RouteFacts.displayFinish(computedFinish, route: midRoute)
+    check(shownBeforeTotals.name == "终点", "finish title stays 终点")
+    check(RouteFacts.cutoffLabel(shownBeforeTotals.cutoff) == "暂无关门时间", "finish without a cutoff says 暂无关门时间")
+    check(RouteFacts.cutoffLabel(midRows[1].cutoff) == "暂无关门时间", "a waypoint without a cutoff says 暂无关门时间")
+    check(RouteFacts.cutoffLabel(RouteFacts.displayWaypoint(midRows[0], route: midRoute).cutoff) == "09:00", "a waypoint cutoff stays the time")
+    check(RouteFacts.cutoffLabel(nil) == "暂无关门时间", "missing cutoff label")
+    check(RouteFacts.cutoffLabel("  ") == "暂无关门时间", "blank cutoff label")
+    check(RouteFacts.cutoffLabel("18:30") == "18:30", "a written cutoff stays")
+
+    RouteFacts.applyTotals(
+        &midRoute,
+        distance: .set(99999),
+        ascent: .set(1),
+        descent: .set(2),
+        maxElevation: .clear
+    )
+    let shownDespiteTotals = RouteFacts.displayFinish(computedFinish, route: midRoute)
+    near(shownDespiteTotals.cumulativeDistanceMeters, wholeDistance, 0.01, "finish cumulative ignores the totals override")
+    near(shownDespiteTotals.cumulativeAscentMeters, wholeAscent, 0.001, "finish climb ignores the totals override")
+    near(shownDespiteTotals.cumulativeDescentMeters, wholeDescent, 0.001, "finish descent ignores the totals override")
+    near(shownDespiteTotals.segmentDistanceMeters, computedFinish.segmentDistanceMeters, 0.01, "finish segment ignores the totals override")
+    near(RouteFacts.displayTotals(midRoute).distanceMeters, 99999, 0.001, "totals keep their own distance")
+
+    RouteFacts.applyFinish(
+        &midRoute,
+        cutoff: .set("18:30"),
+        segmentDistance: .set(321),
+        segmentAscent: .set(12),
+        segmentDescent: .set(computedFinish.segmentDescentMeters),
+        cumulativeDistance: .set(4000),
+        cumulativeAscent: .invalid,
+        cumulativeDescent: .set(7)
+    )
+    let editedFinish = RouteFacts.displayFinish(computedFinish, route: midRoute)
+    check(editedFinish.name == "终点", "a finish edit cannot rename the card")
+    check(editedFinish.cutoff == "18:30", "finish cutoff is stored")
+    check(RouteFacts.cutoffLabel(editedFinish.cutoff) == "18:30", "finish cutoff label uses the override")
+    near(editedFinish.segmentDistanceMeters, 321, 0.001, "finish segment distance override")
+    near(editedFinish.segmentAscentMeters, 12, 0.001, "finish segment climb override")
+    near(editedFinish.segmentDescentMeters, computedFinish.segmentDescentMeters, 0.001, "typing the computed finish descent stores nothing")
+    near(editedFinish.cumulativeDistanceMeters, 4000, 0.001, "finish cumulative distance is its own field")
+    near(editedFinish.cumulativeAscentMeters, wholeAscent, 0.001, "an invalid finish climb leaves the track value")
+    near(editedFinish.cumulativeDescentMeters, 7, 0.001, "finish cumulative descent is its own field")
+    near(RouteFacts.displayTotals(midRoute).distanceMeters, 99999, 0.001, "a finish edit does not change totals")
+    near(RouteFacts.displayTotals(midRoute).ascentMeters, 1, 0.001, "a finish edit does not change the total climb")
+    check(midRoute.factOverrides?.waypoints.isEmpty == true, "finish override is not stored as a waypoint")
+    check(midRoute.factOverrides?.finish?.cutoff == "18:30", "finish cutoff lives on the finish slot")
+    near(midRoute.factOverrides?.finish?.cumulativeDistanceMeters ?? -1, 4000, 0.001, "finish cumulative is stored on the finish slot")
+    check(midRoute.factOverrides?.finish?.segmentDescentMeters == nil, "matching finish descent is not stored")
+    check(midRoute.waypoints.map(\.name) == ["CP1", "CP2"], "finish edit does not rewrite waypoints")
+    check(midRoute.waypoints[1].cutoff == nil, "finish cutoff does not write the file cutoff")
+    let untouchedMidCP1 = RouteFacts.displayWaypoint(midRows[0], route: midRoute)
+    check(untouchedMidCP1.name == "CP1", "finish edit does not rename another card")
+    check(untouchedMidCP1.cutoff == "09:00", "finish edit does not change another cutoff")
+    near(untouchedMidCP1.segmentDistanceMeters, midRows[0].segmentDistanceMeters, 0.01, "finish edit does not change another segment")
+
+    let finishEncoded = try! JSONEncoder().encode(midRoute)
+    let finishDecoded = try! JSONDecoder().decode(SavedRoute.self, from: finishEncoded)
+    check(finishDecoded.factOverrides?.finish?.cutoff == "18:30", "finish override round trips")
+    near(finishDecoded.factOverrides?.finish?.segmentDistanceMeters ?? -1, 321, 0.001, "finish segment round trips")
+    near(finishDecoded.factOverrides?.finish?.cumulativeDistanceMeters ?? -1, 4000, 0.001, "finish cumulative round trips")
+    check(finishDecoded.factOverrides?.waypoints.isEmpty == true, "round trip does not invent a waypoint override")
+    near(RouteFacts.displayTotals(finishDecoded).distanceMeters, 99999, 0.001, "round trip keeps totals separate")
+    check(RouteFacts.displayFinish(computedFinish, route: finishDecoded).name == "终点", "round trip title stays 终点")
+
+    RouteFacts.applyWaypoint(
+        &midRoute,
+        progress: midRows[0],
+        name: .set("泉水"),
+        cutoff: .set("09:00"),
+        segmentDistance: .set(111),
+        segmentAscent: .clear,
+        segmentDescent: .clear,
+        cumulativeDistance: .clear,
+        cumulativeAscent: .clear,
+        cumulativeDescent: .clear
+    )
+    check(RouteFacts.displayWaypoint(midRows[0], route: midRoute).name == "泉水", "waypoint rename still applies")
+    near(RouteFacts.displayFinish(computedFinish, route: midRoute).segmentDistanceMeters, 321, 0.001, "a waypoint edit does not change the finish segment")
+    check(RouteFacts.displayFinish(computedFinish, route: midRoute).cutoff == "18:30", "a waypoint edit does not change the finish cutoff")
+    check(midRoute.factOverrides?.waypoints.count == 1, "waypoint override stays one row")
+    check(midRoute.factOverrides?.waypoints.first?.sourceName == "CP1", "waypoint override keeps its own identity")
+
+    RouteFacts.applyFinish(
+        &midRoute,
+        cutoff: .clear,
+        segmentDistance: .clear,
+        segmentAscent: .clear,
+        segmentDescent: .clear,
+        cumulativeDistance: .clear,
+        cumulativeAscent: .clear,
+        cumulativeDescent: .clear
+    )
+    let clearedFinish = RouteFacts.displayFinish(computedFinish, route: midRoute)
+    check(clearedFinish.name == "终点", "cleared finish keeps the title")
+    check(RouteFacts.cutoffLabel(clearedFinish.cutoff) == "暂无关门时间", "cleared finish cutoff is missing again")
+    near(clearedFinish.segmentDistanceMeters, computedFinish.segmentDistanceMeters, 0.01, "cleared finish segment is computed")
+    near(clearedFinish.cumulativeDistanceMeters, wholeDistance, 0.01, "cleared finish cumulative is the track")
+    near(clearedFinish.cumulativeDescentMeters, wholeDescent, 0.001, "cleared finish descent is the track")
+    check(midRoute.factOverrides?.finish == nil, "clearing the finish drops that slot")
+    check(RouteFacts.displayWaypoint(midRows[0], route: midRoute).name == "泉水", "clearing the finish keeps the other card")
+    near(RouteFacts.displayTotals(midRoute).distanceMeters, 99999, 0.001, "clearing the finish keeps totals")
+}
+
+var endedRoute = SavedRoute(
+    id: "finish-ended",
+    name: "到终点",
+    points: finishLine,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "CP1", latitude: 0, longitude: 0.01, elevation: nil),
+        RouteWaypoint(name: "终点站", latitude: 0, longitude: 0.03, elevation: nil, cutoff: "20:00")
+    ]
+)
+check(RouteCheckpoints.finish(waypoints: endedRoute.waypoints, points: endedRoute.points) == nil, "a last waypoint on the end has no finish")
+check(hasFinishCard(RouteFacts.cards(for: endedRoute)) == false, "cards omit the finish when the last waypoint is the end")
+check(cardTitles(endedRoute) == ["总数据", "CP1", "终点站"], "the ending waypoint stays a normal card \(cardTitles(endedRoute))")
+let endedRows = RouteCheckpoints.progress(waypoints: endedRoute.waypoints, points: endedRoute.points)
+check(RouteFacts.cutoffLabel(endedRows[0].cutoff) == "暂无关门时间", "the earlier card still says there is no cutoff")
+check(RouteFacts.cutoffLabel(endedRows[1].cutoff) == "20:00", "the ending waypoint keeps its cutoff")
+
+var bareRoute = SavedRoute(id: "finish-bare", name: "空", points: finishLine, kind: .gpx)
+check(RouteCheckpoints.finish(waypoints: [], points: finishLine) == nil, "no waypoints means no finish")
+check(RouteFacts.cards(for: bareRoute).count == 1, "no waypoints means only the totals card")
+check(hasFinishCard(RouteFacts.cards(for: bareRoute)) == false, "an empty route does not add a finish card")
+
+var startOnly = SavedRoute(
+    id: "finish-start",
+    name: "只有起点",
+    points: finishLine,
+    kind: .gpx,
+    waypoints: [RouteWaypoint(name: "起", latitude: 0, longitude: 0, elevation: nil)]
+)
+let startOnlyFinish = RouteCheckpoints.finish(waypoints: startOnly.waypoints, points: startOnly.points)
+check(startOnlyFinish != nil, "a waypoint on the start still leaves a finish segment")
+if let startOnlyFinish {
+    near(startOnlyFinish.segmentDistanceMeters, wholeDistance, 0.01, "start-only finish segment is the whole track")
+    near(startOnlyFinish.distanceMeters, wholeDistance, 0.01, "start-only finish cumulative is the whole track")
+    check(cardTitles(startOnly) == ["总数据", "起", "终点"], "start-only cards \(cardTitles(startOnly))")
+}
+
+let finishGPX = """
+<gpx><wpt lat="0" lon="0.01"><name>CP1</name><cmt>关门 09:00</cmt></wpt>
+<wpt lat="0" lon="0.02"><name>CP2</name></wpt>
+<trk><name>中段</name><trkseg>
+  <trkpt lat="0" lon="0"><ele>100</ele></trkpt>
+  <trkpt lat="0" lon="0.01"><ele>160</ele></trkpt>
+  <trkpt lat="0" lon="0.02"><ele>140</ele></trkpt>
+  <trkpt lat="0" lon="0.03"><ele>200</ele></trkpt>
+</trkseg></trk></gpx>
+"""
+let finishFile = RouteGPXStore.save(Data(finishGPX.utf8), routeID: "finish-gpx")
+var gpxFinish = SavedRoute(
+    id: "finish-gpx",
+    name: "中段",
+    points: finishLine,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "CP1", latitude: 0, longitude: 0.01, elevation: nil, cutoff: "09:00"),
+        RouteWaypoint(name: "CP2", latitude: 0, longitude: 0.02, elevation: nil)
+    ],
+    gpxFilename: finishFile
+)
+RouteFacts.applyFinish(
+    &gpxFinish,
+    cutoff: .set("21:00"),
+    segmentDistance: .set(80),
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .set(90),
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(RouteGPXStore.load(filename: finishFile) == Data(finishGPX.utf8), "finish edits do not write the GPX")
+check(gpxFinish.waypoints.map(\.name) == ["CP1", "CP2"], "finish apply does not rename stored waypoints")
+check(gpxFinish.waypoints[0].cutoff == "09:00", "finish apply does not rewrite a waypoint cutoff")
+check(gpxFinish.gpxFilename == finishFile, "finish apply keeps the file name")
+check(gpxFinish.factOverrides?.finish?.cutoff == "21:00", "finish cutoff is saved on the route")
+check(gpxFinish.factOverrides?.waypoints.isEmpty == true, "the GPX route does not gain a waypoint override")
+RouteGPXStore.delete(filename: finishFile)
+
+var namedEnd = SavedRoute(
+    id: "finish-named",
+    name: "同名",
+    points: finishLine,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "终点", latitude: 0, longitude: 0.01, elevation: nil, cutoff: "07:00"),
+        RouteWaypoint(name: "CP2", latitude: 0, longitude: 0.02, elevation: nil)
+    ]
+)
+let namedRows = RouteCheckpoints.progress(waypoints: namedEnd.waypoints, points: namedEnd.points)
+let namedComputed = RouteCheckpoints.finish(waypoints: namedEnd.waypoints, points: namedEnd.points)
+check(namedComputed != nil, "a waypoint named 终点 that is not the track end still has a finish card")
+RouteFacts.applyWaypoint(
+    &namedEnd,
+    progress: namedRows[0],
+    name: .set("终点改"),
+    cutoff: .set("07:30"),
+    segmentDistance: .set(111),
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+RouteFacts.applyFinish(
+    &namedEnd,
+    cutoff: .set("19:40"),
+    segmentDistance: .set(222),
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .set(333),
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(RouteFacts.displayWaypoint(namedRows[0], route: namedEnd).name == "终点改", "the waypoint named 终点 keeps its own name")
+check(RouteFacts.displayWaypoint(namedRows[0], route: namedEnd).cutoff == "07:30", "the waypoint named 终点 keeps its own cutoff")
+near(RouteFacts.displayWaypoint(namedRows[0], route: namedEnd).segmentDistanceMeters, 111, 0.001, "the waypoint named 终点 keeps its own segment")
+check(RouteFacts.displayFinish(namedComputed!, route: namedEnd).name == "终点", "the finish card does not take the waypoint name")
+check(RouteFacts.displayFinish(namedComputed!, route: namedEnd).cutoff == "19:40", "the finish card keeps its own cutoff")
+near(RouteFacts.displayFinish(namedComputed!, route: namedEnd).segmentDistanceMeters, 222, 0.001, "the finish card keeps its own segment")
+near(RouteFacts.displayFinish(namedComputed!, route: namedEnd).cumulativeDistanceMeters, 333, 0.001, "the finish card keeps its own cumulative distance")
+check(namedEnd.factOverrides?.waypoints.count == 1, "the same-name waypoint is one override row")
+check(namedEnd.factOverrides?.waypoints.first?.sourceName == "终点", "the waypoint override still matches sourceName")
+check(namedEnd.factOverrides?.finish?.cutoff == "19:40", "the finish slot is separate from that waypoint")
+check(namedEnd.waypoints[0].name == "终点", "neither edit rewrites the GPX name")
+let otherNamed = RouteFacts.displayWaypoint(namedRows[1], route: namedEnd)
+check(otherNamed.name == "CP2", "the other waypoint is untouched")
+check(otherNamed.cutoff == nil, "the other waypoint cutoff is untouched")
+check(RouteFacts.cutoffLabel(otherNamed.cutoff) == "暂无关门时间", "the untouched waypoint still has no cutoff")
+
+let finishJSON = """
+{"id":"fin","name":"线","points":[{"latitude":0,"longitude":0,"altitude":100},{"latitude":0,"longitude":0.01,"altitude":160},{"latitude":0,"longitude":0.02,"altitude":140},{"latitude":0,"longitude":0.03,"altitude":200}],"kind":"gpx","waypoints":[{"name":"泉","latitude":0,"longitude":0.01}],"factOverrides":{"finish":{"cutoff":"19:00","cumulativeDistanceMeters":42},"waypoints":[{"latitude":0,"longitude":0.01,"sourceName":"泉","segmentDistanceMeters":5}]}}
+""".data(using: .utf8)!
+let decodedFinish = try! JSONDecoder().decode(SavedRoute.self, from: finishJSON)
+check(decodedFinish.factOverrides?.finish?.cutoff == "19:00", "decoded finish cutoff")
+near(decodedFinish.factOverrides?.finish?.cumulativeDistanceMeters ?? -1, 42, 0.001, "decoded finish cumulative")
+check(decodedFinish.factOverrides?.finish?.segmentDistanceMeters == nil, "missing finish segment stays nil")
+near(decodedFinish.factOverrides?.waypoints.first?.segmentDistanceMeters ?? -1, 5, 0.001, "decoded waypoint override stays separate")
+check(decodedFinish.waypoints.first?.cutoff == nil, "decoded finish cutoff is not copied onto the waypoint")
+let decodedRows = RouteCheckpoints.progress(waypoints: decodedFinish.waypoints, points: decodedFinish.points)
+let decodedComputed = RouteCheckpoints.finish(waypoints: decodedFinish.waypoints, points: decodedFinish.points)
+check(decodedComputed != nil, "decoded route still has a finish card")
+check(RouteFacts.displayWaypoint(decodedRows[0], route: decodedFinish).cutoff == nil, "the waypoint does not display the finish cutoff")
+near(RouteFacts.displayWaypoint(decodedRows[0], route: decodedFinish).segmentDistanceMeters, 5, 0.001, "the waypoint keeps its decoded segment")
+check(RouteFacts.displayFinish(decodedComputed!, route: decodedFinish).cutoff == "19:00", "the finish card displays its own cutoff")
+near(RouteFacts.displayFinish(decodedComputed!, route: decodedFinish).cumulativeDistanceMeters, 42, 0.001, "the finish card displays its own cumulative distance")
+near(RouteFacts.displayFinish(decodedComputed!, route: decodedFinish).segmentDistanceMeters, decodedComputed!.segmentDistanceMeters, 0.01, "a missing finish segment stays computed")
+check(RouteFacts.displayFinish(decodedComputed!, route: decodedFinish).name == "终点", "decoded finish title")
+
+let axisRoute = midRoute
+let axisMarks = ElevationProfileAxis.marks(for: axisRoute)
+check(axisMarks.map(\.name) == ["泉水", "CP2", "终点"], "axis uses the display name and the finish \(axisMarks.map(\.name))")
+check(axisMarks.last?.id == "finish", "the synthetic end has a stable axis id")
+near(axisMarks[0].distanceMeters, midRows[0].distanceMeters, 0.01, "first tick sits on CP1")
+near(axisMarks[1].distanceMeters, midRows[1].distanceMeters, 0.01, "second tick sits on CP2")
+near(axisMarks[2].distanceMeters, wholeDistance, 0.01, "finish tick sits at the track end")
+for mark in axisMarks {
+    let span = max(wholeDistance, 0.000001)
+    near(mark.fraction * span, mark.distanceMeters, 0.02, "tick fraction matches \(mark.name)")
+}
+near(axisMarks[2].fraction, 1, 0.000001, "finish tick is the end of the axis")
+let endedMarks = ElevationProfileAxis.marks(for: endedRoute)
+check(endedMarks.map(\.name) == ["CP1", "终点站"], "no synthetic end tick when the last waypoint is the end \(endedMarks.map(\.name))")
+check(endedMarks.allSatisfy { $0.id != "finish" }, "the ending waypoint is not the synthetic finish tick")
+near(endedMarks[1].distanceMeters, endedRows[1].distanceMeters, 0.01, "ending waypoint tick uses its own distance")
+check(ElevationProfileAxis.marks(for: bareRoute).isEmpty, "no waypoints means no axis ticks")
+
+let sparseMarks = [
+    ElevationAxisMark(id: "a", name: "甲", distanceMeters: 20, fraction: 0.2),
+    ElevationAxisMark(id: "b", name: "乙", distanceMeters: 80, fraction: 0.8)
+]
+let sparseLabels = ElevationProfileAxis.labels(sparseMarks, plotWidth: 300, labelWidth: { _ in 20 })
+check(sparseLabels.count == sparseMarks.count, "spaced labels keep every tick")
+check(sparseLabels.map(\.lane) == [0, 0], "spaced labels stay on one line \(sparseLabels.map(\.lane))")
+near(sparseLabels[0].tickFraction, 0.2, 0.000001, "spaced tick stays put")
+near(sparseLabels[0].labelFraction, 0.2, 0.02, "spaced label sits on its tick")
+near(sparseLabels[1].labelFraction, 0.8, 0.02, "the second spaced label sits on its tick")
+let denseMarks = (0..<8).map { index in
+    ElevationAxisMark(
+        id: "c\(index)",
+        name: "检查点\(index)",
+        distanceMeters: Double(index) * 10,
+        fraction: Double(index) / 7
+    )
+}
+let denseLabels = ElevationProfileAxis.labels(denseMarks, plotWidth: 160, labelWidth: { Double($0.count) * 10 })
+check(denseLabels.count == denseMarks.count, "dense labels are not dropped")
+for (mark, label) in zip(denseMarks, denseLabels) {
+    check(label.id == mark.id, "dense label keeps \(mark.id)")
+    near(label.tickFraction, mark.fraction, 0.000001, "dense tick stays on \(mark.name)")
+}
 
 if failures.isEmpty {
     print("route-checkpoint-check ok")
