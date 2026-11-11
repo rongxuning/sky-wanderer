@@ -1,6 +1,7 @@
 import Foundation
 
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/TrainingEstimate.swift \
+//   codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/HealthSeries.swift \
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/Database.swift \
 //   codes/ios/Shared/AccountIdentity.swift \
@@ -332,11 +333,19 @@ near(
     "derived stride uses training pace"
 )
 check(
-    knownTraining.sessionLoad == TrainingEstimate.sessionLoad(duration: 300, averageHeartRate: 150, sport: .running),
+    knownTraining.sessionLoad == TrainingEstimate.sessionLoad(
+        trainingDuration: 300,
+        heartRate: knownTraining.heartRate,
+        averageHeartRate: 150
+    ),
     "load uses training time"
 )
 check(
-    knownTraining.sessionLoad != TrainingEstimate.sessionLoad(duration: knownTraining.elapsedDuration, averageHeartRate: 150, sport: .running),
+    knownTraining.sessionLoad != TrainingEstimate.sessionLoad(
+        trainingDuration: knownTraining.elapsedDuration,
+        heartRate: knownTraining.heartRate,
+        averageHeartRate: 150
+    ),
     "load is not the elapsed load"
 )
 var tooLong = makeWorkout()

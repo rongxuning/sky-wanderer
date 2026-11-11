@@ -1,7 +1,7 @@
 import Foundation
 
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/SampleLibrary.swift \
-//   codes/ios/Shared/TrainingEstimate.swift \
+//   codes/ios/Shared/TrainingEstimate.swift codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/sky-wanderer/WorkoutChartMath.swift \
 //   codes/ios/workout-chart-check/main.swift \
 //   -o /tmp/workout-chart-check && /tmp/workout-chart-check

@@ -22,11 +22,11 @@ enum ZoneScale {
     /// Z4 80–89% (152–170 bpm)
     /// Z5 ≥ 90% (≥ 171 bpm)
     static func heart(_ bpm: Double) -> TrainingZone {
-        switch bpm {
-        case ..<114: return .z1
-        case ..<133: return .z2
-        case ..<152: return .z3
-        case ..<171: return .z4
+        switch ZoneDwell.heartZone(bpm) {
+        case 1: return .z1
+        case 2: return .z2
+        case 3: return .z3
+        case 4: return .z4
         default: return .z5
         }
     }

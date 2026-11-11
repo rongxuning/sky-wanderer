@@ -1,6 +1,7 @@
 import Foundation
 
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/TrainingEstimate.swift \
+//   codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/Database.swift \
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Formatting.swift \
 //   codes/ios/workout-delete-check/main.swift \
