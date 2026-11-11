@@ -657,6 +657,73 @@ struct PlannedRoute: Identifiable, Hashable {
     static let free = PlannedRoute(id: "free", name: "自由", points: [])
 }
 
+/// Optional replacements for the numbers and labels on the route detail card.
+/// A missing field means “use the track-computed value”.
+/// Segment and cumulative numbers are independent: saving one does not change the other.
+/// Clearing a field removes only that override. Nothing here is written back to the GPX file.
+struct RouteFactOverrides: Codable, Hashable {
+    var totals: RouteTotalOverrides?
+    var waypoints: [RouteWaypointFactOverride]
+
+    init(totals: RouteTotalOverrides? = nil, waypoints: [RouteWaypointFactOverride] = []) {
+        self.totals = totals
+        self.waypoints = waypoints
+    }
+
+    var isEmpty: Bool {
+        (totals == nil || totals?.isEmpty == true) && waypoints.allSatisfy(\.isEmpty)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case totals, waypoints
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        totals = try container.decodeIfPresent(RouteTotalOverrides.self, forKey: .totals)
+        waypoints = try container.decodeIfPresent([RouteWaypointFactOverride].self, forKey: .waypoints) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(totals, forKey: .totals)
+        try container.encode(waypoints, forKey: .waypoints)
+    }
+}
+
+struct RouteTotalOverrides: Codable, Hashable {
+    var distanceMeters: Double? = nil
+    var ascentMeters: Double? = nil
+    var descentMeters: Double? = nil
+    var maxElevationMeters: Double? = nil
+
+    var isEmpty: Bool {
+        distanceMeters == nil && ascentMeters == nil && descentMeters == nil && maxElevationMeters == nil
+    }
+}
+
+/// One real waypoint's edited card. `sourceName` is the computed name, used to tell two
+/// points at the same place apart. The GPX name on `RouteWaypoint` stays as imported.
+struct RouteWaypointFactOverride: Codable, Hashable {
+    var latitude: Double
+    var longitude: Double
+    var sourceName: String
+    var name: String? = nil
+    var cutoff: String? = nil
+    var segmentDistanceMeters: Double? = nil
+    var segmentAscentMeters: Double? = nil
+    var segmentDescentMeters: Double? = nil
+    var cumulativeDistanceMeters: Double? = nil
+    var cumulativeAscentMeters: Double? = nil
+    var cumulativeDescentMeters: Double? = nil
+
+    var isEmpty: Bool {
+        name == nil && cutoff == nil
+            && segmentDistanceMeters == nil && segmentAscentMeters == nil && segmentDescentMeters == nil
+            && cumulativeDistanceMeters == nil && cumulativeAscentMeters == nil && cumulativeDescentMeters == nil
+    }
+}
+
 /// A named point from a GPX file. `elevation` is the GPX `<ele>` in meters.
 /// `cutoff` is the 关门时间 read from the point's comment or description. Nil when the file has none.
 /// Old saves have no waypoint list and decode as an empty array.
@@ -687,6 +754,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     /// True after the stored GPX has been read for 关门时间.
     /// Older saves decode as false, so the next launch can fill `RouteWaypoint.cutoff` without a new import.
     var cutoffResolved: Bool
+    /// Card edits. Nil on routes saved before the detail card could be edited.
+    var factOverrides: RouteFactOverrides?
 
     enum Kind: String, Codable {
         /// The one running route the phone editor can change.
@@ -706,7 +775,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         creator: String = "",
         waypoints: [RouteWaypoint] = [],
         gpxFilename: String? = nil,
-        cutoffResolved: Bool = false
+        cutoffResolved: Bool = false,
+        factOverrides: RouteFactOverrides? = nil
     ) {
         self.id = id
         self.name = name
@@ -717,6 +787,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         self.waypoints = waypoints
         self.gpxFilename = gpxFilename
         self.cutoffResolved = cutoffResolved
+        self.factOverrides = factOverrides
     }
 
     var creatorLabel: String {
@@ -725,7 +796,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, points, kind, importedAt, creator, waypoints, gpxFilename, cutoffResolved
+        case id, name, points, kind, importedAt, creator, waypoints, gpxFilename, cutoffResolved, factOverrides
     }
 
     init(from decoder: Decoder) throws {
@@ -739,6 +810,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         waypoints = try container.decodeIfPresent([RouteWaypoint].self, forKey: .waypoints) ?? []
         gpxFilename = try container.decodeIfPresent(String.self, forKey: .gpxFilename)
         cutoffResolved = try container.decodeIfPresent(Bool.self, forKey: .cutoffResolved) ?? false
+        factOverrides = try container.decodeIfPresent(RouteFactOverrides.self, forKey: .factOverrides)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -752,6 +824,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         try container.encode(waypoints, forKey: .waypoints)
         try container.encodeIfPresent(gpxFilename, forKey: .gpxFilename)
         try container.encode(cutoffResolved, forKey: .cutoffResolved)
+        try container.encodeIfPresent(factOverrides, forKey: .factOverrides)
     }
 }
 

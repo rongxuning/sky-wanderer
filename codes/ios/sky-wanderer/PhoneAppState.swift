@@ -150,6 +150,17 @@ final class PhoneAppState: ObservableObject {
         RouteGPXStore.delete(filename: filename)
     }
 
+    /// Writes route-detail card edits onto `Database.routes` in phone.json.
+    /// Does not open or modify the original GPX file. An empty override list is stored as nil.
+    func saveRouteFactOverrides(id: String, overrides: RouteFactOverrides?) {
+        let stored: RouteFactOverrides? = (overrides?.isEmpty == false) ? overrides : nil
+        guard database.routes.contains(where: { $0.id == id && $0.factOverrides != stored }) else { return }
+        mutate { database in
+            guard let index = database.routes.firstIndex(where: { $0.id == id }) else { return }
+            database.routes[index].factOverrides = stored
+        }
+    }
+
     /// Saves a new display name on the on-device route (`Database.routes` in phone.json).
     /// Blank names are ignored so the previous title stays. The list and the training line read this same field.
     func renameRoute(id: String, name: String) {
