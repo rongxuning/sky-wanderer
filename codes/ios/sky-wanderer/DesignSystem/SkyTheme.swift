@@ -47,21 +47,32 @@ enum SkyTheme {
             static let score = SkyTheme.Color.primary
         }
 
-        /// Heart-rate and pace zone colors, easy to hard, light-adapted for white cards.
-        /// Cutoffs stay in `ZoneScale`. These are only the marks.
+        /// Heart-rate and pace zone marks, easy to hard.
+        /// Cutoffs stay in `ZoneScale`. These colors are the chart stroke and the share-bar fill.
         enum Zone {
             /// 有氧基础
             static let base = SkyHex.color(0x1E88FE)
             /// 有氧耐力
-            static let endurance = SkyHex.color(0x15803D)
+            static let endurance = SkyHex.color(0x1B9E4B)
             /// 乳酸阈值
-            static let threshold = SkyHex.color(0xA16207)
+            static let threshold = SkyHex.color(0xFFCC00)
             /// 速度耐力
-            static let speed = SkyHex.color(0xC2410C)
+            static let speed = SkyHex.color(0xFF8C00)
             /// 冲刺能力
-            static let sprint = SkyHex.color(0xD13924)
+            static let sprint = SkyHex.color(0xC62828)
 
             static let ordered: [SwiftUI.Color] = [base, endurance, threshold, speed, sprint]
+
+            /// Zone names on white. Gold and tangerine marks are too light to read as captions.
+            enum Label {
+                static let base = SkyHex.color(0x1E88FE)
+                static let endurance = SkyHex.color(0x15803D)
+                static let threshold = SkyHex.color(0x8A6A00)
+                static let speed = SkyHex.color(0xB35A00)
+                static let sprint = SkyHex.color(0xC62828)
+
+                static let ordered: [SwiftUI.Color] = [base, endurance, threshold, speed, sprint]
+            }
         }
     }
 

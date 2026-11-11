@@ -479,7 +479,8 @@ struct WorkoutDetailView: View {
             trailingLabel: "最快",
             accent: SkyTheme.Color.Metric.pace,
             bands: WorkoutDetailMath.paceBands,
-            invert: true
+            invert: true,
+            paintCrossings: true
         )
     }
 
@@ -1005,8 +1006,8 @@ private struct ZoneSeriesCard: View {
     var accent: Color
     var bands: [ZoneBand]
     var invert: Bool
-    /// Heart rate samples are sparse, so a straight stroke can cross several
-    /// bands. Split that stroke on the cutoffs. Pace stays on the sample boundary.
+    /// A straight segment between two samples can cross several bands.
+    /// Split the stroke on the cutoffs for both heart rate and pace.
     var paintCrossings: Bool = false
 
     private var samples: [ChartSample] {
@@ -1049,21 +1050,28 @@ private struct ZoneSeriesCard: View {
                     name: share.name,
                     range: share.range,
                     fraction: share.fraction,
-                    color: zoneColor(index)
+                    mark: zoneMark(index),
+                    label: zoneLabel(index)
                 )
             }
         }
     }
 
-    private func zoneColor(_ index: Int) -> Color {
+    private func zoneMark(_ index: Int) -> Color {
         let colors = SkyTheme.Color.Zone.ordered
         guard colors.indices.contains(index) else { return SkyTheme.Color.Zone.base }
         return colors[index]
     }
 
+    private func zoneLabel(_ index: Int) -> Color {
+        let colors = SkyTheme.Color.Zone.Label.ordered
+        guard colors.indices.contains(index) else { return SkyTheme.Color.Zone.Label.base }
+        return colors[index]
+    }
+
     private func color(for name: String) -> Color {
         let index = bands.firstIndex { $0.name == name } ?? 0
-        return zoneColor(index)
+        return zoneMark(index)
     }
 
     private var chart: some View {
@@ -1087,6 +1095,9 @@ private struct ZoneSeriesCard: View {
         }
         .chartXScale(domain: xDomain)
         .chartYScale(domain: domain)
+        .chartPlotStyle { plot in
+            plot.clipped()
+        }
         .chartXAxis { timeAxis }
         .chartYAxis { valueAxis }
         .chartLegend(.hidden)
@@ -1099,16 +1110,12 @@ private struct ZoneSeriesCard: View {
     }
 
     private var plottedDomain: ClosedRange<Double> {
-        let values = samples.map(\.value).filter { $0.isFinite && (invert ? ($0 > 0 && $0 < 3_600) : $0 > 0) }
-        let low = values.min() ?? (invert ? 300 : 0)
-        let high = values.max() ?? (invert ? 600 : 1)
         if invert {
-            let pad = max((high - low) * 0.18, 15)
-            let lower = -(high + pad)
-            let upper = -(low - pad)
-            if upper > lower { return lower...upper }
-            return (lower - 1)...(lower + 1)
+            return WorkoutChartMath.paceScale(points).domain
         }
+        let values = samples.map(\.value).filter { $0.isFinite && $0 > 0 }
+        let low = values.min() ?? 0
+        let high = values.max() ?? 1
         let span = high - low
         let pad = span > 0 ? max(span * 0.18, 0.5) : max(abs(high) * 0.08, 1)
         return (low - pad)...(high + pad)
@@ -1153,7 +1160,10 @@ private struct ZoneShareRow: View {
     var name: String
     var range: String
     var fraction: Double
-    var color: Color
+    /// Chart stroke and share-bar fill.
+    var mark: Color
+    /// Zone name on white. Some marks are too light to read as captions.
+    var label: Color
 
     var body: some View {
         GeometryReader { geo in
@@ -1163,13 +1173,13 @@ private struct ZoneShareRow: View {
                     .fill(SkyTheme.Color.separator.opacity(0.28))
                     .frame(width: geo.size.width, height: geo.size.height)
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(color.opacity(0.35))
+                    .fill(mark.opacity(0.35))
                     .frame(width: width, height: geo.size.height)
                 HStack(spacing: 8) {
                     Text(name)
                         .font(SkyTheme.Font.caption)
                         .fontWeight(.semibold)
-                        .foregroundStyle(color)
+                        .foregroundStyle(label)
                         .lineLimit(1)
                     Text(range)
                         .font(SkyTheme.Font.caption)
@@ -1389,7 +1399,10 @@ private struct DetailChartCard: View {
             .foregroundStyle(SkyTheme.Color.chartTrack)
         }
         .chartXScale(domain: xDomain)
-        .chartYScale(domain: kind == .pace ? paceDomain : (domain.lower...domain.upper))
+        .chartYScale(domain: kind == .pace ? paceScale.domain : (domain.lower...domain.upper))
+        .chartPlotStyle { plot in
+            plot.clipped()
+        }
         .chartXAxis { xAxis }
         .chartYAxis { yAxis }
         .chartLegend(.hidden)
@@ -1410,15 +1423,8 @@ private struct DetailChartCard: View {
         return (low - pad, high + pad)
     }
 
-    private var paceDomain: ClosedRange<Double> {
-        let values = samples.map(\.value).filter { $0 > 0 && $0 < 3_600 }
-        let low = values.min() ?? 300
-        let high = values.max() ?? 600
-        let pad = max((high - low) * 0.18, 15)
-        let lower = -(high + pad)
-        let upper = -(low - pad)
-        if upper > lower { return lower...upper }
-        return (lower - 1)...(lower + 1)
+    private var paceScale: WorkoutChartMath.PaceScale {
+        WorkoutChartMath.paceScale(points)
     }
 
     private var xAxis: some AxisContent {
@@ -1705,94 +1711,12 @@ private enum WorkoutDetailMath {
         return (climb, drop)
     }
 
-    /// Evenly samples the series and always keeps the minimum and maximum.
-    /// Times stay strictly increasing. The point cap is honored unless the only
-    /// remaining points are those extrema.
-    static func plotSamples(_ points: [SeriesPoint], limit: Int = 90) -> [ChartSample] {
-        let unique = uniqued(points)
-        guard unique.count >= 2 else { return [] }
-        let cap = max(2, limit)
-        let finite = points.filter { $0.second.isFinite && $0.value.isFinite }
-        let low = finite.min { $0.value < $1.value }
-        let high = finite.max { $0.value < $1.value }
-
-        var chosen: [SeriesPoint]
-        if unique.count <= cap {
-            chosen = unique
-        } else {
-            let step = max(1, unique.count / cap)
-            chosen = []
-            chosen.reserveCapacity(cap)
-            for index in stride(from: 0, to: unique.count, by: step) {
-                chosen.append(unique[index])
-            }
-            if let last = unique.last, chosen.last?.second != last.second {
-                chosen.append(last)
-            }
-        }
-        chosen = includingExtrema(chosen, low: low, high: high, cap: cap)
-        return chosen.enumerated().map { offset, point in
+    /// Every stored sample. Ingest already caps a series at `HealthSeries.maxPoints` (720).
+    /// A caller can still pass `limit`; the minimum and maximum stay on that thinner line.
+    static func plotSamples(_ points: [SeriesPoint], limit: Int = WorkoutChartMath.plotLimit) -> [ChartSample] {
+        WorkoutChartMath.plotSamples(points, limit: limit).enumerated().map { offset, point in
             ChartSample(id: offset, second: point.second, value: point.value)
         }
-    }
-
-    /// Inserts the true min and max. A sample already at that time keeps the more extreme value
-    /// so the chart does not plot two points on one second.
-    private static func includingExtrema(
-        _ samples: [SeriesPoint],
-        low: SeriesPoint?,
-        high: SeriesPoint?,
-        cap: Int
-    ) -> [SeriesPoint] {
-        var rows = samples
-        if let high {
-            rows = merging(rows, extreme: high, replaces: { $0 > $1 })
-        }
-        if let low, low.second != high?.second {
-            rows = merging(rows, extreme: low, replaces: { $0 < $1 })
-        }
-        rows.sort { $0.second < $1.second }
-        var collapsed: [SeriesPoint] = []
-        collapsed.reserveCapacity(rows.count)
-        for row in rows {
-            if let last = collapsed.last, last.second == row.second {
-                if row.value == high?.value || (row.value == low?.value && last.value != high?.value) {
-                    collapsed[collapsed.count - 1] = SeriesPoint(second: row.second, value: row.value)
-                }
-            } else {
-                collapsed.append(row)
-            }
-        }
-        guard collapsed.count > cap else { return collapsed }
-        let protected = Set([low?.second, high?.second].compactMap { $0 })
-        var trimmed = collapsed
-        while trimmed.count > cap {
-            let middle = trimmed.indices.filter { index in
-                let second = trimmed[index].second
-                if protected.contains(second) { return false }
-                return index != 0 && index != trimmed.count - 1
-            }
-            let pool = middle.isEmpty
-                ? trimmed.indices.filter { !protected.contains(trimmed[$0].second) }
-                : middle
-            guard !pool.isEmpty else { break }
-            trimmed.remove(at: pool[pool.count / 2])
-        }
-        return trimmed
-    }
-
-    private static func merging(
-        _ rows: [SeriesPoint],
-        extreme: SeriesPoint,
-        replaces: (Double, Double) -> Bool
-    ) -> [SeriesPoint] {
-        if let index = rows.firstIndex(where: { $0.second == extreme.second }) {
-            guard replaces(extreme.value, rows[index].value) else { return rows }
-            var copy = rows
-            copy[index] = SeriesPoint(second: extreme.second, value: extreme.value)
-            return copy
-        }
-        return rows + [SeriesPoint(second: extreme.second, value: extreme.value)]
     }
 
     struct ZoneSegment: Identifiable {
@@ -1831,8 +1755,8 @@ private enum WorkoutDetailMath {
     }
 
     /// Same zone colors as `zoneSegments`, but the stroke changes color where the
-    /// line crosses a cutoff. Used for heart rate, whose plotted samples are far
-    /// enough apart that one segment can pass through several bands.
+    /// line crosses a cutoff. Heart rate and pace both use this: one segment
+    /// between two samples can pass through several bands.
     static func boundaryZoneSegments(samples: [ChartSample], bands: [ZoneBand]) -> [ZoneSegment] {
         guard samples.count >= 2, !bands.isEmpty else {
             return zoneSegments(samples: samples, bands: bands)
