@@ -15,14 +15,6 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         case .running: return "跑步"
         }
     }
-
-    /// Used by the session-load formula. Documented in `TrainingEstimate`.
-    var loadFactor: Double {
-        switch self {
-        case .hiking: return 0.8
-        case .running: return 1.0
-        }
-    }
 }
 
 struct GeoPoint: Codable, Hashable {
@@ -384,7 +376,8 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
         return trainingDurationSeconds
     }
 
-    /// Elapsed wall-clock time. Pace, load, and list cards use `trainingDuration`.
+    /// Elapsed wall-clock time. Pace and list cards use `trainingDuration`.
+    /// Session load uses heart-rate zone time from the series when that series can produce it.
     var duration: TimeInterval { elapsedDuration }
 
     var averagePaceSecPerKm: Double {
@@ -396,9 +389,9 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
 
     var sessionLoad: Int {
         TrainingEstimate.sessionLoad(
-            duration: trainingDuration,
-            averageHeartRate: resolvedAverageHeartRate,
-            sport: sport
+            trainingDuration: trainingDuration,
+            heartRate: heartRate,
+            averageHeartRate: resolvedAverageHeartRate
         )
     }
 

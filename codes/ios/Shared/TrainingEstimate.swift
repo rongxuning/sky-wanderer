@@ -9,21 +9,43 @@ struct TrainingEstimateSummary: Equatable {
 enum TrainingEstimate {
     /// 训练估计，不是医疗建议。
     ///
-    /// 单次负荷 = 训练时间（分钟）×（平均心率 / 180）× 运动系数，四舍五入成整数。
-    /// 运动系数：跑步 1.0，徒步 0.8。
-    /// 平均心率缺失或不是正数时，这一次负荷记为 0，不用假设心率去补。
+    /// 单次负荷是 Edwards TRIMP，跑步和徒步同一套，不再乘运动系数：
+    ///   round(Z1 分钟×1 + Z2 分钟×2 + Z3 分钟×3 + Z4 分钟×4 + Z5 分钟×5)
+    /// 分钟可以是小数，最后再把和四舍五入成整数。
+    /// 区间和详情页「心率区间」一致，参考最大心率固定 190（`ZoneDwell.heartBands`）：
+    /// Z1 <114、Z2 114–132、Z3 133–151、Z4 152–170、Z5 ≥171。
+    ///
+    /// 有可用心率序列时，各区秒数用 `ZoneDwell.shares`（暂停空档不计入，和心率区间卡同一套）。
+    /// 序列给不出区时间、但平均心率是正数时，全部训练分钟记进该平均心率所在的区。
+    /// 两者都没有时，这一次负荷记为 0。
+    /// 例：41 分 23 秒、平均心率 137、没有序列，全部落在 Z3，round((41+23/60)×3) = 124。
     ///
     /// 近 7 日负荷 = 开始时间落在过去 7×24 小时里的单次负荷之和。
-    /// 体能储备 = max(0, 100 − 近 7 日负荷 / 5)。100 表示这 7 天没有负荷。
+    /// Edwards 负荷大约是旧公式的 3–4 倍，休息门槛和储备除数按 ×3 跟上：
+    /// 体能储备 = max(0, 100 − 近 7 日负荷 / 15)。100 表示这 7 天没有负荷。
     /// 休息时间建议：
-    /// - 近 7 日负荷 ≥ 350 → 建议休息 48 小时
-    /// - 近 7 日负荷 ≥ 200 → 建议休息 24 小时
+    /// - 近 7 日负荷 ≥ 1050 → 建议休息 48 小时
+    /// - 近 7 日负荷 ≥ 600 → 建议休息 24 小时
     /// - 否则 → 可以正常训练
-    static func sessionLoad(duration: TimeInterval, averageHeartRate: Double, sport: SportKind) -> Int {
-        guard duration > 0, averageHeartRate > 0 else { return 0 }
-        let minutes = duration / 60
-        let raw = minutes * (averageHeartRate / 180) * sport.loadFactor
-        return Int(raw.rounded())
+    /// 训练评分仍是心率 / 180，不在这里改（见 `RecordStats`）。
+    static func sessionLoad(
+        trainingDuration: TimeInterval,
+        heartRate: [SeriesPoint],
+        averageHeartRate: Double
+    ) -> Int {
+        let shares = ZoneDwell.shares(
+            points: ZoneDwell.positiveSamples(heartRate),
+            bands: ZoneDwell.heartBands
+        )
+        if shares.reduce(0.0, { $0 + $1.seconds }) > 0 {
+            let raw = shares.enumerated().reduce(0.0) { partial, item in
+                partial + item.element.seconds / 60 * Double(item.offset + 1)
+            }
+            return Int(raw.rounded())
+        }
+        guard trainingDuration > 0, averageHeartRate > 0 else { return 0 }
+        let weight = Double(ZoneDwell.heartZone(averageHeartRate))
+        return Int((trainingDuration / 60 * weight).rounded())
     }
 
     static func summarize(workouts: [WorkoutRecord], now: Date = Date()) -> TrainingEstimateSummary {
@@ -32,11 +54,11 @@ enum TrainingEstimate {
             guard workout.start >= cutoff else { return partial }
             return partial + workout.sessionLoad
         }
-        let reserve = max(0, 100 - recent / 5)
+        let reserve = max(0, 100 - recent / 15)
         let hint: String
-        if recent >= 350 {
+        if recent >= 1050 {
             hint = "建议休息 48 小时"
-        } else if recent >= 200 {
+        } else if recent >= 600 {
             hint = "建议休息 24 小时"
         } else {
             hint = "可以正常训练"

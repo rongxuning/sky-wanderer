@@ -485,7 +485,7 @@ struct WorkoutDetailView: View {
     }
 
     private func heartCard(_ workout: WorkoutRecord) -> some View {
-        let points = WorkoutDetailMath.positive(workout.heartRate)
+        let points = ZoneDwell.positiveSamples(workout.heartRate)
         return ZoneSeriesCard(
             title: "心率区间",
             points: points,
@@ -1496,26 +1496,6 @@ private struct ChartSample: Identifiable {
     var value: Double
 }
 
-private struct ZoneBand {
-    var name: String
-    var range: String
-    var lower: Double
-    var upper: Double
-
-    func contains(_ value: Double) -> Bool {
-        value >= lower && value < upper
-    }
-}
-
-private struct ZoneShare: Identifiable {
-    var name: String
-    var range: String
-    var seconds: Double
-    var fraction: Double
-
-    var id: String { name }
-}
-
 private enum WorkoutDetailMath {
     /// Same draft cutoffs as `ZoneScale.pace`. Names are the shared zone language.
     static let paceBands: [ZoneBand] = [
@@ -1527,13 +1507,8 @@ private enum WorkoutDetailMath {
     ]
 
     /// Same draft cutoffs as `ZoneScale.heart` (190 bpm reference, not a lab test).
-    static let heartBands: [ZoneBand] = [
-        ZoneBand(name: "有氧基础", range: "<114", lower: 0.001, upper: 114),
-        ZoneBand(name: "有氧耐力", range: "114–132", lower: 114, upper: 133),
-        ZoneBand(name: "乳酸阈值", range: "133–151", lower: 133, upper: 152),
-        ZoneBand(name: "速度耐力", range: "152–170", lower: 152, upper: 171),
-        ZoneBand(name: "冲刺能力", range: "≥171", lower: 171, upper: .infinity)
-    ]
+    /// Defined on `ZoneDwell` so session load counts these same bands.
+    static var heartBands: [ZoneBand] { ZoneDwell.heartBands }
 
     struct ElevationProfile {
         var points: [SeriesPoint]
@@ -1572,114 +1547,9 @@ private enum WorkoutDetailMath {
         return String(format: "%.\(digits)f", value)
     }
 
-    /// Time in each band.
-    ///
-    /// A gap longer than `TrainingSeriesMath.pauseGapSeconds` is a pause and is
-    /// left out, matching the training average. That rule is right for pace,
-    /// which is sampled about every 10–20 seconds of movement.
-    ///
-    /// Heart rate is not. HealthKit samples are thinned to `HealthSeries.maxPoints`
-    /// (720). On a long workout the stored points sit more than 30 seconds apart,
-    /// so every interval was classified as a pause and every zone reported 0%
-    /// while the chart still drew the series. When the pause rule counts nothing,
-    /// treat the series' own spacing as the sample interval: keep gaps up to
-    /// 1.5× the median, drop a hole that is much longer, and split each kept
-    /// interval across the bands the value crosses.
+    /// Time in each band. The body lives on `ZoneDwell` so session load cannot drift from this card.
     static func shares(points: [SeriesPoint], bands: [ZoneBand]) -> [ZoneShare] {
-        let ordered = uniqued(points)
-        let held = dwell(ordered, bands: bands, limit: TrainingSeriesMath.pauseGapSeconds, interpolate: false)
-        if held.reduce(0, +) > 0 || ordered.count < 2 {
-            return packaged(bands, held)
-        }
-        let gaps = (1..<ordered.count).map { ordered[$0].second - ordered[$0 - 1].second }.filter { $0 > 0 }
-        guard let typical = median(gaps) else { return packaged(bands, held) }
-        let limit = max(TrainingSeriesMath.pauseGapSeconds, typical * 1.5)
-        let crossed = dwell(ordered, bands: bands, limit: limit, interpolate: true)
-        return packaged(bands, crossed)
-    }
-
-    private static func dwell(
-        _ ordered: [SeriesPoint],
-        bands: [ZoneBand],
-        limit: Double,
-        interpolate: Bool
-    ) -> [Double] {
-        var seconds = Array(repeating: 0.0, count: bands.count)
-        guard ordered.count >= 2 else { return seconds }
-        for index in 1..<ordered.count {
-            let dt = ordered[index].second - ordered[index - 1].second
-            guard dt > 0, dt <= limit else { continue }
-            let start = ordered[index - 1].value
-            let end = ordered[index].value
-            if interpolate && start != end {
-                addCrossed(&seconds, from: start, to: end, dt: dt, bands: bands)
-            } else if let band = bands.firstIndex(where: { $0.contains(start) }) {
-                seconds[band] += dt
-            }
-        }
-        return seconds
-    }
-
-    /// Linear in time. The fraction of the interval between two values is the
-    /// fraction of `dt`, which is the same split the heart-rate stroke uses.
-    private static func addCrossed(
-        _ seconds: inout [Double],
-        from start: Double,
-        to end: Double,
-        dt: Double,
-        bands: [ZoneBand]
-    ) {
-        let span = end - start
-        guard span != 0 else { return }
-        var knots = [start]
-        knots.append(contentsOf: edges(between: start, and: end, bands: bands))
-        knots.append(end)
-        for index in 1..<knots.count {
-            let share = abs(knots[index] - knots[index - 1]) / abs(span) * dt
-            let probe = knots[index - 1] + (knots[index] - knots[index - 1]) * 0.5
-            guard let band = bands.firstIndex(where: { $0.contains(probe) }) else { continue }
-            seconds[band] += share
-        }
-    }
-
-    private static func packaged(_ bands: [ZoneBand], _ seconds: [Double]) -> [ZoneShare] {
-        let total = seconds.reduce(0, +)
-        return zip(bands, seconds).map { band, time in
-            ZoneShare(
-                name: band.name,
-                range: band.range,
-                seconds: time,
-                fraction: total > 0 ? time / total : 0
-            )
-        }
-    }
-
-    private static func median(_ values: [Double]) -> Double? {
-        guard !values.isEmpty else { return nil }
-        let sorted = values.sorted()
-        let mid = sorted.count / 2
-        if sorted.count.isMultiple(of: 2) {
-            return (sorted[mid - 1] + sorted[mid]) / 2
-        }
-        return sorted[mid]
-    }
-
-    /// Band edges strictly between two readings, in the direction of travel.
-    private static func edges(between start: Double, and end: Double, bands: [ZoneBand]) -> [Double] {
-        guard start.isFinite, end.isFinite, start != end else { return [] }
-        let low = min(start, end)
-        let high = max(start, end)
-        var found: [Double] = []
-        for band in bands {
-            for edge in [band.lower, band.upper] where edge.isFinite && edge > low && edge < high {
-                if found.allSatisfy({ abs($0 - edge) > 0.000_001 }) {
-                    found.append(edge)
-                }
-            }
-        }
-        found.sort()
-        if start > end { found.reverse() }
-        return found
+        ZoneDwell.shares(points: points, bands: bands)
     }
 
     static func elevationProfile(_ workout: WorkoutRecord) -> ElevationProfile {
@@ -1774,7 +1644,7 @@ private enum WorkoutDetailMath {
             let deltaValue = end.value - start.value
             let deltaTime = end.second - start.second
             if deltaValue != 0 {
-                for edge in edges(between: start.value, and: end.value, bands: bands) {
+                for edge in ZoneDwell.edges(between: start.value, and: end.value, bands: bands) {
                     let t = (edge - start.value) / deltaValue
                     knots.append((start.second + deltaTime * t, edge))
                 }

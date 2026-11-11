@@ -2,7 +2,8 @@ import Foundation
 
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/SampleLibrary.swift \
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Database.swift \
-//   codes/ios/Shared/TrainingEstimate.swift codes/ios/Shared/GPXFile.swift \
+//   codes/ios/Shared/TrainingEstimate.swift codes/ios/Shared/ZoneDwell.swift \
+//   codes/ios/Shared/GPXFile.swift \
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/RouteStats.swift \
 //   codes/ios/Shared/RouteGPXStore.swift \
 //   codes/ios/route-checkpoint-check/main.swift \

@@ -1,6 +1,7 @@
 import Foundation
 
 // swiftc codes/ios/Shared/Models.swift codes/ios/Shared/TrainingEstimate.swift \
+//   codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/Shared/SampleLibrary.swift \
 //   codes/ios/Shared/AnalysisScorePlaceholder.swift \
 //   codes/ios/analysis-score-check/main.swift \

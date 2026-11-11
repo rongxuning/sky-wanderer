@@ -1,6 +1,7 @@
 import Foundation
 
 // swiftc -swift-version 5 codes/ios/Shared/Models.swift codes/ios/Shared/TrainingEstimate.swift \
+//   codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/Formatting.swift \
 //   codes/ios/Shared/WorkoutContext.swift codes/ios/workout-context-check/main.swift \
 //   -o /tmp/workout-context-check && /tmp/workout-context-check
