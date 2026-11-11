@@ -1,22 +1,19 @@
 import SwiftUI
 import UIKit
 
-/// Records tab. The month header pins under an opaque status-bar slab.
-/// Each card draws its track behind the numbers, not in a side slot.
+/// Records tab. One month title stays fixed from the top of the screen through the date.
+/// Cards scroll only below that bar. Each card draws its track behind the numbers, not in a side slot.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
     @State private var revealedWorkoutID: UUID?
     @State private var pendingDeleteID: UUID?
+    /// Month of the card closest to the top of the list. Empty until the first layout sample.
+    @State private var monthTitle = ""
 
     var body: some View {
-        recordList
+        feed
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // The list stays below the status bar. This fill continues into that band
-            // so the clock and the month title share one opaque surface.
             .background(SkyTheme.Color.grouped.ignoresSafeArea())
-            .overlay(alignment: .top) {
-                RecordStatusSlab()
-            }
             .task {
                 await app.importFromApple()
             }
@@ -49,70 +46,92 @@ struct RecordFeedView: View {
         Format.recordMonthSpans(dates: app.workouts.map(\.start))
     }
 
+    /// The bar shows this month. Before the list reports a top card, it uses the newest month.
+    private var displayedMonthTitle: String {
+        if monthSpans.contains(where: { $0.title == monthTitle }) {
+            return monthTitle
+        }
+        return monthSpans.first?.title ?? ""
+    }
+
     @ViewBuilder
-    private var recordList: some View {
+    private var feed: some View {
         if app.workouts.isEmpty {
             empty
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                    if !app.banner.isEmpty {
-                        Text(app.banner)
-                            .font(SkyTheme.Font.footnote)
-                            .foregroundStyle(SkyTheme.Color.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                            .padding(.top, SkyTheme.Spacing.related)
-                            .padding(.bottom, SkyTheme.Spacing.related)
-                    }
-                    ForEach(monthSpans) { span in
-                        Section {
-                            ForEach(Array(app.workouts[span.range])) { workout in
-                                RecordSwipeCard(
-                                    workout: workout,
-                                    revealedID: $revealedWorkoutID,
-                                    onRequestDelete: { pendingDeleteID = workout.id }
-                                )
-                                .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                                .padding(.bottom, SkyTheme.Spacing.related)
-                            }
-                        } header: {
-                            monthHeader(span.title)
-                        }
-                    }
-                }
-            }
-            .scrollEdgeEffectStyle(.hard, for: .top)
-            // iOS 26 SDK: scrollEdgeEffectHidden(_:for:). Hides the top blur so the slab stays opaque.
-            .scrollEdgeEffectHidden(true, for: .top)
-            .contentMargins(.top, 0, for: .scrollContent)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SkyTheme.Color.grouped)
-            .refreshable {
-                await app.importFromApple()
-            }
-            .onChange(of: app.workouts.map(\.id)) { _, ids in
-                if let revealedWorkoutID, !ids.contains(revealedWorkoutID) {
-                    self.revealedWorkoutID = nil
-                }
+            // Title outside the scroll view: a rubber-band or a fast flick stays below the date.
+            VStack(spacing: 0) {
+                monthTitleBar
+                recordScroll
             }
         }
     }
 
-    /// Pinned section header. The next month's header pushes this one off the top.
-    /// The fill is the same opaque grouped gray as the status bar, so the two read as one slab.
-    private func monthHeader(_ title: String) -> some View {
-        Text(title)
-            .font(SkyTheme.Font.title3)
-            .fontWeight(.bold)
-            .foregroundStyle(SkyTheme.Color.ink)
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
-            .padding(.top, SkyTheme.Spacing.related)
-            .padding(.bottom, SkyTheme.Spacing.screenInset)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    /// Opaque slab from the top of the screen through the month title. The list starts under it.
+    private var monthTitleBar: some View {
+        RecordMonthTitle(title: displayedMonthTitle)
             .background(SkyTheme.Color.grouped, ignoresSafeAreaEdges: .top)
             .zIndex(1)
-            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var recordScroll: some View {
+        let workouts = app.workouts
+        let spans = monthSpans
+        let monthByIndex: [String] = {
+            var titles = Array(repeating: "", count: workouts.count)
+            for span in spans {
+                for index in span.range where titles.indices.contains(index) {
+                    titles[index] = span.title
+                }
+            }
+            return titles
+        }()
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if !app.banner.isEmpty {
+                    Text(app.banner)
+                        .font(SkyTheme.Font.footnote)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                        .padding(.top, SkyTheme.Spacing.related)
+                        .padding(.bottom, SkyTheme.Spacing.related)
+                }
+                ForEach(Array(workouts.enumerated()), id: \.element.id) { index, workout in
+                    RecordSwipeCard(
+                        workout: workout,
+                        revealedID: $revealedWorkoutID,
+                        onRequestDelete: { pendingDeleteID = workout.id }
+                    )
+                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                    .padding(.bottom, SkyTheme.Spacing.related)
+                    .background {
+                        RecordMonthProbe(title: monthByIndex[index])
+                    }
+                }
+            }
+        }
+        .coordinateSpace(.named(RecordListSpace.viewport))
+        .scrollEdgeEffectStyle(.hard, for: .top)
+        // iOS 26 SDK: scrollEdgeEffectHidden(_:for:). Hides the top blur so a card cannot fade out above the list.
+        .scrollEdgeEffectHidden(true, for: .top)
+        .contentMargins(.top, 0, for: .scrollContent)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SkyTheme.Color.grouped)
+        .refreshable {
+            await app.importFromApple()
+        }
+        .onChange(of: app.workouts.map(\.id)) { _, ids in
+            if let revealedWorkoutID, !ids.contains(revealedWorkoutID) {
+                self.revealedWorkoutID = nil
+            }
+        }
+        .onPreferenceChange(RecordMonthAnchorKey.self) { anchors in
+            guard let title = RecordMonthTracking.topTitle(among: anchors) else { return }
+            if title != monthTitle {
+                monthTitle = title
+            }
+        }
     }
 
     private var empty: some View {
@@ -275,21 +294,122 @@ private struct RecordStatsPage: View {
     }
 }
 
-/// Covers the status-bar band above the list. Drawn upward from the top of the scroll
-/// view, so it does not cover the month title, and cards cannot show between the clock and that title.
-private struct RecordStatusSlab: View {
+/// Fixed month label. The outgoing title fades out while the incoming title fades in, in the same place.
+/// Reduce Motion swaps the text with no animation. The opaque bar behind this view stays put.
+private struct RecordMonthTitle: View {
+    var title: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var front = ""
+    @State private var back = ""
+    /// Which copy is at full opacity. The other copy is the one fading away.
+    @State private var frontOnTop = true
+
+    private var frontText: String { front.isEmpty ? title : front }
+
     var body: some View {
-        SkyTheme.Color.grouped
-            .frame(height: 1)
-            .frame(maxWidth: .infinity)
-            .background(alignment: .bottom) {
-                SkyTheme.Color.grouped
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 160)
+        ZStack(alignment: .topLeading) {
+            line(back, opacity: frontOnTop ? 0 : 1)
+            line(frontText, opacity: frontOnTop ? 1 : 0)
+        }
+        .onAppear {
+            if front.isEmpty {
+                front = title
             }
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
+        }
+        .onChange(of: title) { _, newTitle in
+            // The first sample matches the title already on screen. Seed it without a fade.
+            guard !front.isEmpty else {
+                front = newTitle
+                return
+            }
+            let shown = frontOnTop ? frontText : back
+            guard !newTitle.isEmpty, newTitle != shown else { return }
+            if reduceMotion || shown.isEmpty {
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    front = newTitle
+                    back = ""
+                    frontOnTop = true
+                }
+                return
+            }
+            // Park the new title on the hidden copy, then fade the two copies past each other.
+            if frontOnTop {
+                back = newTitle
+            } else {
+                front = newTitle
+            }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                frontOnTop.toggle()
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private func line(_ text: String, opacity: Double) -> some View {
+        Text(text)
+            .font(SkyTheme.Font.title3)
+            .fontWeight(.bold)
+            .foregroundStyle(SkyTheme.Color.ink)
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.top, SkyTheme.Spacing.related)
+            .padding(.bottom, SkyTheme.Spacing.screenInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(text.isEmpty ? 0 : opacity)
             .accessibilityHidden(true)
+    }
+}
+
+private enum RecordListSpace {
+    static let viewport = "recordListViewport"
+}
+
+private struct RecordMonthAnchor: Equatable {
+    var title: String
+    var minY: CGFloat
+    var maxY: CGFloat
+}
+
+private struct RecordMonthAnchorKey: PreferenceKey {
+    static var defaultValue: [RecordMonthAnchor] = []
+
+    static func reduce(value: inout [RecordMonthAnchor], nextValue: () -> [RecordMonthAnchor]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+/// Reports one card's frame in the list viewport. The scroll view names that space.
+private struct RecordMonthProbe: View {
+    var title: String
+
+    var body: some View {
+        GeometryReader { proxy in
+            let frame = proxy.frame(in: .named(RecordListSpace.viewport))
+            Color.clear
+                .preference(
+                    key: RecordMonthAnchorKey.self,
+                    value: [RecordMonthAnchor(title: title, minY: frame.minY, maxY: frame.maxY)]
+                )
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private enum RecordMonthTracking {
+    /// Month of the card closest to the top of the visible list.
+    /// A card that still crosses the top edge keeps the title until its bottom leaves that edge.
+    static func topTitle(among anchors: [RecordMonthAnchor], listTop: CGFloat = 0) -> String? {
+        let visible = anchors.filter { anchor in
+            !anchor.title.isEmpty
+                && anchor.minY.isFinite
+                && anchor.maxY.isFinite
+                && anchor.maxY > anchor.minY
+                && anchor.maxY > listTop
+        }
+        return visible.min { $0.minY < $1.minY }?.title
     }
 }
 
