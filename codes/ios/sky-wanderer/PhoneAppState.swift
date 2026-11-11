@@ -35,7 +35,7 @@ final class PhoneAppState: ObservableObject {
             existing.workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
             Self.ensurePreset(&existing)
             retiredSampleFiles = existing.retireSeededSampleRoute()
-            RouteGPXStore.mergeCutoffs(into: &existing)
+            RouteGPXStore.mergeCutoffs(into: &existing.routes)
             loaded = existing
         } else {
             var fresh = Database()
