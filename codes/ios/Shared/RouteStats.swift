@@ -304,6 +304,17 @@ struct RouteCheckpointLayout: Hashable {
     static let empty = RouteCheckpointLayout(marks: [], segments: [])
 }
 
+/// Distance, climb, and descent from the start of the route to one real waypoint.
+/// The same sums `RouteStats` uses for the whole track, stopped at the snapped point.
+struct RouteWaypointProgress: Identifiable, Hashable {
+    var id: Int
+    var name: String
+    var cutoff: String?
+    var distanceMeters: Double
+    var ascentMeters: Double
+    var descentMeters: Double
+}
+
 /// Places GPX checkpoints on a track and splits the line into 起点 / CP / 终点 segments.
 enum RouteCheckpoints {
     /// Route order. Empty names become CP1, CP2, skipping labels the file already used.
@@ -341,6 +352,33 @@ enum RouteCheckpoints {
                 copy.name = trimmed
             }
             return copy
+        }
+    }
+
+    /// One row per real waypoint, in track order. Synthetic 起点 / 终点 are not added.
+    /// Cumulative figures run from the first track point to the point this waypoint snaps to.
+    static func progress(waypoints: [RouteWaypoint], points: [GeoPoint]) -> [RouteWaypointProgress] {
+        let placed: [(offset: Int, index: Int, waypoint: RouteWaypoint)] = waypoints.enumerated().compactMap { offset, waypoint in
+            guard isValid(waypoint) else { return nil }
+            let index = points.isEmpty ? 0 : nearestPointIndex(waypoint, points: points)
+            return (offset, index, waypoint)
+        }.sorted { lhs, rhs in
+            if lhs.index != rhs.index { return lhs.index < rhs.index }
+            return lhs.offset < rhs.offset
+        }
+        let traveled = cumulative(points)
+        let climbed = prefixElevation(points, loss: false)
+        let dropped = prefixElevation(points, loss: true)
+        return placed.enumerated().map { order, item in
+            let index = traveled.indices.contains(item.index) ? item.index : 0
+            return RouteWaypointProgress(
+                id: order,
+                name: progressName(item.waypoint.name, number: order + 1),
+                cutoff: progressCutoff(item.waypoint.cutoff),
+                distanceMeters: traveled.isEmpty ? 0 : traveled[index],
+                ascentMeters: climbed.isEmpty ? 0 : climbed[index],
+                descentMeters: dropped.isEmpty ? 0 : dropped[index]
+            )
         }
     }
 
@@ -481,6 +519,29 @@ enum RouteCheckpoints {
             values[index] = values[index - 1] + RouteStats.metersBetween(points[index - 1], points[index])
         }
         return values
+    }
+
+    /// Running climb or descent. Index `i` matches `RouteStats.ascent` / `descent` on `points[0...i]`.
+    private static func prefixElevation(_ points: [GeoPoint], loss: Bool) -> [Double] {
+        var values = Array(repeating: 0.0, count: points.count)
+        guard points.count >= 2 else { return values }
+        for index in 1..<points.count {
+            let delta = points[index].altitude - points[index - 1].altitude
+            let step = loss ? (delta < 0 ? -delta : 0) : (delta > 0 ? delta : 0)
+            values[index] = values[index - 1] + step
+        }
+        return values
+    }
+
+    private static func progressName(_ name: String, number: Int) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "CP\(number)" : trimmed
+    }
+
+    private static func progressCutoff(_ cutoff: String?) -> String? {
+        guard let cutoff else { return nil }
+        let trimmed = cutoff.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private static func isValid(_ waypoint: RouteWaypoint) -> Bool {

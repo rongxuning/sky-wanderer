@@ -460,6 +460,7 @@ struct RouteDetailView: View {
     @State private var multiplier = 1.0
     @State private var zoomDragBase: Double?
     @State private var showsChart = false
+    @State private var factPage: Int? = 0
     @State private var showsKilometerMarkers = false
     @State private var editingTitle = false
     @State private var titleDraft = ""
@@ -511,6 +512,9 @@ struct RouteDetailView: View {
             tileStatus.refresh(for: route.points)
             await OfflineTileStore.prefetch([route.points])
             tileStatus.refresh(for: route.points)
+        }
+        .onChange(of: route.id) { _, _ in
+            factPage = 0
         }
         .onChange(of: editingTitle) { _, editing in
             guard editing else { return }
@@ -677,7 +681,7 @@ struct RouteDetailView: View {
             if showsChart {
                 ElevationProfileChart(points: route.points)
             } else {
-                routeFacts(route)
+                routeFactPager(route)
             }
         }
         .padding(.bottom, bottomInset)
@@ -691,43 +695,154 @@ struct RouteDetailView: View {
         .clipped()
     }
 
-    private func routeFacts(_ route: SavedRoute) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            factRow("导入时间", importTime(route), SkyTheme.Color.ink)
-            factRow("距离", routeKilometers(RouteStats.distance(route.points)), SkyTheme.Color.Metric.distance)
-            factRow("爬升", routeMeters(RouteStats.ascent(route.points)), SkyTheme.Color.Metric.elevation)
-            factRow("最高海拔", maxElevationText(route.points), SkyTheme.Color.Metric.elevation)
-            factRow("创建人", route.creatorLabel, SkyTheme.Color.ink)
-            HStack(spacing: 16) {
-                Button(draft.routeID == route.id ? "已用于训练" : "用于训练") {
-                    draft.routeID = route.id
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(SkyTheme.Color.primary)
-                if draft.routeID == route.id {
-                    Button("取消使用") {
-                        draft.routeID = PlannedRoute.free.id
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundStyle(SkyTheme.Color.secondary)
-                }
-                Spacer(minLength: 0)
-            }
+    private func factPages(_ route: SavedRoute) -> [RouteFactPage] {
+        var pages = [RouteFactPage(id: 0, kind: .totals)]
+        let progress = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
+        for (offset, item) in progress.enumerated() {
+            pages.append(RouteFactPage(id: offset + 1, kind: .waypoint(item)))
         }
-        .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        return pages
     }
 
-    private func factRow(_ title: String, _ value: String, _ valueColor: Color) -> some View {
+    /// Totals, then one card per real waypoint. The altitude chart replaces this whole panel.
+    private func routeFactPager(_ route: SavedRoute) -> some View {
+        let pages = factPages(route)
+        let showsIndicator = pages.count > 1
+        return GeometryReader { proxy in
+            let indicatorHeight: CGFloat = showsIndicator ? 14 : 0
+            let cardHeight = max(proxy.size.height - indicatorHeight, 0)
+            VStack(spacing: 0) {
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(pages) { page in
+                            factCard(page, route: route)
+                                .frame(width: proxy.size.width, height: cardHeight)
+                                .id(page.id)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: $factPage, anchor: .leading)
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                .scrollEdgeEffectHidden(true, for: .horizontal)
+                .frame(height: cardHeight)
+                .accessibilityHint(showsIndicator ? "左右滑动查看各点" : "")
+                if showsIndicator {
+                    factPageIndicator(count: pages.count)
+                        .frame(height: indicatorHeight)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func factCard(_ page: RouteFactPage, route: SavedRoute) -> some View {
+        ViewThatFits(in: .vertical) {
+            factStack(page, route: route, title: 15, label: 14, value: 15, spacing: 4)
+            factStack(page, route: route, title: 13, label: 12, value: 13, spacing: 1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .background(SkyTheme.Color.recordCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func factStack(
+        _ page: RouteFactPage,
+        route: SavedRoute,
+        title: CGFloat,
+        label: CGFloat,
+        value: CGFloat,
+        spacing: CGFloat
+    ) -> some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            Text(page.title)
+                .font(.system(size: title, weight: .bold, design: .rounded))
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(page.kind.isTotals ? 1 : 2)
+                .minimumScaleFactor(0.8)
+            switch page.kind {
+            case .totals:
+                factRow("导入时间", importTime(route), SkyTheme.Color.ink, label: label, valueSize: value)
+                factRow("距离", routeKilometers(RouteStats.distance(route.points)), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
+                factRow("爬升", routeMeters(RouteStats.ascent(route.points)), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                factRow("下降", routeMeters(RouteStats.descent(route.points)), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                factRow("最高海拔", maxElevationText(route.points), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                factRow("创建人", route.creatorLabel, SkyTheme.Color.ink, label: label, valueSize: value)
+                trainingButtons(route)
+            case .waypoint(let progress):
+                factRow("距离", routeKilometers(progress.distanceMeters), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
+                factRow("爬升", routeMeters(progress.ascentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                factRow("下降", routeMeters(progress.descentMeters), SkyTheme.Color.Metric.elevation, label: label, valueSize: value)
+                factRow("关门时间", progress.cutoff ?? "—", SkyTheme.Color.ink, label: label, valueSize: value)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func trainingButtons(_ route: SavedRoute) -> some View {
+        HStack(spacing: 16) {
+            Button(draft.routeID == route.id ? "已用于训练" : "用于训练") {
+                draft.routeID = route.id
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 15, weight: .bold, design: .rounded))
+            .foregroundStyle(SkyTheme.Color.primary)
+            if draft.routeID == route.id {
+                Button("取消使用") {
+                    draft.routeID = PlannedRoute.free.id
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                .foregroundStyle(SkyTheme.Color.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func factPageIndicator(count: Int) -> some View {
+        let current = min(max(factPage ?? 0, 0), count - 1)
+        return Group {
+            if count > 12 {
+                Text("\(current + 1)/\(count)")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(SkyTheme.Color.secondary)
+            } else {
+                HStack(spacing: 5) {
+                    ForEach(0..<count, id: \.self) { index in
+                        Circle()
+                            .fill(index == current ? SkyTheme.Color.primary : SkyTheme.Color.tertiary)
+                            .frame(width: 6, height: 6)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("第 \(current + 1) 页，共 \(count) 页")
+    }
+
+    private func factRow(
+        _ title: String,
+        _ value: String,
+        _ valueColor: Color,
+        label: CGFloat,
+        valueSize: CGFloat
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(title)
-                .font(.system(size: 14, weight: .medium, design: .rounded))
+                .font(.system(size: label, weight: .medium, design: .rounded))
                 .foregroundStyle(SkyTheme.Color.secondary)
             Spacer(minLength: 8)
             Text(value)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
+                .font(.system(size: valueSize, weight: .bold, design: .rounded))
                 .foregroundStyle(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -735,11 +850,13 @@ struct RouteDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Word joiner keeps the digits and × on one line. The armed label may draw wider than the 42pt column.
     private var zoomScaleText: String {
-        String(format: "%.1f×", multiplier)
+        String(format: "%.1f", multiplier) + "\u{2060}×"
     }
 
     /// Vertical drag handle shown only while the magnifier is armed. Same scale math as the map drag.
+    /// The column stays 42×128. The label sizes to the text, so a tight width cannot wrap × onto a second line.
     private var zoomScaleLine: some View {
         ZStack {
             Capsule()
@@ -748,10 +865,13 @@ struct RouteDetailView: View {
             Text(zoomScaleText)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: true)
                 .foregroundStyle(SkyTheme.Color.ink)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
                 .background(SkyTheme.Color.card.opacity(0.94), in: Capsule())
+                .fixedSize(horizontal: true, vertical: true)
         }
         .frame(width: 42, height: 128)
         .contentShape(Rectangle())
@@ -859,6 +979,7 @@ struct RouteDetailView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                         .allowsTightening(true)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Image(systemName: system)
                         .font(.system(size: 18, weight: .semibold))
@@ -994,6 +1115,30 @@ private struct RouteTitleIconButton: UIViewRepresentable {
         var action: () -> Void
         init(action: @escaping () -> Void) { self.action = action }
         @objc func tap() { action() }
+    }
+}
+
+private struct RouteFactPage: Identifiable {
+    enum Kind {
+        case totals
+        case waypoint(RouteWaypointProgress)
+
+        var isTotals: Bool {
+            if case .totals = self { return true }
+            return false
+        }
+    }
+
+    var id: Int
+    var kind: Kind
+
+    var title: String {
+        switch kind {
+        case .totals:
+            return "总数据"
+        case .waypoint(let progress):
+            return progress.name
+        }
     }
 }
 
