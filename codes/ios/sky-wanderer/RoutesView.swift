@@ -1316,7 +1316,8 @@ private struct ElevationProfileChart: View {
                     .foregroundStyle(Color.omniMuted)
                 let resolved = context.resolve(label)
                 let center = axisX(item.labelFraction, width: size.width)
-                resolved.draw(
+                context.draw(
+                    resolved,
                     at: CGPoint(x: center, y: 7 + CGFloat(item.lane) * 14 + 6),
                     anchor: .center
                 )
