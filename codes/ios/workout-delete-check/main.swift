@@ -234,6 +234,16 @@ do {
     let legacyDatabase = try decoder.decode(Database.self, from: Data("{\"workouts\":[\(legacyWorkout)]}".utf8))
     check(legacyDatabase.workouts.count == 1, "phone file without deletedWorkouts still loads")
     check(legacyDatabase.workouts[0].healthKitUUID == "legacy-hk", "legacy workout survives the new key")
+    check(legacyDatabase.workouts[0].motivationLine == nil, "a phone file without a stored line stays unassigned")
+    let blankMotivation = try decoder.decode(
+        WorkoutRecord.self,
+        from: Data(legacyWorkout.replacingOccurrences(of: "}", with: ",\"motivationLine\":\"   \"}").utf8)
+    )
+    check(blankMotivation.motivationLine == nil, "a blank stored line counts as unassigned")
+    var stamped = legacyDatabase.workouts[0]
+    stamped.motivationLine = "晨光只沾到半面山坡"
+    let stampedAgain = try decoder.decode(WorkoutRecord.self, from: encoder.encode(stamped))
+    check(stampedAgain.motivationLine == "晨光只沾到半面山坡", "a stored line round-trips in phone.json")
     check(legacyDatabase.deletedWorkouts.healthKitUUIDs.isEmpty, "missing deletedWorkouts decodes as an empty Health denylist")
     check(legacyDatabase.deletedWorkouts.localWorkoutIDs.isEmpty, "missing deletedWorkouts decodes as an empty device denylist")
 
@@ -373,17 +383,83 @@ check(simplifiedTrack.first == longTrack.first, "the sample keeps the start")
 check(simplifiedTrack.last == longTrack.last, "the sample keeps the end")
 check(RecordTrackPath.simplified(Array(longTrack.prefix(12))).count == 12, "a short route is not resampled")
 
+func motivationID(_ n: Int) -> UUID {
+    UUID(uuidString: String(format: "ABABABAB-ABAB-ABAB-ABAB-%012X", n))!
+}
+
+func motivationEditDistance(_ left: String, _ right: String) -> Int {
+    let a = Array(left)
+    let b = Array(right)
+    if a.isEmpty { return b.count }
+    var prev = Array(0...b.count)
+    for (i, ca) in a.enumerated() {
+        var cur = [i + 1]
+        for (j, cb) in b.enumerated() {
+            let cost = ca == cb ? 0 : 1
+            cur.append(min(cur[j] + 1, prev[j + 1] + 1, prev[j] + cost))
+        }
+        prev = cur
+    }
+    return prev[b.count]
+}
+
 let quoteID = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
 let quoteAgain = RecordMotivation.line(for: quoteID)
 check(quoteAgain == RecordMotivation.line(for: quoteID), "a workout id keeps the same quote")
 check(RecordMotivation.lines.contains(quoteAgain), "the quote comes from the curated list")
-check(RecordMotivation.lines.count == 12, "the curated list has twelve lines")
+check(
+    quoteAgain == RecordMotivation.lines[RecordMotivation.index(for: quoteID.uuidString)],
+    "an unused library picks by the stable hash"
+)
+check(RecordMotivation.lines.count >= 250, "the curated list has at least two hundred fifty lines")
+check(Set(RecordMotivation.lines).count == RecordMotivation.lines.count, "the curated list has no duplicate lines")
 check(
     RecordMotivation.lines.allSatisfy { line in
-        !line.isEmpty && !line.contains(where: { $0.isASCII && $0.isLetter })
+        (8...14).contains(line.count) && line.unicodeScalars.allSatisfy { !$0.isASCII }
     },
     "quotes stay short Chinese lines"
 )
+let retiredLines = [
+    "山高路远，行则将至",
+    "慢慢跑，也能跑很远",
+    "把今天跑完，就是胜利",
+    "每一步都算数",
+    "出发，就是最好的开始",
+    "路在脚下，心在远方",
+    "不怕走得慢，只怕停下",
+    "风过林间，步履更稳",
+    "今天的路，是明天的风景",
+    "走完这一段，再看远方",
+    "山还在，人就继续走",
+    "先迈出去，路会打开",
+]
+check(
+    retiredLines.allSatisfy { old in !RecordMotivation.lines.contains(where: { $0.contains(old) }) },
+    "retired lines are not reused"
+)
+var repeatedGram: String?
+var gramOwner: [String: String] = [:]
+for line in RecordMotivation.lines {
+    let chars = Array(line)
+    guard chars.count >= 4 else { continue }
+    for index in 0...(chars.count - 4) {
+        let gram = String(chars[index..<(index + 4)])
+        if let other = gramOwner[gram], other != line {
+            repeatedGram = gram
+        }
+        gramOwner[gram] = line
+    }
+}
+check(repeatedGram == nil, "curated lines do not share a four-character phrase")
+var nearPair = false
+for left in 0..<RecordMotivation.lines.count {
+    for right in (left + 1)..<RecordMotivation.lines.count {
+        if motivationEditDistance(RecordMotivation.lines[left], RecordMotivation.lines[right]) <= 4 {
+            nearPair = true
+        }
+    }
+}
+check(!nearPair, "curated lines are not near copies of each other")
 let otherQuoteID = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!
 check(
     RecordMotivation.line(for: quoteID, healthKitUUID: "HK-RUN-1")
@@ -397,6 +473,151 @@ check(
 check(
     RecordMotivation.index(for: "HK-RUN-1") == RecordMotivation.index(for: "HK-RUN-1"),
     "the quote index does not use a per-process hash"
+)
+
+var picked: [String] = []
+var usedLines = Set<String>()
+for n in 0..<50 {
+    let line = RecordMotivation.line(
+        for: motivationID(n),
+        healthKitUUID: n.isMultiple(of: 2) ? "HK-MOT-\(n)" : nil,
+        avoiding: usedLines
+    )
+    picked.append(line)
+    usedLines.insert(line)
+}
+check(
+    picked[0] == RecordMotivation.line(for: motivationID(0), healthKitUUID: "HK-MOT-0"),
+    "the same id picks the same line twice"
+)
+check(Set(picked).count == picked.count, "picking through the remaining lines does not repeat")
+
+var forwardBatch: [WorkoutRecord] = (0..<80).map { n in
+    makeWorkout(
+        id: motivationID(n),
+        start: start.addingTimeInterval(Double(n)),
+        healthKitUUID: n.isMultiple(of: 2) ? "HK-MOT-\(n)" : nil
+    )
+}
+var reversedBatch = Array(forwardBatch.reversed())
+RecordMotivation.assignMissing(&forwardBatch)
+RecordMotivation.assignMissing(&reversedBatch)
+check(
+    Set(forwardBatch.compactMap(\.motivationLine)).count == forwardBatch.count,
+    "a batch of different ids gets different lines"
+)
+check(
+    forwardBatch.allSatisfy { workout in
+        reversedBatch.first { $0.id == workout.id }?.motivationLine == workout.motivationLine
+    },
+    "assignment does not depend on list order"
+)
+let firstPass = forwardBatch.map(\.motivationLine)
+RecordMotivation.assignMissing(&forwardBatch)
+check(forwardBatch.map(\.motivationLine) == firstPass, "assigning again keeps every stored line")
+var grown = forwardBatch
+grown.append(makeWorkout(
+    id: motivationID(9_000),
+    start: start.addingTimeInterval(90_000),
+    healthKitUUID: "HK-MOT-NEW"
+))
+RecordMotivation.assignMissing(&grown)
+check(
+    zip(forwardBatch, grown).allSatisfy { $0.motivationLine == $1.motivationLine },
+    "a new record does not change lines already stored"
+)
+check(
+    Set(grown.compactMap(\.motivationLine)).count == grown.count,
+    "the new record gets a line of its own"
+)
+
+let overflowCount = RecordMotivation.lines.count + 40
+var crowd: [WorkoutRecord] = (0..<overflowCount).map { n in
+    makeWorkout(
+        id: motivationID(10_000 + n),
+        start: start.addingTimeInterval(Double(n)),
+        healthKitUUID: "HK-CROWD-\(n)"
+    )
+}
+RecordMotivation.assignMissing(&crowd)
+check(crowd.allSatisfy { ($0.motivationLine ?? "").isEmpty == false }, "every record past the library still has a line")
+check(Set(crowd.map(\.motivationLine)).count == crowd.count, "records past the library still do not share a line")
+check(crowd.allSatisfy { ($0.motivationLine ?? "").count <= 16 }, "overflow lines stay short")
+let crowdSnapshot = crowd.map(\.motivationLine)
+RecordMotivation.assignMissing(&crowd)
+check(crowd.map(\.motivationLine) == crowdSnapshot, "overflow lines stay put when assigned again")
+var crowdPlus = crowd
+crowdPlus.append(makeWorkout(
+    id: motivationID(80_000),
+    start: start.addingTimeInterval(800_000),
+    healthKitUUID: "HK-CROWD-EXTRA"
+))
+RecordMotivation.assignMissing(&crowdPlus)
+check(
+    zip(crowd, crowdPlus).allSatisfy { $0.motivationLine == $1.motivationLine },
+    "one more record past the library leaves stored lines alone"
+)
+
+var keptRecord = makeWorkout(id: motivationID(70_001), start: start, healthKitUUID: "HK-KEEP")
+keptRecord.motivationLine = RecordMotivation.lines[0]
+var importedRecord = makeWorkout(id: motivationID(70_002), start: start, healthKitUUID: "HK-KEEP")
+importedRecord.motivationLine = RecordMotivation.lines[1]
+let mergedLine = WorkoutImport.merging(keptRecord, with: importedRecord)
+check(mergedLine.motivationLine == RecordMotivation.lines[0], "merge keeps the stored line")
+check(mergedLine.id == keptRecord.id, "merge still keeps the stored row")
+var unassigned = makeWorkout(id: motivationID(70_003), start: start, healthKitUUID: "HK-FILL")
+var importedLine = unassigned
+importedLine.motivationLine = RecordMotivation.lines[2]
+check(
+    WorkoutImport.merging(unassigned, with: importedLine).motivationLine == RecordMotivation.lines[2],
+    "merge fills a line only when the stored row has none"
+)
+var shelf = [keptRecord]
+WorkoutImport.merge([importedRecord], into: &shelf)
+check(shelf.count == 1, "reimport still updates the Health row in place")
+check(shelf[0].motivationLine == RecordMotivation.lines[0], "reimport does not replace an assigned line")
+check(shelf[0].id == keptRecord.id, "reimport keeps the stored id")
+let extraImport = makeWorkout(id: motivationID(70_004), start: start.addingTimeInterval(10), healthKitUUID: "HK-FRESH")
+WorkoutImport.merge([extraImport], into: &shelf)
+check(
+    shelf.first { $0.id == keptRecord.id }?.motivationLine == RecordMotivation.lines[0],
+    "importing another workout leaves the stored line"
+)
+let freshLine = shelf.first { $0.healthKitUUID == "HK-FRESH" }?.motivationLine
+check(freshLine != nil && freshLine != RecordMotivation.lines[0], "the imported workout gets its own line")
+WorkoutImport.merge([extraImport], into: &shelf)
+check(
+    shelf.first { $0.healthKitUUID == "HK-FRESH" }?.motivationLine == freshLine,
+    "importing the same workout again keeps its line"
+)
+
+var store = Database()
+var device = makeWorkout(id: motivationID(70_010), start: start, healthKitUUID: nil, origin: .simulated)
+check(store.insertWorkout(device), "a device workout can be stored with a line")
+let deviceLine = store.workouts.first { $0.id == device.id }?.motivationLine
+check(deviceLine?.isEmpty == false, "insert writes a line onto a new workout")
+device.distanceMeters = 42
+device.motivationLine = nil
+check(store.insertWorkout(device), "replacing the same device workout still saves")
+check(
+    store.workouts.first { $0.id == device.id }?.motivationLine == deviceLine,
+    "replacing a workout keeps the line it already had"
+)
+check(store.workouts.first { $0.id == device.id }?.distanceMeters == 42, "replacing a workout still updates its other fields")
+var secondDevice = makeWorkout(
+    id: motivationID(70_011),
+    start: start.addingTimeInterval(5),
+    healthKitUUID: nil,
+    origin: .simulated
+)
+check(store.insertWorkout(secondDevice), "a second device workout can be stored")
+check(
+    store.workouts.first { $0.id == device.id }?.motivationLine == deviceLine,
+    "saving another workout does not move the first line"
+)
+check(
+    store.workouts.first { $0.id == secondDevice.id }?.motivationLine != deviceLine,
+    "the second workout does not reuse the first line"
 )
 
 if failures.isEmpty {
