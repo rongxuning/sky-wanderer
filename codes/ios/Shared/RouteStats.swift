@@ -310,9 +310,17 @@ struct RouteWaypointProgress: Identifiable, Hashable {
     var id: Int
     var name: String
     var cutoff: String?
+    /// Cumulative from the route start to the snapped track point.
     var distanceMeters: Double
     var ascentMeters: Double
     var descentMeters: Double
+    /// From the previous real waypoint to this one. The first card measures from the route start.
+    var segmentDistanceMeters: Double
+    var segmentAscentMeters: Double
+    var segmentDescentMeters: Double
+    /// The waypoint's own coordinates, used to match a saved override.
+    var latitude: Double
+    var longitude: Double
 }
 
 /// Places GPX checkpoints on a track and splits the line into 起点 / CP / 终点 segments.
@@ -357,6 +365,8 @@ enum RouteCheckpoints {
 
     /// One row per real waypoint, in track order. Synthetic 起点 / 终点 are not added.
     /// Cumulative figures run from the first track point to the point this waypoint snaps to.
+    /// Segment figures run from the previous waypoint's snapped point. The first row uses the
+    /// route start as that previous point, so its segment is start → this waypoint.
     static func progress(waypoints: [RouteWaypoint], points: [GeoPoint]) -> [RouteWaypointProgress] {
         let placed: [(offset: Int, index: Int, waypoint: RouteWaypoint)] = waypoints.enumerated().compactMap { offset, waypoint in
             guard isValid(waypoint) else { return nil }
@@ -371,13 +381,31 @@ enum RouteCheckpoints {
         let dropped = prefixElevation(points, loss: true)
         return placed.enumerated().map { order, item in
             let index = traveled.indices.contains(item.index) ? item.index : 0
+            let previousIndex: Int
+            if order == 0 || traveled.isEmpty {
+                previousIndex = 0
+            } else {
+                let prior = placed[order - 1].index
+                previousIndex = traveled.indices.contains(prior) ? prior : 0
+            }
+            let lower = min(previousIndex, index)
+            let upper = max(previousIndex, index)
+            func at(_ values: [Double], _ position: Int) -> Double {
+                guard values.indices.contains(position) else { return 0 }
+                return values[position]
+            }
             return RouteWaypointProgress(
                 id: order,
                 name: progressName(item.waypoint.name, number: order + 1),
                 cutoff: progressCutoff(item.waypoint.cutoff),
-                distanceMeters: traveled.isEmpty ? 0 : traveled[index],
-                ascentMeters: climbed.isEmpty ? 0 : climbed[index],
-                descentMeters: dropped.isEmpty ? 0 : dropped[index]
+                distanceMeters: at(traveled, index),
+                ascentMeters: at(climbed, index),
+                descentMeters: at(dropped, index),
+                segmentDistanceMeters: at(traveled, upper) - at(traveled, lower),
+                segmentAscentMeters: at(climbed, upper) - at(climbed, lower),
+                segmentDescentMeters: at(dropped, upper) - at(dropped, lower),
+                latitude: item.waypoint.latitude,
+                longitude: item.waypoint.longitude
             )
         }
     }
@@ -568,5 +596,238 @@ enum RouteCheckpoints {
             hasher.combine(waypoint.elevation)
         }
         return hasher.finalize()
+    }
+}
+
+enum RouteFactFieldChange: Equatable {
+    /// The field was left blank. Drop the override and show the computed value.
+    case clear
+    /// Store this many meters. A value that displays the same as the computed one is not stored.
+    case set(Double)
+    /// Leave whatever override is already saved.
+    case invalid
+}
+
+enum RouteFactTextChange: Equatable {
+    case clear
+    case set(String)
+}
+
+/// Resolves the route detail card. Overrides live on `SavedRoute` and never touch the GPX.
+/// Segment and cumulative overrides are stored independently.
+enum RouteFacts {
+    struct Totals: Equatable {
+        var distanceMeters: Double
+        var ascentMeters: Double
+        var descentMeters: Double
+        var maxElevationMeters: Double?
+    }
+
+    struct Waypoint: Equatable {
+        var name: String
+        var cutoff: String?
+        var segmentDistanceMeters: Double
+        var segmentAscentMeters: Double
+        var segmentDescentMeters: Double
+        var cumulativeDistanceMeters: Double
+        var cumulativeAscentMeters: Double
+        var cumulativeDescentMeters: Double
+    }
+
+    static func parseMeters(_ text: String, kilometers: Bool) -> RouteFactFieldChange {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || clearMarks.contains(trimmed) { return .clear }
+        var number = trimmed.replacingOccurrences(of: "公里", with: "")
+        number = number.replacingOccurrences(of: "米", with: "")
+        number = number.replacingOccurrences(of: " ", with: "")
+        number = number.replacingOccurrences(of: ",", with: "")
+        guard let value = Double(number), value.isFinite, value >= 0 else { return .invalid }
+        let meters = kilometers ? value * 1000 : value
+        guard meters.isFinite else { return .invalid }
+        return .set(meters)
+    }
+
+    static func parseLabel(_ text: String) -> RouteFactTextChange {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || clearMarks.contains(trimmed) { return .clear }
+        return .set(trimmed)
+    }
+
+    static func displayTotals(_ route: SavedRoute) -> Totals {
+        let totals = route.factOverrides?.totals
+        return Totals(
+            distanceMeters: totals?.distanceMeters ?? RouteStats.distance(route.points),
+            ascentMeters: totals?.ascentMeters ?? RouteStats.ascent(route.points),
+            descentMeters: totals?.descentMeters ?? RouteStats.descent(route.points),
+            maxElevationMeters: totals?.maxElevationMeters ?? RouteStats.maxElevation(route.points)
+        )
+    }
+
+    static func displayWaypoint(_ progress: RouteWaypointProgress, route: SavedRoute) -> Waypoint {
+        let stored = storedWaypoint(route, progress: progress)
+        return Waypoint(
+            name: stored?.name ?? progress.name,
+            cutoff: stored?.cutoff ?? progress.cutoff,
+            segmentDistanceMeters: stored?.segmentDistanceMeters ?? progress.segmentDistanceMeters,
+            segmentAscentMeters: stored?.segmentAscentMeters ?? progress.segmentAscentMeters,
+            segmentDescentMeters: stored?.segmentDescentMeters ?? progress.segmentDescentMeters,
+            cumulativeDistanceMeters: stored?.cumulativeDistanceMeters ?? progress.distanceMeters,
+            cumulativeAscentMeters: stored?.cumulativeAscentMeters ?? progress.ascentMeters,
+            cumulativeDescentMeters: stored?.cumulativeDescentMeters ?? progress.descentMeters
+        )
+    }
+
+    /// Pin label. A renamed card uses the override. 起点 / 终点 stay as drawn.
+    static func markName(_ mark: RouteCheckpointMark, route: SavedRoute) -> String {
+        guard !mark.synthetic, let overrides = route.factOverrides else { return mark.name }
+        let near = overrides.waypoints.filter { close($0, latitude: mark.latitude, longitude: mark.longitude) }
+        let chosen = near.first { $0.sourceName == mark.name } ?? (near.count == 1 ? near[0] : nil)
+        if let name = chosen?.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
+        return mark.name
+    }
+
+    static func applyTotals(
+        _ route: inout SavedRoute,
+        distance: RouteFactFieldChange,
+        ascent: RouteFactFieldChange,
+        descent: RouteFactFieldChange,
+        maxElevation: RouteFactFieldChange
+    ) {
+        var overrides = route.factOverrides ?? RouteFactOverrides()
+        var totals = overrides.totals ?? RouteTotalOverrides()
+        assign(distance, computed: RouteStats.distance(route.points), kilometers: true, to: &totals.distanceMeters)
+        assign(ascent, computed: RouteStats.ascent(route.points), kilometers: false, to: &totals.ascentMeters)
+        assign(descent, computed: RouteStats.descent(route.points), kilometers: false, to: &totals.descentMeters)
+        assign(maxElevation, computed: RouteStats.maxElevation(route.points), kilometers: false, to: &totals.maxElevationMeters)
+        overrides.totals = totals
+        commit(overrides, to: &route)
+    }
+
+    /// Writes one card. A segment change does not rewrite the cumulative fields, and the reverse.
+    /// `.invalid` keeps the stored override for that field. `.clear` deletes it.
+    static func applyWaypoint(
+        _ route: inout SavedRoute,
+        progress: RouteWaypointProgress,
+        name: RouteFactTextChange,
+        cutoff: RouteFactTextChange,
+        segmentDistance: RouteFactFieldChange,
+        segmentAscent: RouteFactFieldChange,
+        segmentDescent: RouteFactFieldChange,
+        cumulativeDistance: RouteFactFieldChange,
+        cumulativeAscent: RouteFactFieldChange,
+        cumulativeDescent: RouteFactFieldChange
+    ) {
+        var overrides = route.factOverrides ?? RouteFactOverrides()
+        var row: RouteWaypointFactOverride
+        let existingIndex = waypointIndex(overrides, progress: progress)
+        if let existingIndex {
+            row = overrides.waypoints[existingIndex]
+        } else {
+            row = RouteWaypointFactOverride(
+                latitude: progress.latitude,
+                longitude: progress.longitude,
+                sourceName: progress.name
+            )
+        }
+        assign(name, computed: progress.name, to: &row.name)
+        assign(cutoff, computed: progress.cutoff, to: &row.cutoff)
+        assign(segmentDistance, computed: progress.segmentDistanceMeters, kilometers: true, to: &row.segmentDistanceMeters)
+        assign(segmentAscent, computed: progress.segmentAscentMeters, kilometers: false, to: &row.segmentAscentMeters)
+        assign(segmentDescent, computed: progress.segmentDescentMeters, kilometers: false, to: &row.segmentDescentMeters)
+        assign(cumulativeDistance, computed: progress.distanceMeters, kilometers: true, to: &row.cumulativeDistanceMeters)
+        assign(cumulativeAscent, computed: progress.ascentMeters, kilometers: false, to: &row.cumulativeAscentMeters)
+        assign(cumulativeDescent, computed: progress.descentMeters, kilometers: false, to: &row.cumulativeDescentMeters)
+        if let existingIndex {
+            overrides.waypoints[existingIndex] = row
+        } else if !row.isEmpty {
+            overrides.waypoints.append(row)
+        }
+        commit(overrides, to: &route)
+    }
+
+    private static let clearMarks: Set<String> = ["—", "–", "-", "－", "―"]
+
+    /// Same rounding the card uses: kilometers to two decimals, elevations to the nearest meter.
+    private static func sameDisplayed(_ value: Double, _ computed: Double, kilometers: Bool) -> Bool {
+        if kilometers {
+            return String(format: "%.2f", value / 1000) == String(format: "%.2f", computed / 1000)
+        }
+        return Int(value.rounded()) == Int(computed.rounded())
+    }
+
+    private static func assign(
+        _ change: RouteFactFieldChange,
+        computed: Double?,
+        kilometers: Bool,
+        to slot: inout Double?
+    ) {
+        switch change {
+        case .invalid:
+            return
+        case .clear:
+            slot = nil
+        case .set(let value):
+            if let computed, sameDisplayed(value, computed, kilometers: kilometers) {
+                slot = nil
+            } else {
+                slot = value
+            }
+        }
+    }
+
+    private static func assign(
+        _ change: RouteFactTextChange,
+        computed: String?,
+        to slot: inout String?
+    ) {
+        switch change {
+        case .clear:
+            slot = nil
+        case .set(let text):
+            slot = text == computed ? nil : text
+        }
+    }
+
+    private static func storedWaypoint(
+        _ route: SavedRoute,
+        progress: RouteWaypointProgress
+    ) -> RouteWaypointFactOverride? {
+        guard let overrides = route.factOverrides,
+              let index = waypointIndex(overrides, progress: progress) else { return nil }
+        return overrides.waypoints[index]
+    }
+
+    private static func waypointIndex(
+        _ overrides: RouteFactOverrides,
+        progress: RouteWaypointProgress
+    ) -> Int? {
+        let named = overrides.waypoints.indices.filter { index in
+            let item = overrides.waypoints[index]
+            return item.sourceName == progress.name && close(item, latitude: progress.latitude, longitude: progress.longitude)
+        }
+        if let index = named.first { return index }
+        let near = overrides.waypoints.indices.filter { index in
+            close(overrides.waypoints[index], latitude: progress.latitude, longitude: progress.longitude)
+        }
+        return near.count == 1 ? near[0] : nil
+    }
+
+    private static func close(
+        _ override: RouteWaypointFactOverride,
+        latitude: Double,
+        longitude: Double
+    ) -> Bool {
+        abs(override.latitude - latitude) < 0.0001 && abs(override.longitude - longitude) < 0.0001
+    }
+
+    private static func commit(_ overrides: RouteFactOverrides, to route: inout SavedRoute) {
+        var copy = overrides
+        copy.waypoints.removeAll { $0.isEmpty }
+        if copy.totals?.isEmpty == true {
+            copy.totals = nil
+        }
+        route.factOverrides = copy.isEmpty ? nil : copy
     }
 }

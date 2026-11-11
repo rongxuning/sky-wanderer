@@ -351,6 +351,8 @@ struct OfflineRouteMap: UIViewRepresentable {
     var zoomMultiplier: Double
     var zoomArmed: Bool
     var tileEpoch: Int
+    /// Lifts the map's legal label above the floating card. Does not change the camera.
+    var legalBottomInset: CGFloat = 0
     var onZoomChanged: (Double) -> Void
     var onZoomDrag: (ZoomDragPhase) -> Void
 
@@ -368,6 +370,7 @@ struct OfflineRouteMap: UIViewRepresentable {
         map.isRotateEnabled = false
         map.isPitchEnabled = false
         map.backgroundColor = UIColor(red: 0.886, green: 0.925, blue: 0.910, alpha: 1)
+        map.insetsLayoutMarginsFromSafeArea = false
         map.accessibilityLabel = "路线地图"
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(OfflineRouteMapCoordinator.handlePan(_:)))
         pan.maximumNumberOfTouches = 1
@@ -410,6 +413,12 @@ struct OfflineRouteMap: UIViewRepresentable {
         }
         if abs(coordinator.appliedMultiplier - zoomMultiplier) > 0.02 {
             coordinator.apply(multiplier: zoomMultiplier, map: map)
+        }
+        let inset = max(0, legalBottomInset)
+        if abs(map.layoutMargins.bottom - inset) > 0.5 {
+            var margins = map.layoutMargins
+            margins.bottom = inset
+            map.layoutMargins = margins
         }
     }
 

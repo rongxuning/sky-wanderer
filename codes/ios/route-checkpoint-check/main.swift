@@ -45,6 +45,7 @@ check(oldRoute.waypoints.isEmpty, "old waypoints default to empty")
 check(oldRoute.gpxFilename == nil, "old file reference defaults to nil")
 check(oldRoute.importedAt == nil, "old import time stays nil")
 check(oldRoute.cutoffResolved == false, "old route has not read a cutoff")
+check(oldRoute.factOverrides == nil, "old save has no fact overrides")
 
 let legacyPoint = try! JSONDecoder().decode(
     RouteWaypoint.self,
@@ -468,6 +469,18 @@ let onlySpring = RouteCheckpoints.progress(
     points: lineForProgress
 )
 check(onlySpring.map(\.name) == ["泉"], "progress does not invent start or finish")
+near(onlySpring[0].segmentDistanceMeters, onlySpring[0].distanceMeters, 0.01, "first card segment is start to that point")
+near(onlySpring[0].segmentAscentMeters, onlySpring[0].ascentMeters, 0.001, "first card climb is start to that point")
+near(onlySpring[0].segmentDescentMeters, onlySpring[0].descentMeters, 0.001, "first card descent is start to that point")
+check(onlySpring[0].latitude == 0.0002, "progress keeps the waypoint latitude")
+check(onlySpring[0].longitude == 0.01, "progress keeps the waypoint longitude")
+near(progress[0].segmentDistanceMeters, 0, 0.001, "a waypoint on the start has an empty segment")
+near(progress[1].segmentDistanceMeters, progress[1].distanceMeters, 0.01, "the next card measures from the previous point")
+let cp2Leg = Array(lineForProgress[1...3])
+near(progress[2].segmentDistanceMeters, RouteStats.distance(cp2Leg), 0.01, "later segment is previous point to this point")
+near(progress[2].segmentAscentMeters, RouteStats.ascent(cp2Leg), 0.001, "later segment climb")
+near(progress[2].segmentDescentMeters, RouteStats.descent(cp2Leg), 0.001, "later segment descent")
+near(progress[2].distanceMeters, RouteStats.distance(lineForProgress), 0.01, "later cumulative distance still reaches the end")
 check(RouteCheckpoints.progress(waypoints: [], points: lineForProgress).isEmpty, "no waypoints means no progress rows")
 let dropped = RouteCheckpoints.progress(
     waypoints: [RouteWaypoint(name: "坏", latitude: 999, longitude: 0, elevation: nil, cutoff: "01:00")],
@@ -639,6 +652,216 @@ var missingFile = [
 RouteGPXStore.mergeCutoffs(into: &missingFile)
 check(missingFile[0].waypoints[0].cutoff == nil, "a missing file does not invent a cutoff")
 check(missingFile[0].cutoffResolved == false, "a missing file can be read later")
+
+let factJSON = """
+{"id":"facts","name":"段","points":[{"latitude":0,"longitude":0,"altitude":1}],"kind":"gpx","factOverrides":{"totals":{"distanceMeters":1500},"waypoints":[{"latitude":0,"longitude":0.01,"sourceName":"泉","name":"大坑头","segmentDistanceMeters":400,"cumulativeDescentMeters":12}]}}
+""".data(using: .utf8)!
+let decodedFacts = try! JSONDecoder().decode(SavedRoute.self, from: factJSON)
+near(decodedFacts.factOverrides?.totals?.distanceMeters ?? -1, 1500, 0.001, "decoded total override")
+check(decodedFacts.factOverrides?.waypoints.first?.name == "大坑头", "decoded name override")
+near(decodedFacts.factOverrides?.waypoints.first?.segmentDistanceMeters ?? -1, 400, 0.001, "decoded segment override")
+check(decodedFacts.factOverrides?.waypoints.first?.cumulativeDistanceMeters == nil, "missing cumulative override stays nil")
+near(decodedFacts.factOverrides?.waypoints.first?.cumulativeDescentMeters ?? -1, 12, 0.001, "decoded cumulative override")
+let factsAgain = try! JSONDecoder().decode(SavedRoute.self, from: JSONEncoder().encode(decodedFacts))
+near(factsAgain.factOverrides?.waypoints.first?.segmentDistanceMeters ?? -1, 400, 0.001, "override round trip")
+check(factsAgain.waypoints.isEmpty, "overrides do not invent waypoints")
+
+var trail = SavedRoute(
+    id: "trail",
+    name: "线",
+    points: lineForProgress,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "CP1", latitude: 0, longitude: 0.01, elevation: nil, cutoff: "08:30"),
+        RouteWaypoint(name: "CP2", latitude: 0, longitude: 0.03, elevation: nil)
+    ]
+)
+let trailRows = RouteCheckpoints.progress(waypoints: trail.waypoints, points: trail.points)
+check(trailRows.map(\.name) == ["CP1", "CP2"], "fact cards follow the track \(trailRows.map(\.name))")
+near(trailRows[0].segmentDistanceMeters, RouteStats.distance(Array(lineForProgress[0...1])), 0.01, "CP1 segment is start to CP1")
+near(trailRows[0].segmentAscentMeters, RouteStats.ascent(Array(lineForProgress[0...1])), 0.001, "CP1 segment climb is start to CP1")
+near(trailRows[0].segmentDescentMeters, RouteStats.descent(Array(lineForProgress[0...1])), 0.001, "CP1 segment descent is start to CP1")
+near(trailRows[1].segmentDistanceMeters, RouteStats.distance(Array(lineForProgress[1...3])), 0.01, "CP2 segment is CP1 to CP2")
+near(trailRows[1].segmentAscentMeters, RouteStats.ascent(Array(lineForProgress[1...3])), 0.001, "CP2 segment climb")
+near(trailRows[1].segmentDescentMeters, RouteStats.descent(Array(lineForProgress[1...3])), 0.001, "CP2 segment descent")
+near(trailRows[1].distanceMeters, RouteStats.distance(lineForProgress), 0.01, "CP2 cumulative distance is the whole track")
+near(trailRows[1].ascentMeters, RouteStats.ascent(lineForProgress), 0.001, "CP2 cumulative climb is the whole track")
+near(trailRows[1].descentMeters, RouteStats.descent(lineForProgress), 0.001, "CP2 cumulative descent is the whole track")
+
+RouteFacts.applyWaypoint(
+    &trail,
+    progress: trailRows[1],
+    name: .set("大坑头"),
+    cutoff: .clear,
+    segmentDistance: .set(800),
+    segmentAscent: .set(trailRows[1].segmentAscentMeters),
+    segmentDescent: .invalid,
+    cumulativeDistance: .set(trailRows[1].distanceMeters),
+    cumulativeAscent: .invalid,
+    cumulativeDescent: .set(20)
+)
+let editedCP2 = RouteFacts.displayWaypoint(trailRows[1], route: trail)
+check(editedCP2.name == "大坑头", "name override")
+check(editedCP2.cutoff == nil, "cleared cutoff with no file time stays empty")
+near(editedCP2.segmentDistanceMeters, 800, 0.001, "segment distance override")
+near(editedCP2.segmentAscentMeters, trailRows[1].segmentAscentMeters, 0.001, "typing the computed segment climb stores nothing")
+near(editedCP2.cumulativeDistanceMeters, trailRows[1].distanceMeters, 0.01, "cumulative distance stays computed when the segment changes")
+near(editedCP2.cumulativeDescentMeters, 20, 0.001, "cumulative descent is stored on its own")
+check(trail.factOverrides?.waypoints.count == 1, "one waypoint override")
+check(trail.factOverrides?.waypoints.first?.sourceName == "CP2", "override remembers the computed name")
+near(trail.factOverrides?.waypoints.first?.segmentDistanceMeters ?? -1, 800, 0.001, "segment value is stored")
+check(trail.factOverrides?.waypoints.first?.cumulativeDistanceMeters == nil, "segment edit does not write cumulative distance")
+near(trail.factOverrides?.waypoints.first?.cumulativeDescentMeters ?? -1, 20, 0.001, "cumulative descent is its own field")
+check(trail.factOverrides?.waypoints.first?.segmentAscentMeters == nil, "matching segment climb is not stored")
+check(trail.waypoints[1].name == "CP2", "the saved waypoint name stays the file name")
+check(trail.waypoints[1].cutoff == nil, "the saved cutoff stays empty")
+check(trail.waypoints[0].cutoff == "08:30", "the other cutoff stays")
+let untouchedCP1 = RouteFacts.displayWaypoint(trailRows[0], route: trail)
+check(untouchedCP1.name == "CP1", "the other card name stays")
+check(untouchedCP1.cutoff == "08:30", "the other card cutoff stays")
+near(untouchedCP1.segmentDistanceMeters, trailRows[0].segmentDistanceMeters, 0.01, "the other card segment stays computed")
+
+RouteFacts.applyWaypoint(
+    &trail,
+    progress: trailRows[1],
+    name: .set("大坑头"),
+    cutoff: .set("16:00"),
+    segmentDistance: .invalid,
+    segmentAscent: .invalid,
+    segmentDescent: .invalid,
+    cumulativeDistance: .invalid,
+    cumulativeAscent: .invalid,
+    cumulativeDescent: .invalid
+)
+let keptCP2 = RouteFacts.displayWaypoint(trailRows[1], route: trail)
+check(keptCP2.cutoff == "16:00", "cutoff override")
+near(keptCP2.segmentDistanceMeters, 800, 0.001, "an invalid distance leaves the segment override")
+near(keptCP2.cumulativeDescentMeters, 20, 0.001, "an invalid descent leaves the cumulative override")
+check(trail.waypoints[1].cutoff == nil, "cutoff override does not replace the file cutoff")
+
+let pin = RouteCheckpointMark(
+    id: "w1",
+    name: "CP2",
+    latitude: 0,
+    longitude: 0.03,
+    distanceMeters: 0,
+    changeMeters: 0,
+    snappedIndex: 3,
+    synthetic: false
+)
+check(RouteFacts.markName(pin, route: trail) == "大坑头", "map pin uses the name override")
+var startPin = pin
+startPin.name = "起点"
+startPin.synthetic = true
+check(RouteFacts.markName(startPin, route: trail) == "起点", "synthetic ends keep their label")
+
+RouteFacts.applyWaypoint(
+    &trail,
+    progress: trailRows[1],
+    name: .clear,
+    cutoff: .clear,
+    segmentDistance: .clear,
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .invalid
+)
+let clearedSegment = RouteFacts.displayWaypoint(trailRows[1], route: trail)
+check(clearedSegment.name == "CP2", "cleared name returns to the computed name")
+check(clearedSegment.cutoff == nil, "cleared cutoff returns to the file")
+near(clearedSegment.segmentDistanceMeters, trailRows[1].segmentDistanceMeters, 0.01, "cleared segment distance")
+near(clearedSegment.cumulativeDescentMeters, 20, 0.001, "a field left invalid is kept")
+RouteFacts.applyWaypoint(
+    &trail,
+    progress: trailRows[1],
+    name: .clear,
+    cutoff: .clear,
+    segmentDistance: .clear,
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(trail.factOverrides == nil, "clearing the last field drops the override")
+near(RouteFacts.displayWaypoint(trailRows[1], route: trail).cumulativeDescentMeters, trailRows[1].descentMeters, 0.001, "cleared cumulative descent is computed")
+
+RouteFacts.applyTotals(
+    &trail,
+    distance: .set(2222),
+    ascent: .invalid,
+    descent: .set(RouteStats.descent(trail.points)),
+    maxElevation: .set(880)
+)
+near(RouteFacts.displayTotals(trail).distanceMeters, 2222, 0.001, "total distance override")
+near(RouteFacts.displayTotals(trail).ascentMeters, RouteStats.ascent(trail.points), 0.001, "invalid total climb stays computed")
+near(RouteFacts.displayTotals(trail).descentMeters, RouteStats.descent(trail.points), 0.001, "typing the computed descent stores nothing")
+near(RouteFacts.displayTotals(trail).maxElevationMeters ?? -1, 880, 0.001, "max elevation override")
+check(trail.factOverrides?.totals?.descentMeters == nil, "computed descent is not stored")
+check(trail.factOverrides?.totals?.ascentMeters == nil, "invalid climb does not store a total")
+RouteFacts.applyTotals(
+    &trail,
+    distance: .clear,
+    ascent: .clear,
+    descent: .clear,
+    maxElevation: .clear
+)
+check(trail.factOverrides == nil, "cleared totals drop the override")
+near(RouteFacts.displayTotals(trail).distanceMeters, RouteStats.distance(trail.points), 0.01, "cleared total distance is computed")
+check(RouteFacts.displayTotals(trail).maxElevationMeters == RouteStats.maxElevation(trail.points), "cleared max elevation is computed")
+
+let factFile = RouteGPXStore.save(Data(plainXML.utf8), routeID: "fact-gpx")
+var gpxRoute = SavedRoute(
+    id: "fact-gpx",
+    name: "无门",
+    points: plainParsed[0].points,
+    kind: .gpx,
+    waypoints: plainParsed[0].waypoints,
+    gpxFilename: factFile
+)
+let gpxRows = RouteCheckpoints.progress(waypoints: gpxRoute.waypoints, points: gpxRoute.points)
+check(gpxRows.count == 1, "gpx fact row")
+RouteFacts.applyWaypoint(
+    &gpxRoute,
+    progress: gpxRows[0],
+    name: .set("补给"),
+    cutoff: .set("11:00"),
+    segmentDistance: .set(50),
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(RouteGPXStore.load(filename: factFile) == Data(plainXML.utf8), "fact edits do not write the GPX")
+check(gpxRoute.waypoints[0].name == "泉", "apply does not rename the stored waypoint")
+check(gpxRoute.gpxFilename == factFile, "apply keeps the file name")
+RouteGPXStore.delete(filename: factFile)
+
+var mergeTrail = trail
+mergeTrail.cutoffResolved = false
+mergeTrail.gpxFilename = "gpx/missing-facts.gpx"
+mergeTrail.factOverrides = RouteFactOverrides(
+    totals: RouteTotalOverrides(distanceMeters: 42),
+    waypoints: []
+)
+var mergeRoutes = [mergeTrail]
+RouteGPXStore.mergeCutoffs(into: &mergeRoutes)
+near(mergeRoutes[0].factOverrides?.totals?.distanceMeters ?? -1, 42, 0.001, "cutoff merge keeps fact overrides")
+check(mergeRoutes[0].cutoffResolved == false, "a missing file stays unresolved")
+check(mergeRoutes[0].waypoints.map(\.name) == ["CP1", "CP2"], "cutoff merge does not rewrite names")
+
+check(RouteFacts.parseMeters("  ", kilometers: true) == .clear, "blank distance clears")
+check(RouteFacts.parseMeters("1.25", kilometers: true) == .set(1250), "kilometers become meters")
+check(RouteFacts.parseMeters("1.25 公里", kilometers: true) == .set(1250), "unit text is ignored")
+check(RouteFacts.parseMeters("12", kilometers: false) == .set(12), "meters stay meters")
+check(RouteFacts.parseMeters("abc", kilometers: false) == .invalid, "words are invalid")
+check(RouteFacts.parseMeters("—", kilometers: false) == .clear, "dash clears")
+check(RouteFacts.parseMeters("-3", kilometers: false) == .invalid, "negative is invalid")
+check(RouteFacts.parseLabel("  大坑头 ") == .set("大坑头"), "trimmed label")
+check(RouteFacts.parseLabel("—") == .clear, "dash label clears")
+check(RouteFacts.parseLabel("") == .clear, "empty label clears")
 
 if failures.isEmpty {
     print("route-checkpoint-check ok")
