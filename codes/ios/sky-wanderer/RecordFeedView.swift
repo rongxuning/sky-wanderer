@@ -111,6 +111,11 @@ struct RecordFeedView: View {
                 }
             }
         }
+        // On the scroll view itself. The month title is the sibling above it, and the
+        // top edge effect is applied after this, so neither sits between the list and the refresh task.
+        .refreshable {
+            await app.importFromApple()
+        }
         .coordinateSpace(.named(RecordListSpace.viewport))
         .scrollEdgeEffectStyle(.hard, for: .top)
         // iOS 26 SDK: scrollEdgeEffectHidden(_:for:). Hides the top blur so a card cannot fade out above the list.
@@ -118,9 +123,6 @@ struct RecordFeedView: View {
         .contentMargins(.top, 0, for: .scrollContent)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(SkyTheme.Color.grouped)
-        .refreshable {
-            await app.importFromApple()
-        }
         .onChange(of: app.workouts.map(\.id)) { _, ids in
             if let revealedWorkoutID, !ids.contains(revealedWorkoutID) {
                 self.revealedWorkoutID = nil

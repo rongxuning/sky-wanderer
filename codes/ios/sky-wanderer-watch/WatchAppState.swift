@@ -87,12 +87,15 @@ final class WatchAppState: ObservableObject {
         guard AppleHealth.available else { return }
         do {
             try await AppleHealth.authorize()
-            let imported = try await AppleActivitySource().importRunsAndHikes()
-            mutate { database in
-                WorkoutImport.merge(imported, into: &database.workouts)
-            }
         } catch {
             return
+        }
+        let outcome = await RecordsRefresh.performAsync {
+            try await AppleActivitySource().importRunsAndHikes()
+        }
+        guard !outcome.failed, !outcome.cancelled else { return }
+        mutate { database in
+            WorkoutImport.merge(outcome.records, into: &database.workouts)
         }
     }
 
