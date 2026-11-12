@@ -72,12 +72,12 @@ enum AppleHealth {
                 sortDescriptors: [sort]
             ) { _, samples, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    hop(Result<[HKWorkout], Error>.failure(error), to: continuation)
                     return
                 }
-                continuation.resume(returning: (samples as? [HKWorkout]) ?? [])
+                hop(Result.success((samples as? [HKWorkout]) ?? []), to: continuation)
             }
-            store.execute(query)
+            execute(query)
         }
         var records: [WorkoutRecord] = []
         for workout in workouts {
@@ -130,9 +130,9 @@ enum AppleHealth {
                 quantitySamplePredicate: predicate,
                 options: .cumulativeSum
             ) { _, stats, _ in
-                continuation.resume(returning: stats?.sumQuantity()?.doubleValue(for: unit))
+                hop(stats?.sumQuantity()?.doubleValue(for: unit), to: continuation)
             }
-            store.execute(query)
+            execute(query)
         }
     }
 
@@ -306,14 +306,20 @@ enum AppleHealth {
                 limit: HKObjectQueryNoLimit,
                 sortDescriptors: [sort]
             ) { _, samples, _ in
-                let mapped = (samples as? [HKQuantitySample] ?? []).compactMap { sample -> HealthQuantitySample? in
-                    let value = sample.quantity.doubleValue(for: unit)
-                    guard value.isFinite else { return nil }
-                    return HealthQuantitySample(start: sample.startDate, end: sample.endDate, value: value)
+                let raw = samples as? [HKQuantitySample] ?? []
+                // Leave HealthKit's callback queue before mapping or resuming.
+                // Resuming inline continues the import on that queue, and the next
+                // query can then deadlock waiting for the same queue.
+                callbackHop.async {
+                    let mapped = raw.compactMap { sample -> HealthQuantitySample? in
+                        let value = sample.quantity.doubleValue(for: unit)
+                        guard value.isFinite else { return nil }
+                        return HealthQuantitySample(start: sample.startDate, end: sample.endDate, value: value)
+                    }
+                    continuation.resume(returning: mapped)
                 }
-                continuation.resume(returning: mapped)
             }
-            store.execute(query)
+            execute(query)
         }
     }
 
@@ -339,7 +345,7 @@ enum AppleHealth {
                 sortDescriptors: nil
             ) { _, samples, _ in
                 guard let route = samples?.first as? HKWorkoutRoute else {
-                    once.resume { continuation.resume(returning: []) }
+                    once.resume { hop([GeoPoint](), to: continuation) }
                     return
                 }
                 let routeQuery = HKWorkoutRouteQuery(route: route) { _, locations, done, error in
@@ -347,12 +353,45 @@ enum AppleHealth {
                         bag.append(locations)
                     }
                     if done || error != nil {
-                        once.resume { continuation.resume(returning: bag.points) }
+                        let snapshot = bag.snapshot()
+                        once.resume { hop(snapshot, to: continuation) }
                     }
                 }
-                store.execute(routeQuery)
+                // Not `store.execute` here. This handler is on HealthKit's serial
+                // callback queue; starting the route query before the handler
+                // returns deadlocks that queue, so the import never reaches merge.
+                execute(routeQuery)
             }
+            execute(query)
+        }
+    }
+
+    /// HealthKit callbacks stay on HealthKit's queue. Resume and `execute` hop
+    /// off it so a handler cannot run the rest of the import inline, and so a
+    /// nested route query is not started on the queue that is still in the handler.
+    private static let callbackHop = DispatchQueue(label: "sky.health.callback", qos: .userInitiated)
+
+    private static func execute(_ query: HKQuery) {
+        callbackHop.async {
             store.execute(query)
+        }
+    }
+
+    private static func hop<T>(
+        _ value: T,
+        to continuation: CheckedContinuation<T, Never>
+    ) {
+        callbackHop.async {
+            continuation.resume(returning: value)
+        }
+    }
+
+    private static func hop<T>(
+        _ result: Result<T, Error>,
+        to continuation: CheckedContinuation<T, Error>
+    ) {
+        callbackHop.async {
+            continuation.resume(with: result)
         }
     }
 
@@ -647,6 +686,12 @@ private final class PointBag: @unchecked Sendable {
         })
         lock.unlock()
     }
+
+    func snapshot() -> [GeoPoint] {
+        lock.lock()
+        defer { lock.unlock() }
+        return points
+    }
 }
 
 private final class ResumeOnce: @unchecked Sendable {
@@ -655,9 +700,15 @@ private final class ResumeOnce: @unchecked Sendable {
 
     func resume(_ body: () -> Void) {
         lock.lock()
-        defer { lock.unlock() }
-        guard !fired else { return }
+        if fired {
+            lock.unlock()
+            return
+        }
         fired = true
+        lock.unlock()
+        // Unlock first. `body` resumes the import, and holding the lock across
+        // that resume deadlocks if the import touches this gate again on the
+        // same thread.
         body()
     }
 }

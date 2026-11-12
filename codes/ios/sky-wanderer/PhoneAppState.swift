@@ -24,6 +24,8 @@ final class PhoneAppState: ObservableObject {
     private let filename = "phone.json"
     private var pendingResetEmail: String?
     private var verifiedResetEmail: String?
+    /// One Health import shared by the records list, the analysis tab, and pull-to-refresh.
+    private var healthImport: (id: UUID, task: Task<RecordsRefresh.Outcome, Never>)?
 
     init() {
         var loaded: Database
@@ -606,16 +608,54 @@ final class PhoneAppState: ObservableObject {
     }
 
     func importFromApple() async {
+        let task: Task<RecordsRefresh.Outcome, Never>
+        if let healthImport {
+            task = healthImport.task
+        } else {
+            let id = UUID()
+            let created = Task.detached { @MainActor in
+                await self.loadHealthWorkouts()
+            }
+            healthImport = (id, created)
+            task = created
+            Task.detached { @MainActor in
+                _ = await created.value
+                if self.healthImport?.id == id {
+                    self.healthImport = nil
+                }
+            }
+        }
+        // Cancellation ends this wait so the spinner stops. The detached import
+        // still merges, which is what puts a workout newer than the saved list on screen.
+        _ = await RecordsRefresh.waitFor {
+            await task.value
+        }
+    }
+
+    /// Authorization stays on the main actor so the system sheet can appear.
+    /// Query and series work runs off the main thread inside `RecordsRefresh`.
+    private func loadHealthWorkouts() async -> RecordsRefresh.Outcome {
         let source = AppleActivitySource()
         do {
             try await source.prepare()
-            let imported = try await source.importRunsAndHikes()
-            mutate { database in
-                WorkoutImport.merge(imported, into: &database.workouts, skipping: database.deletedWorkouts)
-            }
         } catch {
             banner = "暂时读不到 Apple 健康里的锻炼"
+            return .failure
         }
+        let outcome = await RecordsRefresh.performAsync {
+            try await source.importRunsAndHikes()
+        }
+        if outcome.failed {
+            banner = "暂时读不到 Apple 健康里的锻炼"
+            return outcome
+        }
+        if outcome.cancelled {
+            return outcome
+        }
+        mutate { database in
+            WorkoutImport.merge(outcome.records, into: &database.workouts, skipping: database.deletedWorkouts)
+        }
+        return outcome
     }
 
     func addPost(from record: WorkoutRecord, text: String, imageData: Data?) {
