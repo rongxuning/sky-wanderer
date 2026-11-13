@@ -86,6 +86,9 @@ struct RecordFeedView: View {
             }
             return titles
         }()
+        let entries = RecordFeedList.rows(spans: spans).map { row in
+            RecordFeedEntry(id: feedEntryID(row, workouts: workouts), row: row)
+        }
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if !app.banner.isEmpty {
@@ -97,16 +100,22 @@ struct RecordFeedView: View {
                         .padding(.top, SkyTheme.Spacing.related)
                         .padding(.bottom, SkyTheme.Spacing.related)
                 }
-                ForEach(Array(workouts.enumerated()), id: \.element.id) { index, workout in
-                    RecordSwipeCard(
-                        workout: workout,
-                        revealedID: $revealedWorkoutID,
-                        onRequestDelete: { pendingDeleteID = workout.id }
-                    )
-                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                    .padding(.bottom, SkyTheme.Spacing.related)
-                    .background {
-                        RecordMonthProbe(title: monthByIndex[index])
+                ForEach(entries) { entry in
+                    switch entry.row {
+                    case .monthHeader(let title):
+                        RecordMonthSectionLabel(title: title)
+                    case .card(let index):
+                        let workout = workouts[index]
+                        RecordSwipeCard(
+                            workout: workout,
+                            revealedID: $revealedWorkoutID,
+                            onRequestDelete: { pendingDeleteID = workout.id }
+                        )
+                        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                        .padding(.bottom, SkyTheme.Spacing.related)
+                        .background {
+                            RecordMonthProbe(title: monthByIndex[index])
+                        }
                     }
                 }
             }
@@ -244,10 +253,34 @@ private enum RecordListSpace {
     static let viewport = "recordListViewport"
 }
 
-private struct RecordMonthAnchor: Equatable {
+private struct RecordFeedEntry: Identifiable {
+    var id: String
+    var row: RecordFeedList.Row
+}
+
+private func feedEntryID(_ row: RecordFeedList.Row, workouts: [WorkoutRecord]) -> String {
+    switch row {
+    case .monthHeader(let title):
+        return "month-\(title)"
+    case .card(let index):
+        return workouts[index].id.uuidString
+    }
+}
+
+/// In-list year-month. Headline, not the sticky bar's Title3 Bold. No month probe: the sticky title follows cards only.
+private struct RecordMonthSectionLabel: View {
     var title: String
-    var minY: CGFloat
-    var maxY: CGFloat
+
+    var body: some View {
+        Text(title)
+            .font(SkyTheme.Font.headline)
+            .foregroundStyle(SkyTheme.Color.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.top, SkyTheme.Spacing.section)
+            .padding(.bottom, SkyTheme.Spacing.related)
+            .accessibilityAddTraits(.isHeader)
+    }
 }
 
 private struct RecordMonthAnchorKey: PreferenceKey {
@@ -268,25 +301,14 @@ private struct RecordMonthProbe: View {
             Color.clear
                 .preference(
                     key: RecordMonthAnchorKey.self,
-                    value: [RecordMonthAnchor(title: title, minY: frame.minY, maxY: frame.maxY)]
+                    value: [RecordMonthAnchor(
+                        title: title,
+                        minY: Double(frame.minY),
+                        maxY: Double(frame.maxY)
+                    )]
                 )
         }
         .allowsHitTesting(false)
-    }
-}
-
-private enum RecordMonthTracking {
-    /// Month of the card closest to the top of the visible list.
-    /// A card that still crosses the top edge keeps the title until its bottom leaves that edge.
-    static func topTitle(among anchors: [RecordMonthAnchor], listTop: CGFloat = 0) -> String? {
-        let visible = anchors.filter { anchor in
-            !anchor.title.isEmpty
-                && anchor.minY.isFinite
-                && anchor.maxY.isFinite
-                && anchor.maxY > anchor.minY
-                && anchor.maxY > listTop
-        }
-        return visible.min { $0.minY < $1.minY }?.title
     }
 }
 
@@ -554,6 +576,14 @@ struct RecordSummaryCard: View {
         RoundedRectangle(cornerRadius: RecordCardLayout.corner, style: .continuous)
     }
 
+    /// Today follows the device calendar, not the Shanghai clock used by the date string.
+    private var cardFill: Color {
+        if RecordFeedDay.isToday(workout.start) {
+            return SkyTheme.Color.recordCardToday
+        }
+        return SkyTheme.Color.recordCard
+    }
+
     var body: some View {
         ZStack(alignment: .trailing) {
             if workout.route.count >= 2 {
@@ -583,7 +613,7 @@ struct RecordSummaryCard: View {
             .padding(.vertical, RecordCardLayout.verticalInset)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .background(cardFill, in: cardShape)
         .clipShape(cardShape)
         .shadow(
             color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
