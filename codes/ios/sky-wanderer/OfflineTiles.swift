@@ -350,7 +350,7 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
         }
     }
 
-    private func replacePolyline(_ points: [GeoPoint], on map: MKMapView) {
+    func replacePolyline(_ points: [GeoPoint], on map: MKMapView) {
         if let track {
             map.removeOverlay(track)
         }
