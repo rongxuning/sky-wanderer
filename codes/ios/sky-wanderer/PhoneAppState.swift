@@ -1010,13 +1010,15 @@ final class WorkoutDraft: ObservableObject {
     @Published var origin = MapOrigin.fallback
 
     func plannedRoute(saved: [SavedRoute], workouts: [WorkoutRecord]) -> PlannedRoute {
-        if let route = saved.first(where: { $0.id == routeID }) {
-            return PlannedRoute(id: route.id, name: route.name, points: route.points)
-        }
-        if let workout = workouts.first(where: { $0.id.uuidString == routeID }) {
-            return PlannedRoute(id: routeID, name: workout.sport.title, points: workout.route)
-        }
-        return .free
+        TrainingRouteDraft.planned(routeID: routeID, saved: saved, workouts: workouts)
+    }
+
+    func select(route: SavedRoute) {
+        routeID = TrainingRouteDraft.selecting(route)
+    }
+
+    func selectFreeRun() {
+        routeID = TrainingRouteDraft.freeRunID()
     }
 
     var members: [TeammateProfile] {
