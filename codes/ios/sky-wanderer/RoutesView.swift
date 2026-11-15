@@ -515,6 +515,8 @@ struct RouteDetailView: View {
     @State private var editTarget: RouteFactEditTarget?
     /// Height of the floating card, including the home-indicator padding, so the tools sit above it.
     @State private var chromeHeight: CGFloat = 220
+    /// Title bar, from the top of the map through the offline-tile note. 1× starts below it.
+    @State private var titleHeight: CGFloat = 0
     /// UIKit's latest title string. A class so keystrokes do not re-render the field and move the caret.
     @State private var titleBuffer = RouteTitleBuffer()
     @FocusState private var titleFocused: Bool
@@ -554,7 +556,13 @@ struct RouteDetailView: View {
         }
         let shown = RouteCheckpointLayout(marks: marks, segments: layout.segments)
         return ZStack(alignment: .bottom) {
-            mapColumn(route, layout: shown, topInset: topInset, legalBottomInset: chromeHeight)
+            mapColumn(
+                route,
+                layout: shown,
+                topInset: topInset,
+                titleHeight: titleHeight,
+                legalBottomInset: chromeHeight
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             floatingChrome(route, bottomInset: bottomInset)
         }
@@ -568,6 +576,9 @@ struct RouteDetailView: View {
         }
         .onChange(of: route.id) { _, _ in
             factPage = 0
+            multiplier = 1
+            zoomArmed = false
+            zoomDragBase = nil
         }
         .onChange(of: editingTitle) { _, editing in
             guard editing else { return }
@@ -597,6 +608,10 @@ struct RouteDetailView: View {
             guard height > 1, abs(height - chromeHeight) > 0.5 else { return }
             chromeHeight = height
         }
+        .onPreferenceChange(RouteTitleHeightKey.self) { height in
+            guard height > 1, abs(height - titleHeight) > 0.5 else { return }
+            titleHeight = height
+        }
         .sheet(item: $editTarget) { target in
             RouteFactEditSheet(routeID: routeID, target: target)
         }
@@ -606,9 +621,13 @@ struct RouteDetailView: View {
         _ route: SavedRoute,
         layout: RouteCheckpointLayout,
         topInset: CGFloat,
+        titleHeight: CGFloat,
         legalBottomInset: CGFloat
     ) -> some View {
         let markerCount = RouteKilometers.markers(along: route.points).count
+        // Measured title height includes the status bar. Until that arrives, leave room
+        // for the back row, the offline note, and the gaps so the first camera is already 1×.
+        let bandTop = titleHeight > 1 ? titleHeight : topInset + 88
         return ZStack {
             OfflineRouteMap(
                 routeID: route.id,
@@ -618,6 +637,7 @@ struct RouteDetailView: View {
                 zoomMultiplier: multiplier,
                 zoomArmed: zoomArmed,
                 tileEpoch: tileStatus.revision,
+                topContentInset: bandTop,
                 legalBottomInset: legalBottomInset,
                 onZoomChanged: { value in
                     guard !zoomArmed else { return }
@@ -659,6 +679,11 @@ struct RouteDetailView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, topInset + 8)
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(key: RouteTitleHeightKey.self, value: geo.size.height)
+            }
+        }
     }
 
     /// System text field: the caret, delete, and the copy / paste / cut menu stay the platform ones.
@@ -1239,6 +1264,14 @@ private struct RouteTitleIconButton: UIViewRepresentable {
 }
 
 private struct RouteChromeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct RouteTitleHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
