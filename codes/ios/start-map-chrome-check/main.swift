@@ -1,0 +1,94 @@
+import Foundation
+
+// swiftc -swift-version 5 codes/ios/sky-wanderer/StartMapChrome.swift \
+//   codes/ios/start-map-chrome-check/main.swift \
+//   -o /tmp/start-map-chrome-check && /tmp/start-map-chrome-check
+
+var failures: [String] = []
+
+func check(_ condition: @autoclosure () -> Bool, _ message: String) {
+    if !condition() {
+        failures.append(message)
+    }
+}
+
+func near(_ actual: ChromeLength, _ expected: ChromeLength, _ message: String) {
+    let delta = abs(Double(actual) - Double(expected))
+    check(delta < 0.001, "\(message): \(actual) !~ \(expected)")
+}
+
+// MARK: - Left column, centered on the full screen
+
+near(StartMapChrome.toolColumnHeight, 200, "four 44pt buttons and three 8pt gaps are 200pt")
+near(StartMapChrome.toolColumnOriginY(screenHeight: 852), 326, "column top on an 852pt phone")
+near(
+    StartMapChrome.toolColumnOriginY(screenHeight: 852) + StartMapChrome.toolColumnHeight,
+    526,
+    "column bottom on an 852pt phone"
+)
+near(StartMapChrome.toolLeading, 16, "column sits 16pt from the leading edge")
+near(StartMapChrome.toolDiameter, 44, "each map button is a 44pt target")
+near(StartMapChrome.toolGap, 8, "buttons are 8pt apart")
+check(StartMapChrome.toolCount == 4, "one vertical column of four buttons")
+
+check(
+    StartMapChrome.tools.map(\.label) == ["类型", "路线", "组队", "设置"],
+    "top to bottom: 类型, 路线, 组队, 设置"
+)
+check(
+    StartMapChrome.tools.map(\.symbol) == [
+        "figure.run",
+        "point.topleft.down.to.point.bottomright.curvepath",
+        "person.2",
+        "gearshape",
+    ],
+    "symbols are run, path, two people, gear"
+)
+
+// MARK: - Start button 16pt above the measured pill
+
+near(StartMapChrome.startDiameter, 72, "Start is a 72pt circle")
+near(StartMapChrome.gapAboveTabBar, 16, "the gap above the pill is 16pt")
+check(StartMapChrome.gapAboveTabBar != 8, "the retired 8pt gap stays retired")
+
+// iPhone with a 34pt home indicator. The pill is 48pt and sits on 4pt of padding
+// above that indicator, so its top is 86pt from the physical bottom.
+let screen: ChromeLength = 852
+let homeInset: ChromeLength = 34
+let pillTopFromBottom = homeInset + StartMapChrome.tabBarBottomPadding + StartMapChrome.tabBarPillHeight
+near(StartMapChrome.tabBarPillHeight, 48, "default pill is 2 + 44 + 2")
+near(pillTopFromBottom, 86, "default pill top is 86pt from the screen bottom")
+
+let mapMaxY = screen
+let tabBarMinY = screen - pillTopFromBottom
+let padding = StartMapChrome.startBottomPadding(mapMaxY: mapMaxY, tabBarMinY: tabBarMinY)
+near(padding ?? -1, pillTopFromBottom + 16, "measured padding clears the pill by 16pt")
+near((padding ?? 0) - pillTopFromBottom, 16, "the gap itself is 16pt")
+near(
+    StartMapChrome.fallbackStartBottomPadding(safeAreaBottom: homeInset),
+    padding ?? -1,
+    "before the first measurement, the same 16pt gap still clears the pill"
+)
+
+// The TestFlight 60 bug: padding by the device inset plus 10 stops inside the pill.
+let oldPadding = homeInset + 10
+check(oldPadding < pillTopFromBottom, "safeAreaInsets.bottom + 10 leaves Start under the pill")
+
+// A nonsense pill frame falls back instead of pinning Start to the screen edge.
+check(
+    StartMapChrome.startBottomPadding(mapMaxY: screen, tabBarMinY: 0) == nil,
+    "a pill reported at the top of the screen is ignored"
+)
+check(
+    StartMapChrome.startBottomPadding(mapMaxY: screen, tabBarMinY: screen) == nil,
+    "a pill reported flush with the map bottom is ignored"
+)
+
+if failures.isEmpty {
+    print("start-map-chrome-check: ok")
+} else {
+    for failure in failures {
+        print("FAIL \(failure)")
+    }
+    exit(1)
+}

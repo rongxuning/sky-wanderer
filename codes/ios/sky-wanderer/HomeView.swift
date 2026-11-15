@@ -24,6 +24,7 @@ struct SkyHome: View {
     @State private var trainingPath = NavigationPath()
     @State private var routesPath = NavigationPath()
     @State private var showLogin = false
+    @State private var tabBarAnchor: SkyTabBarAnchor = .unmeasured
 
     private var showsTabBar: Bool {
         switch tab {
@@ -77,6 +78,7 @@ struct SkyHome: View {
             .accessibilityHidden(tab != .routes)
         }
         .background(SkyTheme.Color.grouped.ignoresSafeArea())
+        .environment(\.skyTabBarAnchor, showsTabBar ? tabBarAnchor : .hidden)
         .safeAreaInset(edge: .bottom, spacing: showsTabBar ? 8 : 0) {
             if showsTabBar {
                 HStack(spacing: 0) {
@@ -90,10 +92,23 @@ struct SkyHome: View {
                                 SkyTabBarMetrics.width(in: length)
                             }
                     }
+                    .background {
+                        // Pill top in global space. StartMapView places 开始 16pt above this,
+                        // because the map's safeAreaInsets.bottom does not include this custom bar.
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: SkyTabBarTopPreference.self,
+                                value: proxy.frame(in: .global).minY
+                            )
+                        }
+                    }
                     Spacer(minLength: 0)
                 }
-                .padding(.bottom, 4)
+                .padding(.bottom, StartMapChrome.tabBarBottomPadding)
             }
+        }
+        .onPreferenceChange(SkyTabBarTopPreference.self) { top in
+            tabBarAnchor = top.map { SkyTabBarAnchor.measured($0) } ?? .unmeasured
         }
         .onAppear {
             presentLiveWorkoutIfNeeded()
@@ -375,6 +390,17 @@ private enum SkyTabBarMetrics {
     }
 }
 
+/// Global minY of the glass pill. Nil when the bar is not in the tree.
+private struct SkyTabBarTopPreference: PreferenceKey {
+    static var defaultValue: CGFloat? = nil
+
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
+    }
+}
+
 private struct SkyGlassTabBar: View {
     @Binding var selection: SkyTab
 
@@ -386,7 +412,7 @@ private struct SkyGlassTabBar: View {
             item(.routes, symbol: "map", title: "路线")
         }
         .padding(.horizontal, 2)
-        .padding(.vertical, 2)
+        .padding(.vertical, StartMapChrome.tabBarVerticalPadding)
         .skyFloatingGlass(in: Capsule(style: .continuous))
         .accessibilityElement(children: .contain)
     }
