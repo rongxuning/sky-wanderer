@@ -13,6 +13,8 @@ struct StartMapView: View {
     @Binding var path: NavigationPath
     /// The training tab uses this as its root. There is nothing to pop; the glass bar leaves the tab.
     var showsBackButton = false
+    /// False while another home tab is showing. The view stays mounted, so this is what stops a countdown.
+    var isActive = true
     @StateObject private var location = LocationPermission()
     @State private var sheet: StartSheet?
     @State private var pickingRoute = false
@@ -68,6 +70,10 @@ struct StartMapView: View {
             if countdownTask == nil {
                 launching = false
             }
+            if !isActive { cancelCountdown() }
+        }
+        .onChange(of: isActive) { _, active in
+            if !active { cancelCountdown() }
         }
         .onDisappear { cancelCountdown() }
         .onChange(of: location.coordinate?.latitude) { _, _ in

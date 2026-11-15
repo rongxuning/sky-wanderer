@@ -29,8 +29,10 @@ enum TrainingRouteDraft {
 /// Progress rule: project the athlete onto the planned polyline in a local
 /// equirectangular plane, using the same north/east meters as `RouteStats.flatMeters`.
 /// Each segment is clamped to its endpoints. The closest projection wins. When two
-/// projections are equally close, the one farther along the route wins, so a vertex
-/// counts as reached.
+/// projections are equally close, the earlier one along the route stays. A vertex in
+/// the middle is the same distance from either side, so it still counts as reached.
+/// A closed loop repeats its start as the finish: standing there stays at the start
+/// instead of snapping to the full length.
 ///
 /// Progressed distance is the planned-path length from the start to that point.
 /// Segment lengths use `RouteStats.metersBetween`, the same lengths `RouteStats.distance`
@@ -104,9 +106,8 @@ enum PlannedRouteProgress {
             let length = RouteStats.metersBetween(start, end)
             let (fraction, offset) = fractionAlong(start, end, athlete)
             let along = traveled + length * fraction
-            let closer = offset < bestOffset - 0.05
-            let tieFarther = abs(offset - bestOffset) <= 0.05 && along > bestAlong
-            if closer || tieFarther {
+            // Equal offsets keep the earlier point. A loop's start and finish are the same place.
+            if offset < bestOffset - 0.05 {
                 bestOffset = offset
                 bestAlong = along
             }
