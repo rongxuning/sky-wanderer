@@ -1,6 +1,27 @@
 import CoreLocation
 import SwiftUI
 
+/// Where the glass pill is, in global coordinates. HomeView publishes this.
+enum SkyTabBarAnchor: Equatable {
+    /// The pill is on screen, but its frame has not been read yet.
+    case unmeasured
+    /// This stack is pushed, so the pill is not on screen.
+    case hidden
+    /// Global minY of the pill's top edge.
+    case measured(CGFloat)
+}
+
+private struct SkyTabBarAnchorKey: EnvironmentKey {
+    static let defaultValue = SkyTabBarAnchor.unmeasured
+}
+
+extension EnvironmentValues {
+    var skyTabBarAnchor: SkyTabBarAnchor {
+        get { self[SkyTabBarAnchorKey.self] }
+        set { self[SkyTabBarAnchorKey.self] = newValue }
+    }
+}
+
 enum StartSheet: String, Identifiable {
     case type
     case settings
@@ -20,10 +41,12 @@ struct StartMapView: View {
     @State private var count = 3
     @State private var launching = false
     @State private var countdownTask: Task<Void, Never>?
+    /// Global minY of the glass pill. `.unmeasured` until HomeView reads the bar.
+    @Environment(\.skyTabBarAnchor) private var tabBarAnchor
 
     var body: some View {
-        // Full-bleed map. The glass tab bar is an ancestor safe-area inset, so padding
-        // the controls by that bottom inset keeps them above the bar. The bar stays visible.
+        // Full-bleed map. The reader ignores the safe area so the icon column
+        // centers on the screen, not on the band above the pill.
         GeometryReader { geo in
             ZStack {
                 RouteMap(
@@ -54,10 +77,24 @@ struct StartMapView: View {
                     .padding(.top, geo.safeAreaInsets.top)
                 }
             }
+            .overlay(alignment: .topLeading) {
+                // Guides move the column without a spacer that could take taps.
+                // Top = (height - 200) / 2. On an 852pt phone that is 326…526.
+                toolColumn
+                    .alignmentGuide(.leading) { dimensions in
+                        dimensions[.leading] - CGFloat(StartMapChrome.toolLeading)
+                    }
+                    .alignmentGuide(.top) { dimensions in
+                        dimensions[.top] - toolColumnOrigin(in: geo)
+                    }
+            }
             .overlay(alignment: .bottom) {
-                startBar
-                    .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                    .padding(.bottom, geo.safeAreaInsets.bottom + 10)
+                // Move the bottom guide down by the clearance. The circle's bottom
+                // edge then sits 16pt above the pill, and taps stay on the circle.
+                startButton
+                    .alignmentGuide(.bottom) { dimensions in
+                        dimensions[.bottom] + startBottomPadding(in: geo)
+                    }
             }
         }
         .ignoresSafeArea()
@@ -91,11 +128,6 @@ struct StartMapView: View {
         }
     }
 
-    private var plannedName: String {
-        let planned = draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts)
-        return planned.id == PlannedRoute.free.id ? "自由跑" : planned.name
-    }
-
     private var countdown: some View {
         Text("\(count)")
             .font(.system(size: 64, weight: .bold))
@@ -108,72 +140,86 @@ struct StartMapView: View {
             .accessibilityLabel("倒计时 \(count)")
     }
 
-    private var startBar: some View {
-        HStack(spacing: 0) {
-            barButton("square.grid.2x2", "类型") { sheet = .type }
-            barButton(
-                "point.topleft.down.curvedto.point.bottomright.up",
-                "路线",
-                value: plannedName
-            ) {
-                cancelCountdown()
-                pickingRoute = true
+    private var toolColumn: some View {
+        VStack(spacing: CGFloat(StartMapChrome.toolGap)) {
+            ForEach(StartMapChrome.tools, id: \.label) { tool in
+                toolButton(tool.symbol, tool.label) {
+                    performTool(tool.label)
+                }
             }
-            barButton("play.fill", "开始", prominent: true, action: start)
-            barButton("person.2", "组队", badge: draft.memberIDs.count) {
-                cancelCountdown()
-                path.append(TrainRoute.team)
-            }
-            barButton("gearshape.fill", "设置") { sheet = .settings }
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: Capsule(style: .continuous))
-        .overlay {
-            Capsule(style: .continuous)
-                .strokeBorder(SkyTheme.Color.card.opacity(0.55), lineWidth: 0.5)
-        }
-        .shadow(color: SkyTheme.Shadow.card.color.opacity(0.08), radius: 16, y: 4)
     }
 
-    /// Running and hiking share this bar. Choosing a route is not limited to one sport.
-    private func barButton(
-        _ symbol: String,
-        _ title: String,
-        prominent: Bool = false,
-        badge: Int = 0,
-        value: String? = nil,
-        action: @escaping () -> Void
-    ) -> some View {
+    private func toolButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: symbol)
-                        .font(.system(size: 18, weight: .semibold))
-                    if badge > 0 {
-                        Text("\(badge)")
-                            .font(SkyTheme.Font.caption)
-                            .foregroundStyle(SkyTheme.Color.onPrimary)
-                            .padding(3)
-                            .background(SkyTheme.Color.primary, in: Circle())
-                            .offset(x: 10, y: -6)
-                    }
-                }
-                Text(title)
-                    .font(SkyTheme.Font.caption)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(prominent ? SkyTheme.Color.onPrimary : SkyTheme.Color.ink)
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: SkyTheme.Spacing.touchMin)
-            .background {
-                if prominent {
-                    Capsule().fill(SkyTheme.Color.primary)
-                }
-            }
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(SkyTheme.Color.ink)
+                .frame(width: CGFloat(StartMapChrome.toolDiameter), height: CGFloat(StartMapChrome.toolDiameter))
+                .background(SkyTheme.Color.card, in: Circle())
+                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(value.map { "\(title)，\($0)" } ?? title)
+        .contentShape(Circle())
+        .accessibilityLabel(label)
+    }
+
+    private var startButton: some View {
+        Button(action: start) {
+            Text("开始")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(SkyTheme.Color.onPrimary)
+                .frame(width: CGFloat(StartMapChrome.startDiameter), height: CGFloat(StartMapChrome.startDiameter))
+                .background(SkyTheme.Color.primary, in: Circle())
+                .shadow(
+                    color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
+                    radius: SkyTheme.Shadow.card.radius,
+                    y: SkyTheme.Shadow.card.y
+                )
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .accessibilityLabel("开始")
+    }
+
+    /// Distance from the bottom of this full-bleed reader to the bottom of Start.
+    /// The glass pill is not a system tab bar, and `safeAreaInsets.bottom` does not
+    /// include it, so the padding is measured from the pill's top.
+    private func startBottomPadding(in geo: GeometryProxy) -> CGFloat {
+        let safe = ChromeLength(geo.safeAreaInsets.bottom)
+        switch tabBarAnchor {
+        case .hidden:
+            return CGFloat(safe + StartMapChrome.gapAboveTabBar)
+        case .unmeasured:
+            return CGFloat(StartMapChrome.fallbackStartBottomPadding(safeAreaBottom: safe))
+        case .measured(let tabBarTop):
+            let resolved = StartMapChrome.startBottomPadding(
+                mapMaxY: ChromeLength(geo.frame(in: .global).maxY),
+                tabBarMinY: ChromeLength(tabBarTop)
+            )
+            return CGFloat(resolved ?? StartMapChrome.fallbackStartBottomPadding(safeAreaBottom: safe))
+        }
+    }
+
+    private func toolColumnOrigin(in geo: GeometryProxy) -> CGFloat {
+        CGFloat(StartMapChrome.toolColumnOriginY(screenHeight: ChromeLength(geo.size.height)))
+    }
+
+    private func performTool(_ label: String) {
+        switch label {
+        case "类型":
+            sheet = .type
+        case "路线":
+            cancelCountdown()
+            pickingRoute = true
+        case "组队":
+            cancelCountdown()
+            path.append(TrainRoute.team)
+        case "设置":
+            sheet = .settings
+        default:
+            break
+        }
     }
 
     private func start() {
