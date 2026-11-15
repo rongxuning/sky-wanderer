@@ -234,6 +234,8 @@ enum GeoFit {
             maxLon = max(maxLon, coordinate.longitude)
         }
         let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
+        // 1.6× is the full-screen pad for workout, share, and the library map.
+        // Route detail fits the band between the title and the card with RouteBandFit.
         let span = MKCoordinateSpan(
             latitudeDelta: max(0.008, (maxLat - minLat) * 1.6),
             longitudeDelta: max(0.008, (maxLon - minLon) * 1.6)
@@ -245,58 +247,31 @@ enum GeoFit {
     /// covered from the top or the bottom. Fractions are of the map view's height.
     /// MapKit aspect-fits a region to the whole view, so latitude grows until that band
     /// contains `fitted`, and the original center lands on the band's center.
+    ///
+    /// Route detail does not use `region` for this. That 1.6× box is for the other maps.
+    /// The band math itself lives in `RouteBandFit.visibleRegion`.
     static func visibleRegion(
         _ fitted: MKCoordinateRegion,
         in viewSize: CGSize,
         topFraction: Double,
         bottomFraction: Double
     ) -> MKCoordinateRegion {
-        var top = max(topFraction, 0)
-        var bottom = max(bottomFraction, 0)
-        var obscured = top + bottom
-        guard obscured > 0.02 else { return fitted }
-        if obscured > 0.85 {
-            let scale = 0.85 / obscured
-            top *= scale
-            bottom *= scale
-            obscured = 0.85
-        }
-        let visible = 1 - obscured
-        guard viewSize.width > 1, viewSize.height > 1 else {
-            return latitudeShift(fitted, top: top, bottom: bottom, visible: visible)
-        }
-        let aspect = viewSize.width / viewSize.height
-        let cosine = cos(fitted.center.latitude * Double.pi / 180)
-        guard cosine > 0.2 else {
-            return latitudeShift(fitted, top: top, bottom: bottom, visible: visible)
-        }
-        let secant = 1 / cosine
-        let latitudeForBand = fitted.span.latitudeDelta / visible
-        let latitudeForWidth = fitted.span.longitudeDelta / (aspect * secant)
-        let latitudeDelta = max(latitudeForBand, latitudeForWidth)
-        let longitudeDelta = latitudeDelta * aspect * secant
-        let centerLatitude = fitted.center.latitude - latitudeDelta * (bottom - top) / 2
-        return MKCoordinateRegion(
-            center: CLLocationCoordinate2D(
-                latitude: min(85, max(-85, centerLatitude)),
-                longitude: fitted.center.longitude
+        let span = RouteBandFit.visibleRegion(
+            content: RouteSpan(
+                centerLatitude: fitted.center.latitude,
+                centerLongitude: fitted.center.longitude,
+                latitudeDelta: fitted.span.latitudeDelta,
+                longitudeDelta: fitted.span.longitudeDelta
             ),
-            span: MKCoordinateSpan(latitudeDelta: latitudeDelta, longitudeDelta: longitudeDelta)
+            viewWidth: Double(viewSize.width),
+            viewHeight: Double(viewSize.height),
+            topFraction: topFraction,
+            bottomFraction: bottomFraction
         )
-    }
-
-    /// Same vertical fit when the view size is not known yet. Longitude stays put;
-    /// MapKit may still widen the latitude span to match the view.
-    private static func latitudeShift(
-        _ fitted: MKCoordinateRegion,
-        top: Double,
-        bottom: Double,
-        visible: Double
-    ) -> MKCoordinateRegion {
-        var shifted = fitted
-        shifted.span.latitudeDelta = fitted.span.latitudeDelta / visible
-        shifted.center.latitude = fitted.center.latitude - shifted.span.latitudeDelta * (bottom - top) / 2
-        return shifted
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: span.centerLatitude, longitude: span.centerLongitude),
+            span: MKCoordinateSpan(latitudeDelta: span.latitudeDelta, longitudeDelta: span.longitudeDelta)
+        )
     }
 }
 

@@ -320,6 +320,8 @@ final class DiskTileOverlay: MKTileOverlay {
 final class RouteMapContainer: UIView {
     let map = MKMapView()
     let zoomCover = UIView()
+    var onLayout: ((CGSize) -> Void)?
+    private var notifyingLayout = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -340,6 +342,10 @@ final class RouteMapContainer: UIView {
         super.layoutSubviews()
         map.frame = bounds
         zoomCover.frame = bounds
+        guard !notifyingLayout else { return }
+        notifyingLayout = true
+        onLayout?(bounds.size)
+        notifyingLayout = false
     }
 }
 
@@ -351,7 +357,9 @@ struct OfflineRouteMap: UIViewRepresentable {
     var zoomMultiplier: Double
     var zoomArmed: Bool
     var tileEpoch: Int
-    /// Lifts the map's legal label above the floating card. Does not change the camera.
+    /// Bottom of the title bar. 1× fits the route below this and above the card.
+    var topContentInset: CGFloat = 0
+    /// Lifts the legal label above the floating card, and is the bottom of the 1× band.
     var legalBottomInset: CGFloat = 0
     var onZoomChanged: (Double) -> Void
     var onZoomDrag: (ZoomDragPhase) -> Void
@@ -375,6 +383,11 @@ struct OfflineRouteMap: UIViewRepresentable {
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(OfflineRouteMapCoordinator.handlePan(_:)))
         pan.maximumNumberOfTouches = 1
         container.zoomCover.addGestureRecognizer(pan)
+        let coordinator = context.coordinator
+        container.onLayout = { [weak container, weak coordinator] size in
+            guard let container, let coordinator else { return }
+            coordinator.noteLayout(size, map: container.map)
+        }
         return container
     }
 
@@ -383,7 +396,10 @@ struct OfflineRouteMap: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onZoomChanged = onZoomChanged
         coordinator.onZoomDrag = onZoomDrag
+        let wasArmed = coordinator.zoomArmed
         coordinator.zoomArmed = zoomArmed
+        coordinator.topInset = max(0, topContentInset)
+        coordinator.bottomInset = max(0, legalBottomInset)
         container.zoomCover.isHidden = !zoomArmed
         map.isScrollEnabled = !zoomArmed
         map.isZoomEnabled = !zoomArmed
@@ -411,8 +427,12 @@ struct OfflineRouteMap: UIViewRepresentable {
                 coordinator.replaceTiles(on: map)
             }
             if abs(coordinator.appliedMultiplier - zoomMultiplier) > 0.02 {
-                coordinator.apply(multiplier: zoomMultiplier, map: map)
+                coordinator.apply(multiplier: zoomMultiplier, map: map, fromTool: true)
             }
+            coordinator.requestFit(on: map)
+        }
+        if wasArmed, !zoomArmed {
+            coordinator.flushPendingFit(on: map)
         }
         let inset = max(0, legalBottomInset)
         if abs(map.layoutMargins.bottom - inset) > 0.5 {
@@ -437,17 +457,33 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     var tileEpoch = -1
     var appliedMultiplier = 1.0
     var showsKilometers = false
+    var topInset: CGFloat = 0
+    var bottomInset: CGFloat = 0
 
+    /// Camera region at 1×: the whole route inside the band, aspect-fit to the view.
     private var fitted: MKCoordinateRegion?
-    /// The first camera settles MapKit's aspect-fit. That view is 1×.
-    private var lockingFit = false
-    /// Set around a zoom-tool camera change so it is not read back as a pinch.
-    private var suppressCallback = false
+    private var routePoints: [GeoPoint] = []
+    private var cachedMarkers: [KilometerMarker] = []
+    /// The person has pinched, panned, or dragged the magnifier. Chrome changes keep that scale.
+    private var userAdjusted = false
+    /// A pinch or pan is in progress. Don't move the camera until it ends.
+    private var userAdjusting = false
+    private var pendingFit = false
+    private var applyingCamera = false
+    private var fittedInputs: FitInputs?
     private var tileOverlay: MKTileOverlay?
     private var halo: MKPolyline?
     private var track: ElevationTrackOverlay?
     private var checkpointAnnotations: [CheckpointAnnotation] = []
     private var kilometerAnnotations: [KilometerAnnotation] = []
+
+    private struct FitInputs {
+        var routeID: String
+        var width: CGFloat
+        var height: CGFloat
+        var top: CGFloat
+        var bottom: CGFloat
+    }
 
     func install(
         routeID: String,
@@ -459,16 +495,51 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     ) {
         self.routeID = routeID
         self.tileEpoch = tileEpoch
-        fitted = GeoFit.region(points.map(\.coordinate))
+        routePoints = points
+        userAdjusted = false
+        userAdjusting = false
+        pendingFit = false
+        applyingCamera = false
+        fitted = nil
+        fittedInputs = nil
+        appliedMultiplier = 1
+        if !kilometerAnnotations.isEmpty {
+            map.removeAnnotations(kilometerAnnotations)
+            kilometerAnnotations = []
+        }
+        cachedMarkers = []
         replacePolyline(points, on: map)
         replaceCheckpoints(checkpoints, on: map)
         setKilometers(showsKilometerMarkers, points: points, on: map)
         replaceTiles(on: map)
-        guard let fitted else { return }
-        lockingFit = true
-        suppressCallback = false
-        appliedMultiplier = 1
-        map.setRegion(fitted, animated: false)
+        commitFit(on: map)
+    }
+
+    func noteLayout(_ size: CGSize, map: MKMapView) {
+        guard size.width > 40, size.height > 40 else { return }
+        requestFit(on: map)
+    }
+
+    /// Re-fit when the title bar or the card changes height. A pinch or the magnifier
+    /// keeps the camera until that gesture ends; 1× stays "the route in the band".
+    func requestFit(on map: MKMapView) {
+        guard map.bounds.width > 40, map.bounds.height > 40 else { return }
+        if sameInputs(as: map), fitted != nil { return }
+        if userAdjusting || zoomArmed {
+            pendingFit = true
+            return
+        }
+        commitFit(on: map)
+    }
+
+    func flushPendingFit(on map: MKMapView) {
+        guard pendingFit || !sameInputs(as: map) || fitted == nil else { return }
+        pendingFit = false
+        guard !userAdjusting else {
+            pendingFit = true
+            return
+        }
+        commitFit(on: map)
     }
 
     func replaceTiles(on map: MKMapView) {
@@ -481,50 +552,50 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
         liftLines(on: map)
     }
 
-    func apply(multiplier: Double, map: MKMapView) {
+    func apply(multiplier: Double, map: MKMapView, fromTool: Bool) {
         guard let fitted else { return }
-        let clamped = min(16, max(0.4, multiplier))
-        if abs(clamped - appliedMultiplier) <= 0.02 {
+        let clamped = min(RouteZoomBaseline.maximum, max(RouteZoomBaseline.minimum, multiplier))
+        if fromTool, abs(clamped - 1) > 0.02 {
+            userAdjusted = true
+        }
+        let latitude = fitted.span.latitudeDelta / clamped
+        let current = max(map.region.span.latitudeDelta, 0.0000001)
+        if abs(clamped - appliedMultiplier) <= 0.02, abs(latitude - current) / max(latitude, 0.0000001) < 0.02 {
             appliedMultiplier = clamped
             return
         }
-        let latitude = fitted.span.latitudeDelta / clamped
         var region = map.region
-        let current = max(region.span.latitudeDelta, 0.0000001)
         let ratio = latitude / current
         region.span = MKCoordinateSpan(
             latitudeDelta: latitude,
             longitudeDelta: min(180, max(region.span.longitudeDelta * ratio, 0.0001))
         )
-        suppressCallback = true
+        applyingCamera = true
         appliedMultiplier = clamped
         map.setRegion(region, animated: false)
     }
 
+    func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+        // A pinch that starts during our own setRegion still owns the camera.
+        guard isUserGesture(mapView) else { return }
+        applyingCamera = false
+        userAdjusted = true
+        userAdjusting = true
+    }
+
     func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-        if lockingFit {
-            guard mapView.bounds.width > 40,
-                  mapView.bounds.height > 40,
-                  mapView.region.span.latitudeDelta > 0.0000001 else { return }
-            lockingFit = false
-            suppressCallback = false
-            if var region = fitted {
-                region.span.latitudeDelta = mapView.region.span.latitudeDelta
-                region.span.longitudeDelta = mapView.region.span.longitudeDelta
-                fitted = region
-            }
-            appliedMultiplier = 1
-            return
+        let wasProgrammatic = applyingCamera
+        if applyingCamera {
+            applyingCamera = false
         }
-        if suppressCallback {
-            suppressCallback = false
-            return
-        }
-        guard let fitted, !zoomArmed else { return }
-        let latitude = max(mapView.region.span.latitudeDelta, 0.0000001)
-        let next = min(16, max(0.4, fitted.span.latitudeDelta / latitude))
-        appliedMultiplier = next
-        onZoomChanged?(next)
+        refreshKilometerAnnotations(on: mapView)
+        guard !wasProgrammatic else { return }
+        guard userAdjusting else { return }
+        userAdjusting = false
+        publishZoom(from: mapView)
+        guard pendingFit, !zoomArmed else { return }
+        pendingFit = false
+        commitFit(on: mapView)
     }
 
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
@@ -596,19 +667,13 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
 
     func setKilometers(_ visible: Bool, points: [GeoPoint], on map: MKMapView) {
         showsKilometers = visible
+        cachedMarkers = visible ? RouteKilometers.markers(along: points) : []
+        // A new route reuses kilometer numbers. Drop the old coordinates before rebuilding.
         if !kilometerAnnotations.isEmpty {
             map.removeAnnotations(kilometerAnnotations)
             kilometerAnnotations = []
         }
-        guard visible else { return }
-        let notes = RouteKilometers.markers(along: points).map(KilometerAnnotation.init(marker:))
-        kilometerAnnotations = notes
-        map.addAnnotations(notes)
-        // Adding the numbers last would paint them over checkpoint names. Put checkpoints back on top.
-        if !checkpointAnnotations.isEmpty {
-            map.removeAnnotations(checkpointAnnotations)
-            map.addAnnotations(checkpointAnnotations)
-        }
+        refreshKilometerAnnotations(on: map)
     }
 
     func replaceCheckpoints(_ marks: [RouteCheckpointMark], on map: MKMapView) {
@@ -625,6 +690,161 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
         checkpointAnnotations = notes
         checkpointKey = marks.map { "\($0.id):\($0.name):\($0.latitude):\($0.longitude)" }.joined(separator: "|")
         map.addAnnotations(notes)
+        refreshKilometerAnnotations(on: map)
+    }
+
+    private func commitFit(on map: MKMapView) {
+        guard map.bounds.width > 40, map.bounds.height > 40 else { return }
+        guard let camera = makeCamera(for: map) else { return }
+        if sameInputs(as: map), fitted != nil { return }
+        let hadFit = fitted != nil
+        fitted = camera
+        fittedInputs = FitInputs(
+            routeID: routeID,
+            width: map.bounds.width,
+            height: map.bounds.height,
+            top: topInset,
+            bottom: bottomInset
+        )
+        if userAdjusted, hadFit {
+            apply(multiplier: appliedMultiplier, map: map, fromTool: false)
+            return
+        }
+        if userAdjusted {
+            // They moved the map before the band fit existed. Keep that picture
+            // and read the multiplier off it, instead of snapping back to 1×.
+            let next = RouteZoomBaseline.publishedMultiplier(
+                fittedLatitude: camera.span.latitudeDelta,
+                displayedLatitude: map.region.span.latitudeDelta,
+                userGesture: true,
+                programmatic: false
+            ) ?? 1
+            appliedMultiplier = next
+            onZoomChanged?(next)
+            return
+        }
+        appliedMultiplier = 1
+        if regionClose(map.region, to: camera) { return }
+        applyingCamera = true
+        map.setRegion(camera, animated: false)
+    }
+
+    private func makeCamera(for map: MKMapView) -> MKCoordinateRegion? {
+        var latitudes = routePoints.map(\.latitude)
+        var longitudes = routePoints.map(\.longitude)
+        for note in checkpointAnnotations {
+            latitudes.append(note.coordinate.latitude)
+            longitudes.append(note.coordinate.longitude)
+        }
+        guard let content = RouteBandFit.contentSpan(
+            latitudes: latitudes,
+            longitudes: longitudes
+        ) else { return nil }
+        let height = Double(map.bounds.height)
+        let framed = RouteBandFit.visibleRegion(
+            content: content,
+            viewWidth: Double(map.bounds.width),
+            viewHeight: height,
+            topFraction: height > 1 ? Double(topInset) / height : 0,
+            bottomFraction: height > 1 ? Double(bottomInset) / height : 0
+        )
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: framed.centerLatitude, longitude: framed.centerLongitude),
+            span: MKCoordinateSpan(latitudeDelta: framed.latitudeDelta, longitudeDelta: framed.longitudeDelta)
+        )
+    }
+
+    private func sameInputs(as map: MKMapView) -> Bool {
+        guard let fittedInputs else { return false }
+        return fittedInputs.routeID == routeID
+            && abs(fittedInputs.width - map.bounds.width) < 0.5
+            && abs(fittedInputs.height - map.bounds.height) < 0.5
+            && abs(fittedInputs.top - topInset) < 0.5
+            && abs(fittedInputs.bottom - bottomInset) < 0.5
+    }
+
+    private func regionClose(_ region: MKCoordinateRegion, to camera: MKCoordinateRegion) -> Bool {
+        let latitude = max(camera.span.latitudeDelta, 0.0000001)
+        let longitude = max(camera.span.longitudeDelta, 0.0000001)
+        return abs(region.center.latitude - camera.center.latitude) < 0.000001
+            && abs(region.center.longitude - camera.center.longitude) < 0.000001
+            && abs(region.span.latitudeDelta - camera.span.latitudeDelta) / latitude < 0.02
+            && abs(region.span.longitudeDelta - camera.span.longitudeDelta) / longitude < 0.02
+    }
+
+    private func publishZoom(from map: MKMapView) {
+        guard let fitted, !zoomArmed else { return }
+        guard let next = RouteZoomBaseline.publishedMultiplier(
+            fittedLatitude: fitted.span.latitudeDelta,
+            displayedLatitude: map.region.span.latitudeDelta,
+            userGesture: true,
+            programmatic: false
+        ) else { return }
+        if abs(next - appliedMultiplier) <= 0.02 { return }
+        appliedMultiplier = next
+        onZoomChanged?(next)
+    }
+
+    /// MapKit reports its own camera changes through the same delegate. Only a live
+    /// gesture updates the multiplier, so the opening layout cannot land on 0.5×.
+    private func isUserGesture(_ mapView: MKMapView) -> Bool {
+        let recognizers = (mapView.gestureRecognizers ?? [])
+            + mapView.subviews.compactMap(\.gestureRecognizers).flatMap { $0 }
+        return recognizers.contains { recognizer in
+            recognizer.state == .began || recognizer.state == .changed
+        }
+    }
+
+    private func refreshKilometerAnnotations(on map: MKMapView) {
+        let wanted = visibleKilometerIDs(on: map)
+        let stale = kilometerAnnotations.filter { !wanted.contains($0.kilometer) }
+        if !stale.isEmpty {
+            map.removeAnnotations(stale)
+            kilometerAnnotations.removeAll { !wanted.contains($0.kilometer) }
+        }
+        let have = Set(kilometerAnnotations.map(\.kilometer))
+        let fresh = cachedMarkers.filter { wanted.contains($0.kilometer) && !have.contains($0.kilometer) }
+            .map(KilometerAnnotation.init(marker:))
+        guard !fresh.isEmpty else { return }
+        kilometerAnnotations.append(contentsOf: fresh)
+        map.addAnnotations(fresh)
+        // Numbers added last paint over checkpoint names. Put the names back on top.
+        bringCheckpointsForward(on: map)
+    }
+
+    private func visibleKilometerIDs(on map: MKMapView) -> Set<Int> {
+        guard showsKilometers, map.bounds.width > 40, map.bounds.height > 40 else { return [] }
+        let discs = cachedMarkers.map { marker in
+            let point = map.convert(
+                CLLocationCoordinate2D(latitude: marker.latitude, longitude: marker.longitude),
+                toPointTo: map
+            )
+            return RouteKilometerLabels.disc(
+                kilometer: marker.kilometer,
+                at: (x: Double(point.x), y: Double(point.y))
+            )
+        }
+        return Set(RouteKilometerLabels.visible(discs: discs, avoiding: checkpointObstacles(on: map)))
+    }
+
+    private func checkpointObstacles(on map: MKMapView) -> [RouteKilometerLabels.Obstacle] {
+        let font = UIFont.systemFont(ofSize: 11, weight: .bold)
+        return checkpointAnnotations.map { note in
+            let point = map.convert(note.coordinate, toPointTo: map)
+            let name = note.title ?? ""
+            let textWidth = ceil((name as NSString).size(withAttributes: [.font: font]).width)
+            return RouteKilometerLabels.checkpointObstacle(
+                dotX: Double(point.x),
+                dotY: Double(point.y),
+                labelWidth: RouteKilometerLabels.labelWidth(textWidth: textWidth)
+            )
+        }
+    }
+
+    private func bringCheckpointsForward(on map: MKMapView) {
+        guard !checkpointAnnotations.isEmpty else { return }
+        map.removeAnnotations(checkpointAnnotations)
+        map.addAnnotations(checkpointAnnotations)
     }
 
     private func liftLines(on map: MKMapView) {
@@ -865,13 +1085,12 @@ final class KilometerMarkerView: MKAnnotationView {
     func apply(kilometer: Int) {
         let text = String(kilometer)
         badge.text = text
-        let digits = text.count
-        let side: CGFloat = digits >= 3 ? 32 : (digits == 2 ? 26 : 22)
+        let side = CGFloat(RouteKilometerLabels.discSide(for: kilometer))
         badge.frame = CGRect(x: 0, y: 0, width: side, height: side)
         badge.layer.cornerRadius = side / 2
         bounds = badge.bounds
         // The disc sits above the coordinate. Checkpoint names stay to the right of their dot.
-        centerOffset = CGPoint(x: 0, y: -(side / 2 + 12))
+        centerOffset = CGPoint(x: 0, y: -CGFloat(RouteKilometerLabels.discLift(for: kilometer)))
         isAccessibilityElement = true
         accessibilityLabel = "\(kilometer) 公里"
     }

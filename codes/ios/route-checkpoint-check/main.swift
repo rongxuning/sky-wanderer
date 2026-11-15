@@ -1,11 +1,12 @@
 import Foundation
 
-// swiftc codes/ios/Shared/Models.swift codes/ios/Shared/SampleLibrary.swift \
+// swiftc -swift-version 5 codes/ios/Shared/Models.swift codes/ios/Shared/SampleLibrary.swift \
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Database.swift \
 //   codes/ios/Shared/TrainingEstimate.swift codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/Shared/GPXFile.swift \
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/RouteStats.swift \
 //   codes/ios/Shared/RouteGPXStore.swift \
+//   codes/ios/Shared/RouteBandFit.swift \
 //   codes/ios/route-checkpoint-check/main.swift \
 //   -o /tmp/route-checkpoint-check && /tmp/route-checkpoint-check
 
@@ -1318,6 +1319,205 @@ let crowdedMarks = [
 ]
 let crowdedLabels = ElevationProfileAxis.labels(crowdedMarks, plotWidth: 260, labelWidth: { Double($0.count) * 6.5 })
 check(crowdedLabels.map(\.lane) == [0, 1], "overlapping kilometer labels use another row \(crowdedLabels.map(\.lane))")
+
+check(RouteBandFit.contentSpanScale > 1 && RouteBandFit.contentSpanScale < 1.6, "band padding is tighter than the full-screen 1.6× box")
+check(RouteBandFit.contentSpan(latitudes: [], longitudes: []) == nil, "no span without points")
+let onePoint = RouteBandFit.contentSpan(latitudes: [31.2], longitudes: [121.5])
+check(onePoint?.latitudeDelta == RouteBandFit.minimumDelta, "a point keeps the small floor")
+check(onePoint?.longitudeDelta == RouteBandFit.minimumDelta, "a point floor is both axes")
+near(onePoint?.centerLatitude ?? 0, 31.2, 0.0000001, "point stays on its latitude")
+
+let trackLat = 0.04
+let trackLon = 0.18
+let padded = RouteBandFit.contentSpan(
+    latitudes: [31.0, 31.0 + trackLat],
+    longitudes: [121.0, 121.0 + trackLon]
+)
+check(padded != nil, "a route has a content span")
+if let padded {
+    near(padded.latitudeDelta, trackLat * RouteBandFit.contentSpanScale, 0.0000001, "latitude pad is the modest scale, not 1.6×")
+    near(padded.longitudeDelta, trackLon * RouteBandFit.contentSpanScale, 0.0000001, "longitude pad is the modest scale")
+    near(padded.centerLatitude, 31.0 + trackLat / 2, 0.0000001, "content is centered on the track")
+    near(padded.centerLongitude, 121.0 + trackLon / 2, 0.0000001, "content longitude is centered")
+    check(padded.latitudeDelta < trackLat * 1.6, "this fit is tighter than GeoFit.region")
+}
+
+let untouched = RouteSpan(centerLatitude: 31, centerLongitude: 121, latitudeDelta: 0.02, longitudeDelta: 0.05)
+let noChrome = RouteBandFit.visibleRegion(
+    content: untouched,
+    viewWidth: 390,
+    viewHeight: 844,
+    topFraction: 0,
+    bottomFraction: 0
+)
+check(noChrome == untouched, "no chrome leaves the content region alone")
+let tinyChrome = RouteBandFit.visibleRegion(
+    content: untouched,
+    viewWidth: 390,
+    viewHeight: 844,
+    topFraction: 0.01,
+    bottomFraction: 0.01
+)
+check(tinyChrome == untouched, "a sliver of chrome does not move the camera")
+
+func bandEdges(_ camera: RouteSpan, top: Double, bottom: Double) -> (south: Double, north: Double) {
+    let northEdge = camera.centerLatitude + camera.latitudeDelta / 2
+    let southEdge = camera.centerLatitude - camera.latitudeDelta / 2
+    return (southEdge + camera.latitudeDelta * bottom, northEdge - camera.latitudeDelta * top)
+}
+
+let wideContent = RouteSpan(centerLatitude: 31, centerLongitude: 121.4, latitudeDelta: 0.012, longitudeDelta: 0.096)
+let wideTop = 118.0 / 844.0
+let wideBottom = 280.0 / 844.0
+let wideCamera = RouteBandFit.visibleRegion(
+    content: wideContent,
+    viewWidth: 390,
+    viewHeight: 844,
+    topFraction: wideTop,
+    bottomFraction: wideBottom
+)
+let wideBand = bandEdges(wideCamera, top: wideTop, bottom: wideBottom)
+let wideContentSouth = wideContent.centerLatitude - wideContent.latitudeDelta / 2
+let wideContentNorth = wideContent.centerLatitude + wideContent.latitudeDelta / 2
+check(wideContentSouth >= wideBand.south - 0.0000001, "wide route stays below the title bar")
+check(wideContentNorth <= wideBand.north + 0.0000001, "wide route stays above the card")
+near((wideBand.south + wideBand.north) / 2, wideContent.centerLatitude, 0.000001, "wide route is centered in the band, not high above the card")
+near(wideCamera.longitudeDelta, wideContent.longitudeDelta, 0.000001, "a wide route fills the width of the band")
+let wideWest = wideCamera.centerLongitude - wideCamera.longitudeDelta / 2
+let wideEast = wideCamera.centerLongitude + wideCamera.longitudeDelta / 2
+check(wideContent.centerLongitude - wideContent.longitudeDelta / 2 >= wideWest - 0.0000001, "wide route's west edge is on screen")
+check(wideContent.centerLongitude + wideContent.longitudeDelta / 2 <= wideEast + 0.0000001, "wide route's east edge is on screen")
+
+let tallContent = RouteSpan(centerLatitude: 31, centerLongitude: 121, latitudeDelta: 0.2, longitudeDelta: 0.01)
+let tallCamera = RouteBandFit.visibleRegion(
+    content: tallContent,
+    viewWidth: 390,
+    viewHeight: 844,
+    topFraction: wideTop,
+    bottomFraction: wideBottom
+)
+let tallBand = bandEdges(tallCamera, top: wideTop, bottom: wideBottom)
+near(tallBand.north - tallBand.south, tallContent.latitudeDelta, 0.000001, "a tall route fills the band's height")
+near((tallBand.south + tallBand.north) / 2, tallContent.centerLatitude, 0.000001, "a tall route is centered between the title and the card")
+check(tallCamera.longitudeDelta > tallContent.longitudeDelta, "a tall route keeps horizontal room")
+
+let unknownSize = RouteBandFit.visibleRegion(
+    content: wideContent,
+    viewWidth: 0,
+    viewHeight: 0,
+    topFraction: 0.2,
+    bottomFraction: 0.4
+)
+near(unknownSize.longitudeDelta, wideContent.longitudeDelta, 0.0000001, "unknown size does not invent a width")
+near(unknownSize.latitudeDelta, wideContent.latitudeDelta / 0.4, 0.000001, "unknown size still opens the latitude for the band")
+let shiftedCenter = wideContent.centerLatitude - unknownSize.latitudeDelta * (0.4 - 0.2) / 2
+near(unknownSize.centerLatitude, shiftedCenter, 0.000001, "unknown size shifts toward the open band")
+
+let polar = RouteBandFit.visibleRegion(
+    content: RouteSpan(centerLatitude: 80, centerLongitude: 20, latitudeDelta: 0.05, longitudeDelta: 0.05),
+    viewWidth: 390,
+    viewHeight: 844,
+    topFraction: 0.2,
+    bottomFraction: 0.3
+)
+near(polar.longitudeDelta, 0.05, 0.0000001, "near the pole the width stays put")
+
+let clamped = RouteBandFit.visibleRegion(
+    content: wideContent,
+    viewWidth: 390,
+    viewHeight: 844,
+    topFraction: 0.6,
+    bottomFraction: 0.5
+)
+check(clamped.latitudeDelta.isFinite && clamped.centerLatitude < 85, "a covered screen still has a camera")
+check(clamped.latitudeDelta > wideContent.latitudeDelta, "clamped chrome still makes room for the route")
+
+func kilometerLine(_ spacing: Double, count: Int = 20) -> [RouteKilometerLabels.Disc] {
+    (1...count).map { kilometer in
+        RouteKilometerLabels.disc(kilometer: kilometer, at: (x: Double(kilometer) * spacing, y: 80))
+    }
+}
+
+let packed = RouteKilometerLabels.visible(discs: kilometerLine(12), avoiding: [])
+let spread = RouteKilometerLabels.visible(discs: kilometerLine(80), avoiding: [])
+check(!packed.isEmpty && packed.count < 20, "zoomed-out kilometers thin to a subset \(packed)")
+check(spread == Array(1...20), "zoomed-in kilometers show every full marker \(spread)")
+check(Set(packed).isSubset(of: Set(spread)), "zooming in only adds kilometer numbers")
+check(packed.allSatisfy { (1...20).contains($0) }, "thinning does not invent a kilometer")
+check(packed == packed.sorted(), "thinned kilometers stay in route order")
+let packedAgain = RouteKilometerLabels.visible(discs: kilometerLine(12), avoiding: [])
+check(packedAgain == packed, "the same zoom keeps the same kilometers")
+
+let markerCount = RouteKilometers.markers(along: [point(0, 0, 1), point(0, 0.02, 2)]).count
+let fromRoute = RouteKilometerLabels.visible(
+    discs: (1...markerCount).map { RouteKilometerLabels.disc(kilometer: $0, at: (x: Double($0) * 10, y: 0)) },
+    avoiding: []
+)
+check(fromRoute.allSatisfy { $0 <= markerCount && $0 >= 1 }, "no disc past the last full kilometer")
+check(RouteKilometerLabels.visible(discs: [], avoiding: []).isEmpty, "no discs when the route has no full kilometer")
+
+let km3 = RouteKilometerLabels.disc(kilometer: 3, at: (x: 10, y: 40))
+check(km3.radius == 11, "one digit disc is 22 points across")
+near(km3.centerY, 40 - (11 + 12), 0.001, "the disc is lifted off the track")
+let km12 = RouteKilometerLabels.disc(kilometer: 12, at: (x: 0, y: 0))
+check(km12.radius == 13, "two digit disc is 26 points across")
+let km100 = RouteKilometerLabels.disc(kilometer: 100, at: (x: 0, y: 30))
+check(km100.radius == 16, "three digit disc is 32 points across")
+
+let clear = kilometerLine(80)
+let blockedCenter = clear.first { $0.kilometer == 8 }!
+let coveringName = RouteKilometerLabels.Obstacle(
+    minX: blockedCenter.centerX - 2,
+    minY: blockedCenter.centerY - 2,
+    maxX: blockedCenter.centerX + 30,
+    maxY: blockedCenter.centerY + 2
+)
+let withCheckpoint = RouteKilometerLabels.visible(discs: clear, avoiding: [coveringName])
+check(!withCheckpoint.contains(8), "a disc on a checkpoint name stays hidden")
+check(withCheckpoint.contains(1) && withCheckpoint.contains(7) && withCheckpoint.contains(9), "neighbors of a covered disc stay")
+check(withCheckpoint.allSatisfy { $0 != 8 }, "the hidden disc is not replaced with another number")
+
+let samePoint = RouteKilometerLabels.disc(kilometer: 5, at: (x: 100, y: 100))
+let nameBesideDot = RouteKilometerLabels.checkpointObstacle(dotX: 100, dotY: 100, labelWidth: 48)
+let sameSpot = RouteKilometerLabels.visible(discs: [samePoint], avoiding: [nameBesideDot])
+check(sameSpot == [5], "a disc lifted above its own checkpoint still shows")
+
+check(RouteZoomBaseline.publishedMultiplier(
+    fittedLatitude: 0.2,
+    displayedLatitude: 0.4,
+    userGesture: false,
+    programmatic: true
+) == nil, "the opening layout does not publish 0.5×")
+check(RouteZoomBaseline.publishedMultiplier(
+    fittedLatitude: 0.2,
+    displayedLatitude: 0.4,
+    userGesture: true,
+    programmatic: true
+) == nil, "our own camera change is not a pinch")
+near(RouteZoomBaseline.publishedMultiplier(
+    fittedLatitude: 0.2,
+    displayedLatitude: 0.2,
+    userGesture: true,
+    programmatic: false
+) ?? -1, 1, 0.000001, "matching spans are 1×")
+near(RouteZoomBaseline.publishedMultiplier(
+    fittedLatitude: 0.2,
+    displayedLatitude: 0.1,
+    userGesture: true,
+    programmatic: false
+) ?? -1, 2, 0.000001, "a pinch in doubles the multiplier")
+near(RouteZoomBaseline.publishedMultiplier(
+    fittedLatitude: 0.2,
+    displayedLatitude: 2,
+    userGesture: true,
+    programmatic: false
+) ?? -1, RouteZoomBaseline.minimum, 0.000001, "zoom out stops at 0.4×")
+near(RouteZoomBaseline.publishedMultiplier(
+    fittedLatitude: 0.2,
+    displayedLatitude: 0.001,
+    userGesture: true,
+    programmatic: false
+) ?? -1, RouteZoomBaseline.maximum, 0.000001, "zoom in stops at 16×")
 
 if failures.isEmpty {
     print("route-checkpoint-check ok")
