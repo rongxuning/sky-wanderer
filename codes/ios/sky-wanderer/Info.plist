@@ -40,5 +40,9 @@
 	<string>$(SKY_WECHAT_REDIRECT_URI)</string>
 	<key>SKY_GOOGLE_REDIRECT_URI</key>
 	<string>$(SKY_GOOGLE_REDIRECT_URI)</string>
+	<key>TIANDITU_TK</key>
+	<string>$(TIANDITU_TK)</string>
+	<key>TIANDITU_APPROVAL_NUMBER</key>
+	<string>$(TIANDITU_APPROVAL_NUMBER)</string>
 </dict>
 </plist>

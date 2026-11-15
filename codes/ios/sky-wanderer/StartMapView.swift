@@ -35,6 +35,7 @@ struct StartMapView: View {
     /// The training tab uses this as its root. There is nothing to pop; the glass bar leaves the tab.
     var showsBackButton = false
     @StateObject private var location = LocationPermission()
+    @ObservedObject private var basemap = SkyBasemapCenter.shared
     @State private var sheet: StartSheet?
     @State private var pickingRoute = false
     @State private var counting = false
@@ -49,11 +50,12 @@ struct StartMapView: View {
         // centers on the screen, not on the band above the pill.
         GeometryReader { geo in
             ZStack {
-                RouteMap(
-                    route: [],
-                    planned: draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts).points,
+                SkyTrackMap(
+                    route: draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts).points,
                     showsUser: true,
-                    userCoordinate: location.coordinate
+                    userCoordinate: location.coordinate,
+                    basemapMode: basemap.mode,
+                    creditPlacement: .topCenter
                 )
                 .ignoresSafeArea()
                 if counting {

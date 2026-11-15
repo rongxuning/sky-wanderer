@@ -14,3 +14,12 @@ SKY_WECHAT_APP_ID =
 SKY_GOOGLE_CLIENT_ID =
 SKY_WECHAT_REDIRECT_URI = $(SKY_API_BASE_URL)/v1/auth/wechat/callback
 SKY_GOOGLE_REDIRECT_URI = $(SKY_API_BASE_URL)/v1/auth/google/callback
+
+// 天地图。向 https://console.tianditu.gov.cn 申请移动端 / 原生 tk。
+// 浏览器 Referer 密钥不能用在 App 里。不要把真实 tk 写进仓库。
+// 本地把同目录的 Secrets.example.xcconfig 复制成 Secrets.xcconfig（已 gitignore），或在目标的 Build Setting 里覆盖。
+// 审图号和密钥放在一起。留空时界面显示「天地图 · 审图号待配置」。
+// 发布到中国大陆商店前，到天地图官网或控制台核对当年的全国互联网地图审图号再填写。不要把博客或旧截图上的号当成已经核实。
+TIANDITU_TK =
+TIANDITU_APPROVAL_NUMBER =
+#include? "Secrets.xcconfig"

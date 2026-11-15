@@ -53,9 +53,6 @@ struct RoutesLibraryView: View {
         } message: {
             Text(importError ?? "")
         }
-        .task {
-            await OfflineTileStore.prefetch(app.importedRoutes.map(\.points))
-        }
         .onChange(of: app.importedRoutes.map(\.id)) { _, ids in
             if let revealedRouteID, !ids.contains(revealedRouteID) {
                 self.revealedRouteID = nil
@@ -501,7 +498,7 @@ private enum RouteCardText {
 struct RouteDetailView: View {
     @EnvironmentObject private var app: PhoneAppState
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var tileStatus = TileCacheStatus.shared
+    @ObservedObject private var basemap = SkyBasemapCenter.shared
 
     var routeID: String
     @State private var zoomArmed = false
@@ -515,7 +512,7 @@ struct RouteDetailView: View {
     @State private var editTarget: RouteFactEditTarget?
     /// Height of the floating card, including the home-indicator padding, so the tools sit above it.
     @State private var chromeHeight: CGFloat = 220
-    /// Title bar, from the top of the map through the offline-tile note. 1× starts below it.
+    /// Title bar, from the top of the map through the map credit. 1× starts below it.
     @State private var titleHeight: CGFloat = 0
     /// UIKit's latest title string. A class so keystrokes do not re-render the field and move the caret.
     @State private var titleBuffer = RouteTitleBuffer()
@@ -567,15 +564,14 @@ struct RouteDetailView: View {
             floatingChrome(route, bottomInset: bottomInset)
         }
         .frame(maxWidth: .infinity, maxHeight: screenHeight, alignment: .top)
-        .background(Color(red: 0.886, green: 0.925, blue: 0.910))
-        .onAppear { tileStatus.refresh(for: route.points) }
-        .task(id: route.id) {
-            tileStatus.refresh(for: route.points)
-            await OfflineTileStore.prefetch([route.points])
-            tileStatus.refresh(for: route.points)
-        }
+        .background(Color(uiColor: SkyBasemapInstaller.backdrop))
         .onChange(of: route.id) { _, _ in
             factPage = 0
+            multiplier = 1
+            zoomArmed = false
+            zoomDragBase = nil
+        }
+        .onChange(of: basemap.mode) { _, _ in
             multiplier = 1
             zoomArmed = false
             zoomDragBase = nil
@@ -626,7 +622,7 @@ struct RouteDetailView: View {
     ) -> some View {
         let markerCount = RouteKilometers.markers(along: route.points).count
         // Measured title height includes the status bar. Until that arrives, leave room
-        // for the back row, the offline note, and the gaps so the first camera is already 1×.
+        // for the back row, the map credit, and the gaps so the first camera is already 1×.
         let bandTop = titleHeight > 1 ? titleHeight : topInset + 88
         return ZStack {
             OfflineRouteMap(
@@ -636,7 +632,7 @@ struct RouteDetailView: View {
                 showsKilometerMarkers: showsKilometerMarkers,
                 zoomMultiplier: multiplier,
                 zoomArmed: zoomArmed,
-                tileEpoch: tileStatus.revision,
+                basemapMode: basemap.mode,
                 topContentInset: bandTop,
                 legalBottomInset: legalBottomInset,
                 onZoomChanged: { value in
@@ -670,7 +666,7 @@ struct RouteDetailView: View {
                     Spacer(minLength: 0)
                 }
             }
-            Text(tileStatus.note)
+            Text(basemap.caption)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.omniInk)
                 .padding(.horizontal, 10)

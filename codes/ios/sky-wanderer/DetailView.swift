@@ -11,9 +11,8 @@ struct WorkoutDetailView: View {
     var workoutID: UUID
 
     @State private var fitToken = 0
-    @State private var mapStyle = DetailMapStyle.stored
     @State private var showShare = false
-    @State private var showStyles = false
+    @ObservedObject private var basemap = SkyBasemapCenter.shared
     @State private var exporting = false
     @State private var saveMessage: String?
     @State private var viewport = CGSize.zero
@@ -55,12 +54,6 @@ struct WorkoutDetailView: View {
         .sheet(isPresented: $showShare) {
             shareSheet
                 .presentationDetents([.height(220)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(SkyTheme.Color.background)
-        }
-        .sheet(isPresented: $showStyles) {
-            styleSheet
-                .presentationDetents([.height(280)])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(SkyTheme.Color.background)
         }
@@ -162,17 +155,15 @@ struct WorkoutDetailView: View {
     private func mapHeader(_ workout: WorkoutRecord, height: CGFloat, topInset: CGFloat) -> some View {
         let band = obscuredMapBand(height: height, topInset: topInset)
         return ZStack(alignment: .top) {
-            RouteMap(
+            SkyTrackMap(
                 route: workout.route,
-                cornerRadius: 0,
-                routeColor: SkyTheme.Color.primary,
-                routeLineWidth: 5,
-                obscuredBottomFraction: band.bottom,
-                obscuredTopFraction: band.top,
                 showsEndpoints: workout.route.count >= 2,
-                hidesMapControls: true,
+                basemapMode: basemap.mode,
+                bottomInset: SkyTheme.Radius.sheet,
+                obscuredTopFraction: band.top,
+                obscuredBottomFraction: band.bottom,
                 fitToken: fitToken,
-                style: mapStyle.mapStyle
+                creditBottomInset: SkyTheme.Radius.sheet
             )
             .frame(maxWidth: .infinity)
             .frame(height: height)
@@ -198,9 +189,6 @@ struct WorkoutDetailView: View {
                         showShare = true
                     }
                     .disabled(exporting)
-                    mapButton(system: "square.3.layers.3d", label: "地图样式") {
-                        showStyles = true
-                    }
                     if workout.route.count >= 2 {
                         mapButton(system: "location.viewfinder", label: "回到轨迹") {
                             fitToken += 1
@@ -566,38 +554,6 @@ struct WorkoutDetailView: View {
         .accessibilityLabel(title)
     }
 
-    private var styleSheet: some View {
-        VStack(spacing: 0) {
-            ForEach(DetailMapStyle.allCases) { style in
-                Button {
-                    mapStyle = style
-                    style.save()
-                } label: {
-                    HStack(spacing: SkyTheme.Spacing.related) {
-                        Text(style.title)
-                            .font(SkyTheme.Font.headline)
-                            .foregroundStyle(SkyTheme.Color.ink)
-                        Spacer(minLength: SkyTheme.Spacing.related)
-                        if mapStyle == style {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(SkyTheme.Color.primary)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .frame(minHeight: SkyTheme.Spacing.listRowMin)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(mapStyle == style ? "\(style.title)，已选择" : style.title)
-            }
-        }
-        .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .padding(.top, SkyTheme.Spacing.related)
-        .padding(.bottom, SkyTheme.Spacing.screenInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SkyTheme.Color.background)
-    }
-
     @MainActor
     private func export(_ kind: DetailShareKind) async {
         guard let workout, !exporting else { return }
@@ -623,7 +579,6 @@ struct WorkoutDetailView: View {
         }
         guard let map = await DetailShareImage.mapImage(
             route: workout.route,
-            style: mapStyle,
             size: CGSize(width: width, height: mapHeight)
         ) else {
             saveMessage = "图片没有生成"

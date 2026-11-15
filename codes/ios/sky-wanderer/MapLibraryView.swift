@@ -1,5 +1,4 @@
 import CoreLocation
-import MapKit
 import SwiftUI
 
 private enum EditTool: String, CaseIterable, Identifiable {
@@ -13,23 +12,14 @@ private enum EditTool: String, CaseIterable, Identifiable {
 struct PresetRouteEditor: View {
     @EnvironmentObject private var app: PhoneAppState
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var basemap = SkyBasemapCenter.shared
     @State private var points: [GeoPoint] = []
     @State private var loaded = false
     @State private var tool: EditTool = .pan
-    @State private var position: MapCameraPosition = .automatic
-    @State private var dragIndex: Int?
 
     var body: some View {
         ZStack {
-            MapReader { proxy in
-                if tool == .move {
-                    editorMap.mapStyle(.standard).gesture(moveGesture(proxy))
-                } else if tool == .add || tool == .delete {
-                    editorMap.mapStyle(.standard).gesture(tapGesture(proxy))
-                } else {
-                    editorMap.mapStyle(.standard)
-                }
-            }
+            editorMap
             .ignoresSafeArea()
 
             VStack {
@@ -87,9 +77,6 @@ struct PresetRouteEditor: View {
             guard !loaded else { return }
             loaded = true
             points = app.savedRoutes.first { $0.kind == .presetRunning }?.points ?? []
-            if let region = GeoFit.region(points.map(\.coordinate)) {
-                position = .region(region)
-            }
         }
     }
 
@@ -103,50 +90,33 @@ struct PresetRouteEditor: View {
     }
 
     private var editorMap: some View {
-        Map(position: $position, interactionModes: tool == .pan ? [.pan, .zoom] : [.zoom]) {
-            if points.count >= 2 {
-                MapPolyline(coordinates: points.map(\.coordinate))
-                    .stroke(Color.omniCobalt, lineWidth: 4)
-            }
-            ForEach(Array(points.enumerated()), id: \.offset) { index, point in
-                Annotation("", coordinate: point.coordinate) {
-                    Text("\(index + 1)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.omniInk)
-                        .frame(width: 22, height: 22)
-                        .background(Color.omniIce, in: Circle())
-                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                        .allowsHitTesting(false)
-                }
-            }
-        }
-    }
-
-    private func tapGesture(_ proxy: MapProxy) -> some Gesture {
-        SpatialTapGesture(coordinateSpace: .local)
-            .onEnded { value in
-                guard let coordinate = proxy.convert(value.location, from: .local) else { return }
+        SkyTrackMap(
+            route: points,
+            basemapMode: basemap.mode,
+            creditBottomInset: 108,
+            scrollEnabled: tool == .pan,
+            vertices: points.enumerated().map { index, point in
+                TrackVertex(
+                    id: index,
+                    latitude: point.latitude,
+                    longitude: point.longitude,
+                    label: "\(index + 1)"
+                )
+            },
+            refitsOnChange: false,
+            onTap: tool == .add || tool == .delete ? { coordinate in
                 if tool == .add {
                     points.append(GeoPoint(latitude: coordinate.latitude, longitude: coordinate.longitude, altitude: 0, timestamp: nil))
-                } else if tool == .delete, let index = nearest(to: coordinate, within: 80) {
+                } else if let index = nearest(to: coordinate, within: 80) {
                     points.remove(at: index)
                 }
-            }
-    }
-
-    private func moveGesture(_ proxy: MapProxy) -> some Gesture {
-        DragGesture(minimumDistance: 6, coordinateSpace: .local)
-            .onChanged { value in
-                guard let coordinate = proxy.convert(value.location, from: .local) else { return }
-                let index = dragIndex ?? nearest(to: coordinate, within: 80)
-                guard let index else { return }
-                dragIndex = index
+            } : nil,
+            onVertexDrag: tool == .move ? { index, coordinate in
+                guard points.indices.contains(index) else { return }
                 points[index].latitude = coordinate.latitude
                 points[index].longitude = coordinate.longitude
-            }
-            .onEnded { _ in
-                dragIndex = nil
-            }
+            } : nil
+        )
     }
 
     private func nearest(to coordinate: CLLocationCoordinate2D, within meters: Double) -> Int? {
