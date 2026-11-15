@@ -93,7 +93,7 @@ struct RoutesLibraryView: View {
 
     private func delete(_ route: SavedRoute) {
         if draft.routeID == route.id {
-            draft.routeID = PlannedRoute.free.id
+            draft.selectFreeRun()
         }
         if revealedRouteID == route.id {
             revealedRouteID = nil
@@ -323,7 +323,7 @@ private enum RouteCardLayout {
     static let rowSpacing: CGFloat = 4
 }
 
-private struct RouteSummaryCard: View {
+struct RouteSummaryCard: View {
     var route: SavedRoute
     var selected: Bool
 
@@ -413,6 +413,55 @@ private struct RouteSummaryCard: View {
             parts.append("已用于训练")
         }
         return parts.joined(separator: "，")
+    }
+}
+
+/// Same card chrome as an imported route. No track: a free run has no planned polyline.
+struct FreeRunSummaryCard: View {
+    var selected: Bool
+
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: RouteCardLayout.corner, style: .continuous)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: RouteCardLayout.rowSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
+                Text("自由跑")
+                    .font(SkyTheme.Font.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(SkyTheme.Color.ink)
+                    .lineLimit(1)
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(SkyTheme.Color.primary)
+                        .accessibilityHidden(true)
+                }
+            }
+            Text("不沿已有路线")
+                .font(SkyTheme.Font.footnote)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, RouteCardLayout.horizontalInset)
+        .padding(.vertical, RouteCardLayout.verticalInset)
+        .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.listRowMin, alignment: .leading)
+        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .clipShape(cardShape)
+        .overlay {
+            if selected {
+                cardShape.strokeBorder(SkyTheme.Color.primary, lineWidth: 1.5)
+            }
+        }
+        .shadow(
+            color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
+            radius: SkyTheme.Shadow.card.radius,
+            y: SkyTheme.Shadow.card.y
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(selected ? "自由跑，不沿已有路线，已用于训练" : "自由跑，不沿已有路线")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

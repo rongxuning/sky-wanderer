@@ -1,5 +1,6 @@
 import Charts
 import SwiftUI
+import UIKit
 
 struct LiveWorkoutView: View {
     @EnvironmentObject private var app: PhoneAppState
@@ -18,6 +19,8 @@ struct LiveWorkoutView: View {
             }
         }
         .navigationBarHidden(true)
+        .navigationBarBackButtonHidden(true)
+        .background(LivePopLock())
         .task {
             guard !started else { return }
             started = true
@@ -60,10 +63,16 @@ private struct LiveBody: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expanded = false
     @State private var dragTranslation: CGFloat = 0
+    @State private var stripHeight: CGFloat = PlannedRouteStrip.occupiedHeight
 
     var body: some View {
         GeometryReader { geo in
             let total = geo.size.height
+            let hasPlan = session.plannedRoute.count >= 2
+            let collapsed = total / 3
+            let strip = hasPlan ? stripHeight : 0
+            let covered = collapsed + strip
+            let fraction = min(0.72, Double(covered / max(total, 1)))
             ZStack(alignment: .bottom) {
                 RouteMap(
                     route: session.route,
@@ -73,8 +82,8 @@ private struct LiveBody: View {
                     cornerRadius: 0,
                     routeColor: SkyTheme.Color.primary,
                     plannedColor: SkyTheme.Color.chartNeutral,
-                    bottomInset: total / 3,
-                    obscuredBottomFraction: 1.0 / 3.0,
+                    bottomInset: covered,
+                    obscuredBottomFraction: fraction,
                     hidesMapControls: true
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -89,6 +98,15 @@ private struct LiveBody: View {
                 }
                 .allowsHitTesting(false)
 
+                if hasPlan {
+                    PlannedRouteStrip(session: session)
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: PlannedStripHeightKey.self, value: proxy.size.height)
+                            }
+                        }
+                        .padding(.bottom, collapsed)
+                }
                 LiveDataSheet(
                     session: session,
                     confirmEnd: $confirmEnd,
@@ -98,6 +116,10 @@ private struct LiveBody: View {
                     safeBottom: geo.safeAreaInsets.bottom,
                     reduceMotion: reduceMotion
                 )
+            }
+            .onPreferenceChange(PlannedStripHeightKey.self) { height in
+                guard height > 1, height < 360, abs(height - stripHeight) > 0.5 else { return }
+                stripHeight = height
             }
         }
         .ignoresSafeArea()
@@ -447,7 +469,44 @@ private struct LiveDataSheet: View {
         .liveCard()
     }
 
+    @ViewBuilder
     private var elevationCard: some View {
+        if session.plannedRoute.count >= 2 {
+            plannedElevationCard
+        } else {
+            trackedElevationCard
+        }
+    }
+
+    /// Planned profile for the whole route, plus the climb and drop of the GPS track.
+    private var plannedElevationCard: some View {
+        let samples = PlannedRouteProgress.profileSamples(session.plannedRoute)
+        let fix = PlannedRouteProgress.locate(athlete: session.route.last, on: session.plannedRoute)
+        let climb = Int(session.elevationGainMeters.rounded())
+        let drop = Int(session.elevationLossMeters.rounded())
+        return VStack(alignment: .leading, spacing: 12) {
+            LiveSectionTitle(title: "爬升下降", trailing: "米")
+            Text("爬升 \(climb) 米 · 下降 \(drop) 米")
+                .font(SkyTheme.Font.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(SkyTheme.Color.ink)
+            if samples.count >= 2 {
+                LiveElevationChart(
+                    samples: samples,
+                    markerKilometers: fix.progressedKilometers,
+                    lineColor: SkyTheme.Color.chartNeutral
+                )
+                .frame(height: 150)
+                .accessibilityHidden(true)
+            }
+        }
+        .liveCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("爬升 \(climb) 米，下降 \(drop) 米，已跑 \(Format.kilometers(fix.progressedMeters)) 公里")
+    }
+
+    /// Free run. Elevation comes from the GPS track and stays behind the swipe-up sheet.
+    private var trackedElevationCard: some View {
         let samples = RouteStats.profile(session.route)
         return VStack(alignment: .leading, spacing: 12) {
             LiveSectionTitle(title: "爬升下降", trailing: "米")
@@ -683,22 +742,38 @@ private struct LiveTimeChart: View {
 
 private struct LiveElevationChart: View {
     var samples: [ElevationSample]
+    var markerKilometers: Double? = nil
+    var lineColor: Color = SkyTheme.Color.chartTrack
 
     var body: some View {
-        Chart(samples) { sample in
-            AreaMark(
-                x: .value("公里", sample.distanceKilometers),
-                yStart: .value("基准", 0),
-                yEnd: .value("升降", sample.changeMeters)
-            )
-            .foregroundStyle(SkyTheme.Color.chartTrack.opacity(0.18))
-            LineMark(
-                x: .value("公里", sample.distanceKilometers),
-                y: .value("升降", sample.changeMeters)
-            )
-            .interpolationMethod(.linear)
-            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-            .foregroundStyle(SkyTheme.Color.chartTrack)
+        Chart {
+            ForEach(samples) { sample in
+                AreaMark(
+                    x: .value("公里", sample.distanceKilometers),
+                    yStart: .value("基准", 0),
+                    yEnd: .value("升降", sample.changeMeters)
+                )
+                .foregroundStyle(lineColor.opacity(0.18))
+                LineMark(
+                    x: .value("公里", sample.distanceKilometers),
+                    y: .value("升降", sample.changeMeters)
+                )
+                .interpolationMethod(.linear)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(lineColor)
+            }
+            if let markerKilometers {
+                let height = PlannedRouteProgress.changeMeters(at: markerKilometers, samples: samples)
+                RuleMark(x: .value("进度", markerKilometers))
+                    .foregroundStyle(SkyTheme.Color.primary)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+                PointMark(
+                    x: .value("进度", markerKilometers),
+                    y: .value("升降", height)
+                )
+                .foregroundStyle(SkyTheme.Color.primary)
+                .symbolSize(36)
+            }
         }
         .chartXScale(domain: xDomain)
         .chartYScale(domain: yDomain)
@@ -708,12 +783,15 @@ private struct LiveElevationChart: View {
     }
 
     private var xDomain: ClosedRange<Double> {
-        let last = samples.last?.distanceKilometers ?? 0
+        let last = max(samples.last?.distanceKilometers ?? 0, markerKilometers ?? 0)
         return 0...max(last, 0.05)
     }
 
     private var yDomain: ClosedRange<Double> {
-        let values = samples.map(\.changeMeters)
+        var values = samples.map(\.changeMeters)
+        if let markerKilometers {
+            values.append(PlannedRouteProgress.changeMeters(at: markerKilometers, samples: samples))
+        }
         let low = min(0, values.min() ?? 0)
         let high = max(0, values.max() ?? 0)
         let span = high - low
@@ -726,7 +804,7 @@ private struct LiveElevationChart: View {
             AxisGridLine().foregroundStyle(SkyTheme.Color.separator.opacity(0.7))
             AxisValueLabel {
                 if let kilometers = value.as(Double.self) {
-                    Text(kilometerText(kilometers))
+                    Text(PlannedRouteProgress.axisLabel(distanceKilometers: kilometers))
                         .font(SkyTheme.Font.caption)
                         .foregroundStyle(SkyTheme.Color.secondary)
                 }
@@ -745,13 +823,6 @@ private struct LiveElevationChart: View {
                 }
             }
         }
-    }
-
-    private func kilometerText(_ kilometers: Double) -> String {
-        if kilometers > 0, kilometers < 0.2 {
-            return String(format: "%.2f", kilometers)
-        }
-        return String(format: "%.1f", kilometers)
     }
 }
 
@@ -864,6 +935,129 @@ private extension View {
                 RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
                     .stroke(SkyTheme.Color.cardBorder, lineWidth: 1)
             }
+    }
+}
+
+/// Full planned elevation profile, pinned to the bottom of the visible map.
+/// The marker and the remaining distance use `PlannedRouteProgress.locate`.
+private struct PlannedRouteStrip: View {
+    /// First-frame height before layout reports the real one. Chart plus the distance row.
+    static let occupiedHeight: CGFloat = 148
+
+    @ObservedObject var session: LiveSession
+
+    private var samples: [ElevationSample] {
+        PlannedRouteProgress.profileSamples(session.plannedRoute)
+    }
+
+    private var fix: PlannedRouteProgress.Fix {
+        PlannedRouteProgress.locate(athlete: session.route.last, on: session.plannedRoute)
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
+                distanceColumn("已跑距离", meters: fix.progressedMeters)
+                distanceColumn("路线剩余距离", meters: fix.remainingMeters)
+            }
+            LiveElevationChart(
+                samples: samples,
+                markerKilometers: fix.progressedKilometers,
+                lineColor: SkyTheme.Color.chartNeutral
+            )
+            .frame(height: 88)
+            .accessibilityHidden(true)
+        }
+        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(SkyTheme.Color.card.opacity(0.96))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("已跑距离 \(Format.kilometers(fix.progressedMeters)) 公里，路线剩余距离 \(Format.kilometers(fix.remainingMeters)) 公里")
+    }
+
+    private func distanceColumn(_ title: String, meters: Double) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(SkyTheme.Font.caption)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(Format.kilometers(meters))
+                    .font(SkyTheme.Font.title3)
+                    .monospacedDigit()
+                    .foregroundStyle(SkyTheme.Color.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("公里")
+                    .font(SkyTheme.Font.caption)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct PlannedStripHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 { value = next }
+    }
+}
+
+/// The live screen is pushed over the start map. Ending the workout is the way back.
+/// SwiftUI can leave the interactive pop enabled after the navigation bar is hidden, so this turns it off.
+private struct LivePopLock: UIViewRepresentable {
+    func makeUIView(context: Context) -> LivePopLockView {
+        let view = LivePopLockView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ view: LivePopLockView, context: Context) {
+        view.lock()
+    }
+}
+
+private final class LivePopLockView: UIView {
+    private weak var pop: UIGestureRecognizer?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            unlock()
+            return
+        }
+        lock()
+        DispatchQueue.main.async { [weak self] in
+            self?.lock()
+        }
+    }
+
+    func lock() {
+        guard window != nil, let gesture = enclosingNavigationController()?.interactivePopGestureRecognizer else { return }
+        pop = gesture
+        gesture.isEnabled = false
+    }
+
+    private func unlock() {
+        // The next screen manages its own gesture. Leaving this off would stick for 组队.
+        pop?.isEnabled = true
+        pop = nil
+    }
+
+    private func enclosingNavigationController() -> UINavigationController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController, let navigation = controller.navigationController {
+                return navigation
+            }
+            responder = current.next
+        }
+        return nil
     }
 }
 

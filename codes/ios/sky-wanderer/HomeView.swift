@@ -58,7 +58,7 @@ struct SkyHome: View {
 
             stack(path: $trainingPath) {
                 tabScreen {
-                    TrainingPlaceholder(path: $trainingPath)
+                    StartMapView(path: $trainingPath, showsBackButton: false)
                 }
             }
             .opacity(tab == .training ? 1 : 0)
@@ -94,6 +94,12 @@ struct SkyHome: View {
                 }
                 .padding(.bottom, 4)
             }
+        }
+        .onAppear {
+            presentLiveWorkoutIfNeeded()
+        }
+        .onChange(of: workoutRunning) { _, _ in
+            presentLiveWorkoutIfNeeded()
         }
         .onChange(of: app.finishedToken) { _, token in
             guard token > 0 else { return }
@@ -160,6 +166,22 @@ struct SkyHome: View {
         }
     }
 
+    private var workoutRunning: Bool {
+        app.activeSession?.phase == .running
+    }
+
+    /// Opening 训练 during a workout goes straight to the live screen.
+    /// The live route stays on the path, so the glass tab bar stays hidden.
+    /// An empty path is the only case that needs a push: starting from the map already appends it.
+    private func presentLiveWorkoutIfNeeded() {
+        guard workoutRunning, trainingPath.isEmpty else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            trainingPath.append(TrainRoute.live)
+        }
+    }
+
     /// Finished workouts and logout both land on an empty records stack.
     private func returnToRecords() {
         recordsPath = NavigationPath()
@@ -196,7 +218,7 @@ private enum SkyDestinations {
     static func train(_ route: TrainRoute, path: Binding<NavigationPath>) -> some View {
         switch route {
         case .start:
-            StartMapView(path: path)
+            StartMapView(path: path, showsBackButton: true)
         case .team:
             TeamPickerView()
         case .live:
@@ -314,64 +336,6 @@ struct ScenicAvatar: View {
             path.closeSubpath()
         }
         .fill(color)
-    }
-}
-
-private struct TrainingPlaceholder: View {
-    @EnvironmentObject private var app: PhoneAppState
-    @Binding var path: NavigationPath
-
-    private var running: Bool {
-        app.activeSession?.phase == .running
-    }
-
-    var body: some View {
-        VStack(spacing: SkyTheme.Spacing.screenInset) {
-            Spacer(minLength: 0)
-            Image(systemName: running ? "figure.run" : "dumbbell")
-                .font(.system(size: 36, weight: .semibold))
-                .foregroundStyle(SkyTheme.Color.primary)
-                .accessibilityHidden(true)
-            Text(running ? "训练进行中" : "准备开始")
-                .font(SkyTheme.Font.headline)
-                .foregroundStyle(SkyTheme.Color.ink)
-            Text(running ? "可以回到正在进行的运动。" : "开始徒步或跑步。运动数据会留在这台手机上。")
-                .font(SkyTheme.Font.footnote)
-                .foregroundStyle(SkyTheme.Color.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Button(action: openTraining) {
-                Text(running ? "回到运动" : "开始训练")
-                    .font(SkyTheme.Font.headline)
-                    .foregroundStyle(SkyTheme.Color.onPrimary)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: SkyTheme.Spacing.touchMin)
-            }
-            .buttonStyle(SkyPrimaryButtonStyle())
-            .padding(.horizontal, 32)
-            .padding(.top, SkyTheme.Spacing.related)
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(SkyTheme.Color.grouped)
-    }
-
-    private func openTraining() {
-        if running {
-            path.append(TrainRoute.live)
-        } else {
-            path.append(TrainRoute.start)
-        }
-    }
-}
-
-private struct SkyPrimaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                configuration.isPressed ? SkyTheme.Color.primaryPressed : SkyTheme.Color.primary,
-                in: Capsule()
-            )
     }
 }
 
