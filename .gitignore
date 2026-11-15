@@ -6,6 +6,9 @@
 .env
 /server
 
+# Tianditu key. Copy codes/ios/Config/Secrets.example.xcconfig and fill it in locally.
+codes/ios/Config/Secrets.xcconfig
+
 # Signing material and local upload artifacts. Never commit these.
 *.p8
 *.p12

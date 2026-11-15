@@ -64,6 +64,7 @@ private struct LiveBody: View {
     @State private var expanded = false
     @State private var dragTranslation: CGFloat = 0
     @State private var stripHeight: CGFloat = PlannedRouteStrip.occupiedHeight
+    @ObservedObject private var basemap = SkyBasemapCenter.shared
 
     var body: some View {
         GeometryReader { geo in
@@ -74,17 +75,15 @@ private struct LiveBody: View {
             let covered = collapsed + strip
             let fraction = min(0.72, Double(covered / max(total, 1)))
             ZStack(alignment: .bottom) {
-                RouteMap(
+                SkyTrackMap(
                     route: session.route,
                     planned: session.plannedRoute,
                     teammates: session.teammates,
                     showsUser: !session.simulating,
-                    cornerRadius: 0,
-                    routeColor: SkyTheme.Color.primary,
-                    plannedColor: SkyTheme.Color.chartNeutral,
+                    basemapMode: basemap.mode,
                     bottomInset: covered,
                     obscuredBottomFraction: fraction,
-                    hidesMapControls: true
+                    creditBottomInset: covered
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()

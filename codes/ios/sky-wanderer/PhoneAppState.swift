@@ -56,8 +56,6 @@ final class PhoneAppState: ObservableObject {
         }
         SessionKeychain.store(SessionContinuity.credential(in: loaded))
         Task { await self.confirmRemoteSession() }
-        let routePoints = database.routes.filter { $0.kind == .gpx }.map(\.points)
-        Task { await OfflineTileStore.prefetch(routePoints) }
     }
 
     private static func ensurePreset(_ database: inout Database) {
@@ -107,7 +105,6 @@ final class PhoneAppState: ObservableObject {
     /// Saves each track as its own route. `source` is the original GPX; every created route gets its own copy.
     func addGPXRoutes(_ imported: [GPXTrack], source: Data) -> [String] {
         var identifiers: [String] = []
-        var fresh: [[GeoPoint]] = []
         mutate { database in
             for item in imported where item.points.count >= 2 {
                 let identifier = UUID().uuidString
@@ -135,11 +132,7 @@ final class PhoneAppState: ObservableObject {
                     )
                 )
                 identifiers.append(identifier)
-                fresh.append(item.points)
             }
-        }
-        if !fresh.isEmpty {
-            Task { await OfflineTileStore.prefetch(fresh) }
         }
         return identifiers
     }
