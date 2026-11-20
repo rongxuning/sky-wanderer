@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,9 @@ import com.rongxuning.skywanderer.ui.me.MeScreen
 import com.rongxuning.skywanderer.ui.records.RecordsScreen
 import com.rongxuning.skywanderer.ui.routes.RoutesScreen
 import com.rongxuning.skywanderer.ui.theme.OmniCanvas
+import com.rongxuning.skywanderer.ui.theme.SkyOnStarryGray
+import com.rongxuning.skywanderer.ui.theme.SkyPrimary
+import com.rongxuning.skywanderer.ui.theme.SkyStarryGray
 import com.rongxuning.skywanderer.ui.training.TrainingScreen
 
 object AppRoute {
@@ -63,7 +67,7 @@ fun SkyWandererRoot(navController: NavHostController = rememberNavController()) 
         containerColor = OmniCanvas,
         bottomBar = {
             if (showTabs) {
-                NavigationBar(containerColor = Color.White) {
+                NavigationBar(containerColor = SkyStarryGray) {
                     tabs.forEach { tab ->
                         val label = stringResource(tab.label)
                         val selected = destination?.hierarchy?.any { it.route == tab.route } == true
@@ -80,6 +84,13 @@ fun SkyWandererRoot(navController: NavHostController = rememberNavController()) 
                             },
                             icon = { Icon(tab.icon, contentDescription = label) },
                             label = { Text(label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = SkyPrimary,
+                                selectedTextColor = SkyPrimary,
+                                unselectedIconColor = SkyOnStarryGray,
+                                unselectedTextColor = SkyOnStarryGray,
+                                indicatorColor = Color.Transparent,
+                            ),
                         )
                     }
                 }
