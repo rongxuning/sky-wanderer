@@ -1,5 +1,6 @@
 package com.rongxuning.skywanderer.ui
 
+import android.app.Activity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -14,11 +15,14 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.core.view.WindowCompat
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -62,6 +66,12 @@ fun SkyWandererRoot(navController: NavHostController = rememberNavController()) 
     val backStack by navController.currentBackStackEntryAsState()
     val destination = backStack?.destination
     val showTabs = destination?.route != AppRoute.Auth
+    val view = LocalView.current
+    SideEffect {
+        val window = (view.context as Activity).window
+        // Starry-gray tab bar needs light system nav icons; Auth (no bar) keeps dark icons on light canvas.
+        WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !showTabs
+    }
 
     Scaffold(
         containerColor = OmniCanvas,
