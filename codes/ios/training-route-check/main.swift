@@ -174,6 +174,19 @@ let pastEnd = PlannedRouteProgress.locate(athlete: point(2_030, 0, 120), on: lin
 near(pastEnd.progressedMeters, pastEnd.totalMeters, 1, "past the finish the marker is at the end")
 near(pastEnd.remainingMeters, 0, 1, "nothing remains past the finish")
 
+// A closed loop repeats the start as the finish. Standing there is the start, not the end.
+let loop = [start, point(1_000, 0, 120), point(1_000, 1_000, 140), point(0, 1_000, 110), start]
+let loopStart = PlannedRouteProgress.locate(athlete: start, on: loop)
+near(loopStart.progressedMeters, 0, 1, "a loop's shared start stays at the beginning")
+near(loopStart.remainingMeters, loopStart.totalMeters, 1, "the whole loop remains at the start")
+check(loopStart.remainingMeters > 100, "the loop does not snap remaining to zero")
+// South of the shared start, off the square. North would sit on the closing edge.
+let besideLoopStart = PlannedRouteProgress.locate(athlete: point(0, -20, 100), on: loop)
+near(besideLoopStart.progressedMeters, 0, 1, "beside a loop start has not reached the finish")
+near(besideLoopStart.remainingMeters, besideLoopStart.totalMeters, 5, "beside a loop start the full loop remains")
+let loopEast = PlannedRouteProgress.locate(athlete: point(1_000, 0, 120), on: loop)
+near(loopEast.progressedMeters, 1_000, 5, "a later corner of the loop is that far along")
+
 let waiting = PlannedRouteProgress.locate(athlete: nil, on: line)
 near(waiting.progressedMeters, 0, 0.001, "no GPS fix has not progressed")
 near(waiting.remainingMeters, waiting.totalMeters, 0.001, "the full route remains before the first fix")

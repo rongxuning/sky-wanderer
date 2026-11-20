@@ -59,7 +59,7 @@ struct SkyHome: View {
 
             stack(path: $trainingPath) {
                 tabScreen {
-                    StartMapView(path: $trainingPath, showsBackButton: false)
+                    StartMapView(path: $trainingPath, showsBackButton: false, isActive: tab == .training)
                 }
             }
             .opacity(tab == .training ? 1 : 0)
