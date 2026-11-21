@@ -777,17 +777,31 @@ def ensure_live_profile(transport: Transport, p12: Path, password: str, dest: Pa
     bundle_resource = ensure_bundle_id(transport, LIVE_BUNDLE_ID, "Sky Live Activity")
     status, payload = transport.request(
         "GET",
-        f"{ASC_API}/v1/bundleIds/{bundle_resource}/profiles"
-        "?limit=20&include=certificates"
-        "&fields[profiles]=name,profileType,profileState,profileContent,certificates"
-        "&fields[certificates]=certificateType",
+        f"{ASC_API}/v1/bundleIds/{bundle_resource}/profiles?limit=20",
     )
     if status != 200:
         raise AscError(
             f"Could not list profiles for {LIVE_BUNDLE_ID} (HTTP {status}). "
             f"{_error_detail(payload)}".strip()
         )
-    profiles = payload.get("data") or []
+    profiles = []
+    for item in payload.get("data") or []:
+        profile_id = item.get("id")
+        if not profile_id:
+            continue
+        detail_status, detail = transport.request(
+            "GET",
+            f"{ASC_API}/v1/profiles/{profile_id}?include=certificates"
+            "&fields[profiles]=name,profileType,profileState,profileContent,certificates"
+            "&fields[certificates]=certificateType",
+        )
+        if detail_status != 200:
+            raise AscError(
+                f"Could not read profile {profile_id} (HTTP {detail_status}). "
+                f"{_error_detail(detail)}".strip()
+            )
+        if detail.get("data"):
+            profiles.append(detail["data"])
     chosen = matching_store_profile(profiles, certificate_id)
     content = profile_content(transport, chosen) if chosen is not None else ""
     if not content:
