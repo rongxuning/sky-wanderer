@@ -5,10 +5,10 @@ import UIKit
 struct LiveWorkoutView: View {
     @EnvironmentObject private var app: PhoneAppState
     @EnvironmentObject private var draft: WorkoutDraft
+    @Environment(\.scenePhase) private var scenePhase
     @State private var session: LiveSession?
     @State private var confirmEnd = false
-    @State private var shareRecord: WorkoutRecord?
-    @State private var routeNotice: String?
+    @State private var finished: WorkoutRecord?
     @State private var started = false
 
     var body: some View {
@@ -25,8 +25,12 @@ struct LiveWorkoutView: View {
             guard !started else { return }
             started = true
             let live = app.session(for: draft.sport, route: draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts).points, teammates: draft.members)
+            live.liveActivity = WorkoutLiveActivityCenter.shared
             session = live
             await live.start()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { session?.catchUp() }
         }
         .alert("结束这次运动？", isPresented: $confirmEnd) {
             Button("取消", role: .cancel) {}
@@ -34,15 +38,13 @@ struct LiveWorkoutView: View {
                 Task { await finish() }
             }
         }
-        .sheet(item: $shareRecord) { record in
-            ShareComposer(record: record, notice: routeNotice) { text, image in
+        .sheet(item: $finished) { record in
+            EndWorkoutSheet(record: record) { keepRoute in
                 app.addWorkout(record)
-                app.addPost(from: record, text: text, imageData: image)
-                shareRecord = nil
-                app.noteFinished()
-            } onSkip: {
-                app.addWorkout(record)
-                shareRecord = nil
+                if keepRoute {
+                    saveTrackAsRoute(record)
+                }
+                finished = nil
                 app.noteFinished()
             }
             .interactiveDismissDisabled(true)
@@ -51,9 +53,17 @@ struct LiveWorkoutView: View {
 
     private func finish() async {
         guard let session else { return }
-        let record = await session.stop()
-        routeNotice = session.routeSaveWarning
-        shareRecord = record
+        finished = await session.stop()
+    }
+
+    /// Checked on the end sheet. Reuses the GPX route store; an unchecked end does not call this.
+    private func saveTrackAsRoute(_ record: WorkoutRecord) {
+        let plannedID = draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts).id
+        let course = app.savedRoutes.first(where: { $0.id == plannedID })?.waypoints ?? []
+        let title = "\(record.sport.title) \(Format.dayTime(record.start))"
+        guard let gpx = WorkoutTrackExport.gpx(name: title, points: record.route, course: course) else { return }
+        let parsed = GPXFile.parse(gpx)
+        _ = app.addGPXRoutes(parsed, source: gpx)
     }
 }
 
@@ -64,6 +74,9 @@ private struct LiveBody: View {
     @State private var expanded = false
     @State private var dragTranslation: CGFloat = 0
     @State private var stripHeight: CGFloat = PlannedRouteStrip.occupiedHeight
+    @State private var followUser = false
+    @State private var userMovedCamera = false
+    @State private var locateToken = 0
     @ObservedObject private var basemap = SkyBasemapCenter.shared
 
     var body: some View {
@@ -80,22 +93,27 @@ private struct LiveBody: View {
                     planned: session.plannedRoute,
                     teammates: session.teammates,
                     showsUser: !session.simulating,
+                    userCoordinate: session.userFix?.coordinate,
                     basemapMode: basemap.mode,
                     bottomInset: covered,
                     obscuredBottomFraction: fraction,
-                    creditBottomInset: covered
+                    creditBottomInset: covered,
+                    refitsOnChange: !followUser && !userMovedCamera,
+                    suspendRefitAfterGesture: true,
+                    followsUser: followUser,
+                    locateToken: locateToken,
+                    onUserCameraChange: {
+                        followUser = false
+                        userMovedCamera = true
+                    }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    mapHeader
-                        .padding(.top, geo.safeAreaInsets.top + 8)
-                        .padding(.horizontal, SkyTheme.Spacing.screenInset)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Spacer(minLength: 0)
+                .overlay(alignment: .topLeading) {
+                    locateButton
+                        .padding(.leading, CGFloat(StartMapChrome.toolLeading))
+                        .padding(.top, locateTop(total: total, covered: covered, safeTop: geo.safeAreaInsets.top))
                 }
-                .allowsHitTesting(false)
 
                 if hasPlan {
                     PlannedRouteStrip(session: session)
@@ -124,55 +142,30 @@ private struct LiveBody: View {
         .ignoresSafeArea()
     }
 
-    private var mapHeader: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(session.sport.title)
-                    .font(SkyTheme.Font.title3)
-                    .foregroundStyle(SkyTheme.Color.ink)
-                Text(session.paused ? "已暂停" : "进行中")
-                    .font(SkyTheme.Font.caption.weight(.semibold))
-                    .foregroundStyle(session.paused ? SkyTheme.Color.warning : SkyTheme.Color.primary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        (session.paused ? SkyTheme.Color.warning : SkyTheme.Color.primary).opacity(0.12),
-                        in: Capsule()
-                    )
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(Format.kilometers(session.distanceMeters))
-                    .font(SkyTheme.Font.title3)
-                    .monospacedDigit()
-                    .foregroundStyle(SkyTheme.Color.primary)
-                Text("公里")
-                    .font(SkyTheme.Font.footnote)
-                    .foregroundStyle(SkyTheme.Color.secondary)
-            }
-            if !session.statusText.isEmpty {
-                Text(session.statusText)
-                    .font(SkyTheme.Font.footnote)
-                    .foregroundStyle(SkyTheme.Color.secondary)
-                    .lineLimit(3)
-            }
+    private var locateButton: some View {
+        let following = followUser && !userMovedCamera
+        return Button {
+            userMovedCamera = false
+            followUser = true
+            locateToken += 1
+        } label: {
+            Image(systemName: "location.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(following ? SkyTheme.Color.onPrimary : SkyTheme.Color.onStarryGray)
+                .frame(width: CGFloat(StartMapChrome.toolDiameter), height: CGFloat(StartMapChrome.toolDiameter))
+                .background(following ? SkyTheme.Color.primary : SkyTheme.Color.starryGray, in: Circle())
+                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            SkyTheme.Color.card.opacity(0.94),
-            in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
-                .stroke(SkyTheme.Color.cardBorder, lineWidth: 1)
-        }
-        .shadow(
-            color: SkyTheme.Shadow.card.color.opacity(SkyTheme.Shadow.card.opacity),
-            radius: SkyTheme.Shadow.card.radius,
-            y: SkyTheme.Shadow.card.y
-        )
-        .frame(maxWidth: 280, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .accessibilityLabel("回到当前位置")
+    }
+
+    /// Center of the map band above the sheet, kept below the status bar.
+    private func locateTop(total: CGFloat, covered: CGFloat, safeTop: CGFloat) -> CGFloat {
+        let diameter = CGFloat(StartMapChrome.toolDiameter)
+        let visibleMid = max(0, total - covered) / 2
+        return max(safeTop + 8, visibleMid - diameter / 2)
     }
 }
 
@@ -247,21 +240,51 @@ private struct LiveDataSheet: View {
                 .accessibilityLabel(expanded ? "收起运动数据" : "展开运动数据")
                 .accessibilityHint("上下拖动")
                 .accessibilityAddTraits(.isButton)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("总时间")
-                    .font(SkyTheme.Font.caption)
-                    .foregroundStyle(SkyTheme.Color.secondary)
-                Text(Format.clock(session.elapsed))
-                    .font(SkyTheme.Font.largeTitle)
-                    .monospacedDigit()
-                    .foregroundStyle(SkyTheme.Color.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("总时间")
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                    Text(Format.clock(session.elapsed))
+                        .font(SkyTheme.Font.largeTitle)
+                        .monospacedDigit()
+                        .foregroundStyle(SkyTheme.Color.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("总距离")
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                    Text(Format.kilometers(session.distanceMeters))
+                        .font(SkyTheme.Font.largeTitle)
+                        .monospacedDigit()
+                        .foregroundStyle(SkyTheme.Color.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    Text("公里")
+                        .font(SkyTheme.Font.caption)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
             }
-            .accessibilityElement(children: .combine)
+            if !session.statusText.isEmpty {
+                Text(session.statusText)
+                    .font(SkyTheme.Font.footnote)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .lineLimit(2)
+            }
             HStack(alignment: .top, spacing: 8) {
                 LiveMetricCell(title: "当前配速", value: Format.pace(session.paceSecPerKm), unit: "每公里")
-                LiveMetricCell(title: "当前心率", value: Format.integer(session.heartRate), unit: "次/分", heart: true)
+                LiveMetricCell(
+                    title: "当前心率",
+                    value: Format.integer(session.heartRate),
+                    unit: heartUnit,
+                    heart: true
+                )
                 LiveMetricCell(title: "当前步频", value: Format.integer(session.cadence), unit: "步/分")
             }
         }
@@ -344,6 +367,17 @@ private struct LiveDataSheet: View {
             expanded.toggle()
             dragTranslation = 0
         }
+    }
+
+    /// Phone has no heart-rate sensor. A dash stays a dash until this session measures one.
+    private var heartUnavailable: Bool {
+        guard !session.simulating, session.heartRate <= 0 else { return false }
+        if session.heartSource == .none { return true }
+        return session.heartSource == .watch && session.elapsed > 20
+    }
+
+    private var heartUnit: String {
+        heartUnavailable ? "无来源" : "次/分"
     }
 
     private var displayedSplits: [KilometerSplit] {
@@ -436,7 +470,7 @@ private struct LiveDataSheet: View {
                     .accessibilityHidden(true)
                 LiveHeartZoneList(points: session.heartSeries)
             } else {
-                Text("心率还在采集")
+                Text(heartUnavailable ? "没有心率来源" : "心率还在采集")
                     .font(SkyTheme.Font.subheadline)
                     .foregroundStyle(SkyTheme.Color.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
