@@ -730,15 +730,14 @@ def _profile_certificate_ids(profile: dict) -> set[str]:
 
 
 def matching_store_profile(profiles: list[dict], certificate_id: str) -> dict | None:
-    """An active App Store profile for this certificate. Content may be fetched separately."""
+    """An active App Store profile that lists this certificate. A missing list is not a match."""
     for profile in profiles:
         attributes = profile.get("attributes") or {}
         if attributes.get("profileType") != "IOS_APP_STORE":
             continue
         if attributes.get("profileState") not in (None, "ACTIVE"):
             continue
-        certificates = _profile_certificate_ids(profile)
-        if certificates and certificate_id not in certificates:
+        if certificate_id not in _profile_certificate_ids(profile):
             continue
         return profile
     return None
@@ -780,7 +779,8 @@ def ensure_live_profile(transport: Transport, p12: Path, password: str, dest: Pa
         "GET",
         f"{ASC_API}/v1/bundleIds/{bundle_resource}/profiles"
         "?limit=20&include=certificates"
-        "&fields[profiles]=name,profileType,profileState,profileContent",
+        "&fields[profiles]=name,profileType,profileState,profileContent,certificates"
+        "&fields[certificates]=certificateType",
     )
     if status != 200:
         raise AscError(
@@ -1360,6 +1360,10 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
     }
     assert matching_store_profile([expired], "CERT") is None
     assert matching_store_profile([active], "CERT") is active
+    assert matching_store_profile(
+        [{"attributes": {"profileType": "IOS_APP_STORE", "profileState": "ACTIVE"}}],
+        "CERT",
+    ) is None
     assert fresh_profile_name([expired]) != LIVE_PROFILE_NAME
     assert fresh_profile_name([]) == LIVE_PROFILE_NAME
     if watch.get("WKBackgroundModes") != ["workout-processing"]:
