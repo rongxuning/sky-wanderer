@@ -17,7 +17,7 @@ struct WorkoutLiveWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    islandTime(context.state, stale: context.isStale)
+                    islandTime(context.state)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     islandDistance(context.state)
@@ -28,7 +28,7 @@ struct WorkoutLiveWidget: Widget {
                         .lineLimit(1)
                 }
             } compactLeading: {
-                islandTime(context.state, stale: context.isStale)
+                islandTime(context.state)
             } compactTrailing: {
                 islandDistance(context.state)
             } minimal: {
@@ -43,7 +43,7 @@ struct WorkoutLiveWidget: Widget {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(LiveActivityText.ink)
             HStack(alignment: .top, spacing: 16) {
-                metric("总时间", timeValue(context.state, stale: context.isStale))
+                metric("总时间", timeValue(context.state))
                 metric("总距离", Text(LiveActivityText.kilometers(context.state.distanceMeters)), unit: "公里")
             }
             HStack(alignment: .top, spacing: 16) {
@@ -73,15 +73,15 @@ struct WorkoutLiveWidget: Widget {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func timeValue(_ state: WorkoutActivityAttributes.ContentState, stale: Bool) -> Text {
-        if state.paused || stale {
+    private func timeValue(_ state: WorkoutActivityAttributes.ContentState) -> Text {
+        if state.paused {
             return Text(LiveActivityText.clock(state.elapsed)).monospacedDigit()
         }
         return Text(Date().addingTimeInterval(-max(0, state.elapsed)), style: .timer).monospacedDigit()
     }
 
-    private func islandTime(_ state: WorkoutActivityAttributes.ContentState, stale: Bool) -> some View {
-        timeValue(state, stale: stale)
+    private func islandTime(_ state: WorkoutActivityAttributes.ContentState) -> some View {
+        timeValue(state)
             .font(.caption.weight(.semibold))
             .lineLimit(1)
     }

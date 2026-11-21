@@ -69,8 +69,12 @@ final class WatchMirrorGate {
     private var delivered: HKWorkoutSession?
     /// False after delivery, launch failure, or timeout. A different session is ended.
     private var accept = false
+    /// Bumped on every request so a previous 8-second wait cannot clear the next one.
+    private var generation = 0
 
     func request(_ sport: SportKind) async -> HKWorkoutSession? {
+        generation += 1
+        let token = generation
         accept = true
         held = nil
         delivered = nil
@@ -87,11 +91,13 @@ final class WatchMirrorGate {
             }
             Task { @MainActor in
                 let launched = await self.launch(sport)
+                guard token == self.generation else { return }
                 if !launched {
                     self.giveUp(resumeNil: true)
                     return
                 }
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
+                guard token == self.generation else { return }
                 self.giveUp(resumeNil: self.waiter != nil)
             }
         }

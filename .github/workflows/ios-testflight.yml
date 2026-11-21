@@ -6,8 +6,12 @@
 # range watchOS 8–26.5). The runner Xcode is not too old. The xcode-27 image
 # is newer and is not required for this deployment target.
 #
-# Signing uses an Apple Distribution p12 plus two App Store profiles. One
-# profile cannot cover both bundle ids. The API key is written to
+# Signing uses an Apple Distribution p12 plus App Store profiles for the
+# iPhone app, the Watch app, and the Live Activity extension. One profile
+# cannot cover more than one bundle id. The app and watch profiles are
+# secrets. The extension profile for com.rongxuning.sky-wanderer.live is
+# created or reused with the same API key and the same distribution
+# certificate; there is no third profile secret. The API key is written to
 # ~/private_keys/AuthKey_${ASC_KEY_ID}.p8 for altool / iTMSTransporter and is
 # never printed. Build numbers are applied only to this job's archive; nothing
 # is pushed back to the repo.
@@ -23,6 +27,11 @@ on:
     paths:
       - "codes/ios/**"
   workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload the exported IPA to TestFlight
+        type: boolean
+        default: true
 
 # One upload at a time. Do not cancel an upload that is already in progress.
 concurrency:
@@ -112,6 +121,7 @@ jobs:
             -P "$P12_PASSWORD" \
             -f pkcs12 \
             -A
+          # cert.p12 stays until ensure-live-profile reads its serial.
           security set-key-partition-list \
             -S apple-tool:,apple:,codesign: \
             -s \
@@ -119,7 +129,6 @@ jobs:
             "$keychain"
           security list-keychains -d user -s "$keychain"
           security default-keychain -s "$keychain"
-          rm -f "$RUNNER_TEMP/cert.p12"
 
           security find-identity -v -p codesigning "$keychain" > "$RUNNER_TEMP/identities.txt"
           python3 .github/scripts/testflight_asc.py pick-identity \
@@ -127,12 +136,18 @@ jobs:
             --out "$RUNNER_TEMP/identity.txt"
           rm -f "$RUNNER_TEMP/identities.txt"
 
+          python3 .github/scripts/testflight_asc.py ensure-live-profile \
+            --p12 "$RUNNER_TEMP/cert.p12" \
+            --out "$RUNNER_TEMP/live.mobileprovision"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
           python3 .github/scripts/testflight_asc.py install-profiles \
             --ios "$RUNNER_TEMP/ios.mobileprovision" \
             --watch "$RUNNER_TEMP/watch.mobileprovision" \
+            --live "$RUNNER_TEMP/live.mobileprovision" \
             --identity-file "$RUNNER_TEMP/identity.txt" \
             --env-out "$RUNNER_TEMP/signing.env"
-          rm -f "$RUNNER_TEMP/ios.mobileprovision" "$RUNNER_TEMP/watch.mobileprovision"
+          rm -f "$RUNNER_TEMP/ios.mobileprovision" "$RUNNER_TEMP/watch.mobileprovision" "$RUNNER_TEMP/live.mobileprovision"
 
       - name: Write ExportOptions and apply CI-only signing
         run: |
@@ -181,6 +196,7 @@ jobs:
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
 
       - name: Upload to TestFlight
+        if: github.event_name != 'workflow_dispatch' || inputs.upload
         run: |
           set -euo pipefail
           ipa=""
@@ -223,7 +239,7 @@ jobs:
           write_summary iTMSTransporter
 
       - name: Set usesNonExemptEncryption=false
-        if: success()
+        if: success() && (github.event_name != 'workflow_dispatch' || inputs.upload)
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -246,7 +262,8 @@ jobs:
               "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
             do
               rm -f "$dir/$IOS_PROFILE_UUID.mobileprovision" \
-                "$dir/$WATCH_PROFILE_UUID.mobileprovision"
+                "$dir/$WATCH_PROFILE_UUID.mobileprovision" \
+                "$dir/$LIVE_PROFILE_UUID.mobileprovision"
             done
           fi
           python3 - <<'PY'
@@ -260,6 +277,7 @@ jobs:
             "$RUNNER_TEMP/cert.p12" \
             "$RUNNER_TEMP/ios.mobileprovision" \
             "$RUNNER_TEMP/watch.mobileprovision" \
+            "$RUNNER_TEMP/live.mobileprovision" \
             "$RUNNER_TEMP/keychain.password" \
             "$RUNNER_TEMP/identity.txt" \
             "$RUNNER_TEMP/identities.txt" \

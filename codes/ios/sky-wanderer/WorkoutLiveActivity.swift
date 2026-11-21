@@ -24,7 +24,7 @@ final class WorkoutLiveActivityCenter: LiveActivitySink {
             heartRate: heartRate,
             paused: paused
         )
-        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(30))
+        let content = ActivityContent(state: state, staleDate: nil)
         if let activity {
             Task { await activity.update(content) }
             return

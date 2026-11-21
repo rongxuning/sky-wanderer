@@ -26,6 +26,8 @@ from pathlib import Path
 
 IOS_BUNDLE_ID = "com.rongxuning.sky-wanderer"
 WATCH_BUNDLE_ID = "com.rongxuning.sky-wanderer.watchkitapp"
+LIVE_BUNDLE_ID = "com.rongxuning.sky-wanderer.live"
+LIVE_PROFILE_NAME = "sky-wanderer live App Store"
 ASC_APP_ID = "6824458683"
 MIN_XCODE = "26.0"
 MIN_IOS_SDK = "26.0"
@@ -634,13 +636,176 @@ def release_marketing_versions(text: str) -> dict[str, str]:
     return found
 
 
+def normalize_serial(value: str) -> str:
+    text = value.strip().upper()
+    if text.startswith("SERIAL="):
+        text = text.split("=", 1)[1].strip()
+    text = text.replace(":", "").replace(" ", "")
+    return text.lstrip("0") or "0"
+
+
+def certificate_serial_from_p12(path: Path, password: str) -> str:
+    """Read the leaf certificate serial. The password is passed on stdin and never logged."""
+    commands = [
+        ["openssl", "pkcs12", "-in", str(path), "-nokeys", "-clcerts", "-passin", "stdin"],
+        ["openssl", "pkcs12", "-in", str(path), "-nokeys", "-clcerts", "-passin", "stdin", "-legacy"],
+    ]
+    cert = b""
+    for command in commands:
+        proc = subprocess.run(command, input=password.encode(), capture_output=True)
+        if proc.returncode == 0 and b"BEGIN CERTIFICATE" in proc.stdout:
+            cert = proc.stdout
+            break
+    if not cert:
+        raise AscError("Could not read the distribution certificate from the p12.")
+    serial = subprocess.run(
+        ["openssl", "x509", "-noout", "-serial"],
+        input=cert,
+        capture_output=True,
+    )
+    if serial.returncode != 0:
+        raise AscError("Could not read the distribution certificate serial.")
+    return normalize_serial(serial.stdout.decode())
+
+
+def find_distribution_certificate(transport: Transport, serial: str) -> str:
+    wanted = normalize_serial(serial)
+    for certificate_type in ("DISTRIBUTION", "IOS_DISTRIBUTION"):
+        status, payload = transport.request(
+            "GET",
+            f"{ASC_API}/v1/certificates?filter[certificateType]={certificate_type}"
+            "&limit=20&fields[certificates]=serialNumber,certificateType",
+        )
+        if status != 200:
+            raise AscError(
+                f"Certificate lookup failed (HTTP {status}). {_error_detail(payload)}".strip()
+            )
+        for item in payload.get("data") or []:
+            attributes = item.get("attributes") or {}
+            if normalize_serial(str(attributes.get("serialNumber") or "")) == wanted:
+                return str(item["id"])
+    raise AscError(
+        "No App Store distribution certificate in App Store Connect matches the imported p12."
+    )
+
+
+def ensure_bundle_id(transport: Transport, identifier: str, name: str) -> str:
+    status, payload = transport.request(
+        "GET",
+        f"{ASC_API}/v1/bundleIds?filter[identifier]={identifier}&limit=5&fields[bundleIds]=identifier",
+    )
+    if status != 200:
+        raise AscError(
+            f"Could not look up bundle id {identifier} (HTTP {status}). {_error_detail(payload)}".strip()
+        )
+    for item in payload.get("data") or []:
+        if (item.get("attributes") or {}).get("identifier") == identifier:
+            return str(item["id"])
+    status, payload = transport.request(
+        "POST",
+        f"{ASC_API}/v1/bundleIds",
+        {
+            "data": {
+                "type": "bundleIds",
+                "attributes": {
+                    "identifier": identifier,
+                    "name": name,
+                    "platform": "IOS",
+                },
+            }
+        },
+    )
+    if status not in (200, 201):
+        raise AscError(
+            f"Could not register bundle id {identifier} (HTTP {status}). "
+            "The existing API key must be allowed to manage identifiers. "
+            f"{_error_detail(payload)}".strip()
+        )
+    return str(payload["data"]["id"])
+
+
+def _profile_certificate_ids(profile: dict) -> set[str]:
+    relation = ((profile.get("relationships") or {}).get("certificates") or {}).get("data") or []
+    return {str(item.get("id")) for item in relation if item.get("id")}
+
+
+def matching_store_profile(profiles: list[dict], certificate_id: str) -> dict | None:
+    for profile in profiles:
+        attributes = profile.get("attributes") or {}
+        if attributes.get("profileType") != "IOS_APP_STORE":
+            continue
+        if attributes.get("profileState") not in (None, "ACTIVE"):
+            continue
+        if not attributes.get("profileContent"):
+            continue
+        certificates = _profile_certificate_ids(profile)
+        if certificates and certificate_id not in certificates:
+            continue
+        return profile
+    return None
+
+
+def ensure_live_profile(transport: Transport, p12: Path, password: str, dest: Path) -> None:
+    serial = certificate_serial_from_p12(p12, password)
+    certificate_id = find_distribution_certificate(transport, serial)
+    bundle_resource = ensure_bundle_id(transport, LIVE_BUNDLE_ID, "Sky Live Activity")
+    status, payload = transport.request(
+        "GET",
+        f"{ASC_API}/v1/bundleIds/{bundle_resource}/profiles"
+        "?limit=20&include=certificates"
+        "&fields[profiles]=name,profileType,profileState,profileContent",
+    )
+    if status != 200:
+        raise AscError(
+            f"Could not list profiles for {LIVE_BUNDLE_ID} (HTTP {status}). "
+            f"{_error_detail(payload)}".strip()
+        )
+    chosen = matching_store_profile(payload.get("data") or [], certificate_id)
+    if chosen is None:
+        status, payload = transport.request(
+            "POST",
+            f"{ASC_API}/v1/profiles",
+            {
+                "data": {
+                    "type": "profiles",
+                    "attributes": {
+                        "name": LIVE_PROFILE_NAME,
+                        "profileType": "IOS_APP_STORE",
+                    },
+                    "relationships": {
+                        "bundleId": {
+                            "data": {"type": "bundleIds", "id": bundle_resource},
+                        },
+                        "certificates": {
+                            "data": [{"type": "certificates", "id": certificate_id}],
+                        },
+                    },
+                }
+            },
+        )
+        if status not in (200, 201):
+            raise AscError(
+                f"Could not create an App Store profile for {LIVE_BUNDLE_ID} (HTTP {status}). "
+                f"{_error_detail(payload)}".strip()
+            )
+        chosen = payload.get("data") or {}
+    content = str((chosen.get("attributes") or {}).get("profileContent") or "")
+    if not content:
+        raise AscError(f"App Store profile for {LIVE_BUNDLE_ID} did not include profile content.")
+    dest.write_bytes(b64decode_relaxed(content))
+    dest.chmod(0o600)
+    eprint(f"Prepared App Store profile for {LIVE_BUNDLE_ID} ({dest.stat().st_size} bytes).")
+
+
 def patch_pbxproj(
     text: str,
     *,
     ios_profile: str,
     watch_profile: str,
+    live_profile: str,
     ios_profile_uuid: str,
     watch_profile_uuid: str,
+    live_profile_uuid: str,
     identity: str,
     team_id: str,
     build_number: str,
@@ -655,6 +820,7 @@ def patch_pbxproj(
     profiles = {
         IOS_BUNDLE_ID: (ios_profile, ios_profile_uuid),
         WATCH_BUNDLE_ID: (watch_profile, watch_profile_uuid),
+        LIVE_BUNDLE_ID: (live_profile, live_profile_uuid),
     }
     updated: list[str] = []
 
@@ -684,7 +850,7 @@ def patch_pbxproj(
     patched = BLOCK_RE.sub(replace, text)
     if sorted(updated) != sorted(profiles):
         raise AscError(
-            "Could not patch both Release targets. Updated: " + ", ".join(updated or ["none"])
+            "Could not patch every Release target. Updated: " + ", ".join(updated or ["none"])
         )
     return patched
 
@@ -696,6 +862,7 @@ def write_export_options(
     identity: str,
     ios_profile: str,
     watch_profile: str,
+    live_profile: str,
 ) -> None:
     payload = {
         "method": "app-store-connect",
@@ -708,6 +875,7 @@ def write_export_options(
         "provisioningProfiles": {
             IOS_BUNDLE_ID: ios_profile,
             WATCH_BUNDLE_ID: watch_profile,
+            LIVE_BUNDLE_ID: live_profile,
         },
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1020,6 +1188,16 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
         "\t\t\t};\n"
         "\t\t\tname = Release;\n"
         "\t\t};\n"
+        "\t\tDDDD0000000000000000002E /* Release */ = {\n"
+        "\t\t\tisa = XCBuildConfiguration;\n"
+        "\t\t\tbuildSettings = {\n"
+        "\t\t\t\tCODE_SIGN_STYLE = Automatic;\n"
+        "\t\t\t\tCURRENT_PROJECT_VERSION = 1;\n"
+        "\t\t\t\tMARKETING_VERSION = 1.0;\n"
+        '\t\t\t\tPRODUCT_BUNDLE_IDENTIFIER = "com.rongxuning.sky-wanderer.live";\n'
+        "\t\t\t};\n"
+        "\t\t\tname = Release;\n"
+        "\t\t};\n"
         "\t\tCCCC0000000000000000001C /* Debug */ = {\n"
         "\t\t\tisa = XCBuildConfiguration;\n"
         "\t\t\tbaseConfigurationReference = A10000000000000000000020 /* Sky.xcconfig */;\n"
@@ -1036,8 +1214,10 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
         shaped,
         ios_profile="iOS App Store",
         watch_profile="Watch App Store",
+        live_profile="Live App Store",
         ios_profile_uuid="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
         watch_profile_uuid="FFFFFFFF-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        live_profile_uuid="11111111-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
         identity="Apple Distribution: Sky (QTV9DUCAY7)",
         team_id="QTV9DUCAY7",
         build_number="2",
@@ -1055,7 +1235,7 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
             assert "CURRENT_PROJECT_VERSION = 1;" in match.group("settings")
             continue
         shaped_release[bundle_id] = match.group("settings")
-    assert set(shaped_release) == {IOS_BUNDLE_ID, WATCH_BUNDLE_ID}
+    assert set(shaped_release) == {IOS_BUNDLE_ID, WATCH_BUNDLE_ID, LIVE_BUNDLE_ID}
     for settings in shaped_release.values():
         assert "CODE_SIGN_STYLE = Manual;" in settings
         assert "CURRENT_PROJECT_VERSION = 2;" in settings
@@ -1065,8 +1245,10 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
         original,
         ios_profile="iOS App Store",
         watch_profile="Watch App Store",
+        live_profile="Live App Store",
         ios_profile_uuid="AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
         watch_profile_uuid="FFFFFFFF-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+        live_profile_uuid="11111111-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
         identity="Apple Distribution: Sky (QTV9DUCAY7)",
         team_id="QTV9DUCAY7",
         build_number="2",
@@ -1078,15 +1260,16 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
     )
     assert original.count("CODE_SIGN_STYLE = Automatic;") == patched.count(
         "CODE_SIGN_STYLE = Automatic;"
-    ) + 2
+    ) + 3
     assert 'PROVISIONING_PROFILE_SPECIFIER = "iOS App Store";' in patched
     assert 'PROVISIONING_PROFILE_SPECIFIER = "Watch App Store";' in patched
+    assert 'PROVISIONING_PROFILE_SPECIFIER = "Live App Store";' in patched
     assert "CURRENT_PROJECT_VERSION = 2;" in patched
     # Debug settings stay automatic and on build 1.
     for match in BLOCK_RE.finditer(patched):
         settings = match.group("settings")
         bundle_id = _bundle_id(settings)
-        if bundle_id not in (IOS_BUNDLE_ID, WATCH_BUNDLE_ID):
+        if bundle_id not in (IOS_BUNDLE_ID, WATCH_BUNDLE_ID, LIVE_BUNDLE_ID):
             continue
         if match.group("config") == "Debug":
             assert "CODE_SIGN_STYLE = Automatic;" in settings
@@ -1105,6 +1288,7 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
             identity="Apple Distribution: Sky (QTV9DUCAY7)",
             ios_profile="iOS App Store",
             watch_profile="Watch App Store",
+            live_profile="Live App Store",
         )
         export = plistlib.loads(export_path.read_bytes())
         assert export["method"] == "app-store-connect"
@@ -1114,6 +1298,7 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
         assert export["manageAppVersionAndBuildNumber"] is False
         assert export["provisioningProfiles"][IOS_BUNDLE_ID] == "iOS App Store"
         assert export["provisioningProfiles"][WATCH_BUNDLE_ID] == "Watch App Store"
+        assert export["provisioningProfiles"][LIVE_BUNDLE_ID] == "Live App Store"
         env_path = Path(tmp) / "signing.env"
         write_signing_env(env_path, {"IOS_PROFILE_NAME": "iOS App Store", "X": "a'b"})
         loaded = load_signing_env(env_path)
@@ -1122,8 +1307,23 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
 
     iphone = plistlib.loads(IPHONE_PLIST.read_bytes())
     watch = plistlib.loads(WATCH_PLIST.read_bytes())
-    if "UIBackgroundModes" in iphone:
-        raise SystemExit("iPhone Info.plist still has UIBackgroundModes (ASC 90112)")
+    # workout-processing on iOS is ASC 90112. location is the workout background mode.
+    if iphone.get("UIBackgroundModes") != ["location"]:
+        raise SystemExit("iPhone UIBackgroundModes must be exactly location")
+    assert normalize_serial("serial=0000AB12") == "AB12"
+    assert matching_store_profile(
+        [
+            {
+                "attributes": {
+                    "profileType": "IOS_APP_STORE",
+                    "profileState": "ACTIVE",
+                    "profileContent": "YQ==",
+                },
+                "relationships": {"certificates": {"data": [{"id": "CERT"}]}},
+            }
+        ],
+        "CERT",
+    )
     if watch.get("WKBackgroundModes") != ["workout-processing"]:
         raise SystemExit("Watch WKBackgroundModes must keep workout-processing")
 
@@ -1136,6 +1336,7 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
         "generic/platform=iOS",
         "usesNonExemptEncryption",
         "BUILD_PROVISION_PROFILE_WATCH_BASE64",
+        "ensure-live-profile",
         "ASC_API_KEY_P8",
         "app-store-connect",
         "private_keys",
@@ -1204,14 +1405,26 @@ def cmd_pick_identity(args: argparse.Namespace) -> None:
     eprint(f"Using distribution identity: {identity}")
 
 
+def cmd_ensure_live_profile(args: argparse.Namespace) -> None:
+    ensure_live_profile(
+        Transport(token_from_env()),
+        Path(args.p12),
+        require_env("P12_PASSWORD"),
+        Path(args.out),
+    )
+
+
 def cmd_install_profiles(args: argparse.Namespace) -> None:
     team_id = require_env("APPLE_TEAM_ID").strip()
     ios = decode_mobileprovision(Path(args.ios))
     watch = decode_mobileprovision(Path(args.watch))
     ios_info = assert_app_store_profile(ios, IOS_BUNDLE_ID, team_id)
     watch_info = assert_app_store_profile(watch, WATCH_BUNDLE_ID, team_id)
+    live = decode_mobileprovision(Path(args.live))
+    live_info = assert_app_store_profile(live, LIVE_BUNDLE_ID, team_id)
     install_profile(ios, Path(args.ios))
     install_profile(watch, Path(args.watch))
+    install_profile(live, Path(args.live))
     identity = Path(args.identity_file).read_text().strip()
     write_signing_env(
         Path(args.env_out),
@@ -1220,6 +1433,8 @@ def cmd_install_profiles(args: argparse.Namespace) -> None:
             "IOS_PROFILE_UUID": ios_info["uuid"],
             "WATCH_PROFILE_NAME": watch_info["name"],
             "WATCH_PROFILE_UUID": watch_info["uuid"],
+            "LIVE_PROFILE_NAME": live_info["name"],
+            "LIVE_PROFILE_UUID": live_info["uuid"],
             "SIGNING_IDENTITY": identity,
             "APPLE_TEAM_ID": team_id,
         },
@@ -1233,8 +1448,10 @@ def cmd_patch_project(args: argparse.Namespace) -> None:
         project.read_text(),
         ios_profile=signing["IOS_PROFILE_NAME"],
         watch_profile=signing["WATCH_PROFILE_NAME"],
+        live_profile=signing["LIVE_PROFILE_NAME"],
         ios_profile_uuid=signing["IOS_PROFILE_UUID"],
         watch_profile_uuid=signing["WATCH_PROFILE_UUID"],
+        live_profile_uuid=signing["LIVE_PROFILE_UUID"],
         identity=signing["SIGNING_IDENTITY"],
         team_id=signing["APPLE_TEAM_ID"],
         build_number=args.build_number,
@@ -1252,6 +1469,7 @@ def cmd_write_export_options(args: argparse.Namespace) -> None:
         identity=signing["SIGNING_IDENTITY"],
         ios_profile=signing["IOS_PROFILE_NAME"],
         watch_profile=signing["WATCH_PROFILE_NAME"],
+        live_profile=signing["LIVE_PROFILE_NAME"],
     )
     eprint(f"Wrote ExportOptions.plist ({Path(args.out).stat().st_size} bytes).")
 
@@ -1298,9 +1516,15 @@ def build_parser() -> argparse.ArgumentParser:
     ident.add_argument("--out", required=True)
     ident.set_defaults(func=cmd_pick_identity)
 
+    live = sub.add_parser("ensure-live-profile")
+    live.add_argument("--p12", required=True)
+    live.add_argument("--out", required=True)
+    live.set_defaults(func=cmd_ensure_live_profile)
+
     install = sub.add_parser("install-profiles")
     install.add_argument("--ios", required=True)
     install.add_argument("--watch", required=True)
+    install.add_argument("--live", required=True)
     install.add_argument("--identity-file", required=True)
     install.add_argument("--env-out", required=True)
     install.set_defaults(func=cmd_install_profiles)

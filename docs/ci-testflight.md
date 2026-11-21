@@ -31,7 +31,7 @@
 | `BUILD_PROVISION_PROFILE_WATCH_BASE64` | `com.rongxuning.sky-wanderer.watchkitapp` 的 **App Store** 描述文件 |
 | `APPLE_TEAM_ID` | `QTV9DUCAY7` |
 
-API 密钥、证书和两个描述文件要属于同一个团队。两个 App ID 都要打开 HealthKit，和仓库里的 entitlements 一致。
+API 密钥、证书和两个描述文件要属于同一个团队。iPhone 和 Watch 的 App ID 都要打开 HealthKit，和仓库里的 entitlements 一致。Live Activity 扩展 `com.rongxuning.sky-wanderer.live` 不另存 secret：工作流用同一把 API 密钥和同一张 Distribution 证书，在 App Store Connect 里查找或创建这个 bundle id 的 App Store 描述文件。密钥需要能管理标识和描述文件。
 
 在 Mac 上生成 base64（换行会被去掉，带换行也可以）：
 
@@ -43,7 +43,7 @@ base64 -i sky-wanderer-watch-appstore.mobileprovision | tr -d '\n'
 
 ## 签名
 
-用手动签名，和装进 runner 的描述文件一致。iPhone 与 Watch 的 bundle id 不同，**一份描述文件盖不住两个目标**，所以手表是单独的 secret，没有合并方案。
+用手动签名，和装进 runner 的描述文件一致。iPhone、Watch 和 Live Activity 的 bundle id 不同，**一份描述文件盖不住多个目标**。手表仍是单独的 secret。扩展的描述文件由 API 在这次 job 里准备，不写入仓库。
 
 描述文件会装到 `~/Library/MobileDevice/Provisioning Profiles/`，并复制一份到 `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`。p12 只进临时钥匙串。这些文件在 job 结束时删掉。
 
@@ -63,4 +63,4 @@ CI **不会**把版本号提交回仓库。
 
 ## ASC 90112
 
-iPhone 的 `codes/ios/sky-wanderer/Info.plist` 已去掉整个 `UIBackgroundModes`（里面是 `workout-processing`，iOS 上无效）。手表 `codes/ios/sky-wanderer-watch/Info.plist` 的 `WKBackgroundModes` 保留。
+iPhone 的 `UIBackgroundModes` 只有 `location`，用来在运动进行中继续记录轨迹。不要加回 `workout-processing`（iOS 上无效，会触发 90112）。手表 `codes/ios/sky-wanderer-watch/Info.plist` 的 `WKBackgroundModes` 保留。
