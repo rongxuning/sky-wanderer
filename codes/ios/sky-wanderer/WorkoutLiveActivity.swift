@@ -42,7 +42,7 @@ final class WorkoutLiveActivityCenter: LiveActivitySink {
         }
     }
 
-    /// Cold start. A force-quit leaves the lock-screen activity behind because the session object is gone.
+    /// Drops a lock-screen activity left behind when the process was killed.
     func endLingering() async {
         let current = activity?.id
         for existing in Activity<WorkoutActivityAttributes>.activities where existing.id != current {
