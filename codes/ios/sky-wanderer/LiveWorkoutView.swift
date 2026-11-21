@@ -584,10 +584,12 @@ private struct LiveDataSheet: View {
 
     private func showsElevation(_ samples: [ElevationSample]) -> Bool {
         guard samples.count >= 2 else { return false }
-        guard (samples.last?.distanceKilometers ?? 0) > 0.01 else { return false }
+        // Need a short walk before the relative chart means anything.
+        guard (samples.last?.distanceKilometers ?? 0) > 0.05 else { return false }
         let values = samples.map(\.changeMeters)
         guard let high = values.max(), let low = values.min() else { return false }
-        return high - low > 0.4
+        // Match the live GPS step so standing-still flutter does not open the chart.
+        return high - low >= ElevationNoise.gpsStepMeters
     }
 
     private func statLine(_ leading: String, _ trailing: String) -> some View {

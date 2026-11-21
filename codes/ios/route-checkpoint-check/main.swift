@@ -95,6 +95,32 @@ near(RouteStats.ascent(climb), 14, 0.001, "ascent")
 near(RouteStats.descent(climb), 6, 0.001, "descent")
 check(RouteStats.descent([point(0, 0, 5)]) == 0, "descent of one point")
 
+// Live GPS. Standing still flutters ±2m; that must not become climb or drop.
+var gpsElevation = ElevationNoise.Totals()
+ElevationNoise.note(altitude: 10, verticalAccuracy: 4, into: &gpsElevation)
+for sample in [11.5, 9.0, 12.0, 8.5, 11.0, 9.5] {
+    ElevationNoise.note(altitude: sample, verticalAccuracy: 4, into: &gpsElevation)
+}
+near(gpsElevation.gainMeters, 0, 0.001, "sub-3m GPS flutter is not climb")
+near(gpsElevation.lossMeters, 0, 0.001, "sub-3m GPS flutter is not descent")
+check(abs((gpsElevation.baselineMeters ?? -1) - 10) < 0.001, "baseline stays until a real step")
+
+ElevationNoise.note(altitude: 14, verticalAccuracy: 4, into: &gpsElevation)
+near(gpsElevation.gainMeters, 4, 0.001, "a 4m rise from baseline counts")
+ElevationNoise.note(altitude: 9, verticalAccuracy: 4, into: &gpsElevation)
+near(gpsElevation.lossMeters, 5, 0.001, "a 5m drop from the new baseline counts")
+
+var badVertical = ElevationNoise.Totals()
+check(
+    !ElevationNoise.note(altitude: 20, verticalAccuracy: 40, into: &badVertical),
+    "poor verticalAccuracy is ignored"
+)
+check(badVertical.baselineMeters == nil, "bad fix does not set a baseline")
+check(
+    !ElevationNoise.note(altitude: 20, verticalAccuracy: -1, into: &badVertical),
+    "invalid verticalAccuracy is ignored"
+)
+
 let preserved = parse("""
 <gpx creator="Sky" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata><name>元数据</name><author><name>阿宁</name></author></metadata>

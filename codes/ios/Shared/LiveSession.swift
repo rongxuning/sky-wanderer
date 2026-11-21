@@ -84,6 +84,8 @@ final class LiveSession: ObservableObject {
     private var healthDistance = 0.0
     private var lastLocation: CLLocation?
     private var lastAltitude: Double?
+    /// Thresholded climb/drop. Raw GPS altitude still updates `altitudeMeters` for display.
+    private var elevationTotals = ElevationNoise.Totals()
     /// First fix after resume is the cached pre-pause coordinate. Do not anchor on it.
     private var ignoreNextLocation = false
     /// Samples stamped before this were taken during the pause.
@@ -577,26 +579,35 @@ final class LiveSession: ObservableObject {
             altitude: location.altitude,
             timestamp: location.timestamp
         )
+        // Map follow uses every usable fix. Track and climb wait for real movement.
         userFix = fix
         guard location.horizontalAccuracy < 40 else { return }
+        let moved: Double
         if let lastLocation {
-            let delta = location.distance(from: lastLocation)
-            if delta > 0.8, delta < 40 {
-                gpsDistance += delta
+            moved = location.distance(from: lastLocation)
+        } else {
+            moved = .infinity
+        }
+        // Standing still: GPS still wanders and altitude flutters ±10m. Do not grow
+        // the track or climb totals until the person actually moves.
+        let advancesTrack = moved > 0.8 && moved < 40
+        let firstFix = lastLocation == nil
+        guard firstFix || advancesTrack else {
+            if location.altitude.isFinite {
+                altitudeMeters = location.altitude
             }
+            return
+        }
+        if advancesTrack {
+            gpsDistance += moved
         }
         lastLocation = location
-        startTeammates(at: GeoPoint(
-            latitude: location.coordinate.latitude,
-            longitude: location.coordinate.longitude,
-            altitude: location.altitude,
-            timestamp: location.timestamp
-        ))
+        startTeammates(at: fix)
         if location.speed > 0.4 {
             paceSecPerKm = 1000 / location.speed
         }
         appendPoint(fix)
-        noteAltitude(location.altitude)
+        noteAltitude(location.altitude, verticalAccuracy: location.verticalAccuracy)
         refreshDistance()
     }
 
@@ -631,6 +642,7 @@ final class LiveSession: ObservableObject {
         altitudeMeters = 0
         lastLocation = nil
         lastAltitude = nil
+        elevationTotals = ElevationNoise.Totals()
         userFix = nil
         ignoreNextLocation = false
         resumeAnchorDate = .distantPast
@@ -672,18 +684,17 @@ final class LiveSession: ObservableObject {
         }
     }
 
-    private func noteAltitude(_ altitude: Double) {
+    private func noteAltitude(_ altitude: Double, verticalAccuracy: Double = 5) {
         guard altitude.isFinite else { return }
         altitudeMeters = altitude
-        if let lastAltitude {
-            let delta = altitude - lastAltitude
-            if delta > 0 {
-                elevationGainMeters += delta
-            } else if delta < 0 {
-                elevationLossMeters -= delta
-            }
-        }
-        lastAltitude = altitude
+        ElevationNoise.note(
+            altitude: altitude,
+            verticalAccuracy: verticalAccuracy,
+            into: &elevationTotals
+        )
+        lastAltitude = elevationTotals.baselineMeters
+        elevationGainMeters = elevationTotals.gainMeters
+        elevationLossMeters = elevationTotals.lossMeters
     }
 
     private func noteSplitProgress() {

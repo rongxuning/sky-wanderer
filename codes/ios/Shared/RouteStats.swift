@@ -10,6 +10,50 @@ struct ElevationSample: Identifiable {
     var changeMeters: Double
 }
 
+/// Phone GPS altitude flutters while standing still. Live climb/descent waits for a
+/// real step past this gap before counting meters; GPX routes keep the raw step rule.
+enum ElevationNoise {
+    /// Meters. Sub-threshold flutter around one baseline never becomes climb or drop.
+    static let gpsStepMeters = 3.0
+    /// Reject vertical fixes worse than this. Negative means the fix is invalid.
+    static let maxVerticalAccuracyMeters = 25.0
+
+    struct Totals: Equatable {
+        var gainMeters = 0.0
+        var lossMeters = 0.0
+        var baselineMeters: Double?
+    }
+
+    /// Updates `totals` when `altitude` clears the step from the baseline.
+    /// Returns whether the baseline moved (a counted step or the first fix).
+    @discardableResult
+    static func note(
+        altitude: Double,
+        verticalAccuracy: Double,
+        into totals: inout Totals,
+        stepMeters: Double = gpsStepMeters
+    ) -> Bool {
+        guard altitude.isFinite, stepMeters > 0 else { return false }
+        guard verticalAccuracy >= 0, verticalAccuracy <= maxVerticalAccuracyMeters else { return false }
+        guard let baseline = totals.baselineMeters else {
+            totals.baselineMeters = altitude
+            return true
+        }
+        let delta = altitude - baseline
+        if delta >= stepMeters {
+            totals.gainMeters += delta
+            totals.baselineMeters = altitude
+            return true
+        }
+        if delta <= -stepMeters {
+            totals.lossMeters -= delta
+            totals.baselineMeters = altitude
+            return true
+        }
+        return false
+    }
+}
+
 enum RouteStats {
     static func distance(_ points: [GeoPoint]) -> Double {
         guard points.count >= 2 else { return 0 }
