@@ -288,6 +288,9 @@ final class LiveSession: ObservableObject {
         stopLocationUpdates()
         lastLocation = nil
         lastAltitude = nil
+        // Drop the altitude baseline so resume does not credit pause-time GPS
+        // wander as climb/descent. Cumulative gain/loss stay as-is.
+        elevationTotals.baselineMeters = nil
         if usedApple { recorder.pause() }
         pedometer.stopUpdates()
         publishLive()
@@ -353,7 +356,8 @@ final class LiveSession: ObservableObject {
         route = Self.displayRoute(recordedRoute)
         guard recordedRoute.count < 2 else { return }
         gpsDistance = 0
-        distanceMeters = max(healthDistance, 0)
+        healthDistance = 0
+        distanceMeters = 0
         elevationGainMeters = 0
         elevationLossMeters = 0
         elevationTotals = ElevationNoise.Totals()
@@ -620,6 +624,15 @@ final class LiveSession: ObservableObject {
         guard advancesTrack else {
             if location.altitude.isFinite {
                 altitudeMeters = location.altitude
+            }
+            // Gap / teleport: re-anchor so the next real step can be accepted.
+            // Without this, every later fix stays ≥ maxStep from a stale lastLocation
+            // and the track freezes for the rest of the session.
+            if moved >= TrackNoise.maxStepMeters,
+               location.horizontalAccuracy >= 0,
+               location.horizontalAccuracy < TrackNoise.maxHorizontalAccuracyMeters {
+                lastLocation = location
+                noteCourse(from: nil, to: location, moved: moved)
             }
             return
         }

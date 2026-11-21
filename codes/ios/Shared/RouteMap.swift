@@ -140,7 +140,14 @@ struct RouteMap: View {
             }
         }
         .onMapCameraChange(frequency: .onEnd) { _ in
-            guard suspendRefitAfterGesture, !adjustingCamera else { return }
+            // Swallow the settle from our own frameCamera / first fit so
+            // suspendRefitAfterGesture maps (watch live) stay free to follow
+            // until the wearer actually pans or pinches.
+            if adjustingCamera {
+                adjustingCamera = false
+                return
+            }
+            guard suspendRefitAfterGesture else { return }
             holdCamera = true
         }
         .onChange(of: route.count) { _, _ in refitIfAllowed() }
@@ -203,11 +210,6 @@ struct RouteMap: View {
 
     private func frameCamera() {
         adjustingCamera = true
-        defer {
-            DispatchQueue.main.async {
-                adjustingCamera = false
-            }
-        }
         var coords = route.map(\.coordinate) + planned.map(\.coordinate) + teammates.map(\.coordinate)
         coords.append(contentsOf: kilometers.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)

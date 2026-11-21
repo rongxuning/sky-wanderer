@@ -141,6 +141,10 @@ check(
     TrackNoise.acceptsTrackFix(horizontalAccuracy: 8, speedMetersPerSecond: 1.5, movedMeters: 8, isFirst: false),
     "a real step while moving is kept"
 )
+check(
+    !TrackNoise.acceptsTrackFix(horizontalAccuracy: 8, speedMetersPerSecond: 1.5, movedMeters: 55, isFirst: false),
+    "a gap past maxStep is not a distance step (LiveSession re-anchors lastLocation)"
+)
 
 // In-place nest: ~40m of path inside a ~15m footprint, like the 0.04km scribble.
 var nest = [point(31.22357, 121.41233, 5)]

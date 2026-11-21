@@ -17,10 +17,10 @@ final class WatchLink: NSObject, WCSessionDelegate, PhoneWatchLiveSink {
     static let shared = WatchLink()
     private let lock = NSLock()
     private var activation: CheckedContinuation<Void, Never>?
-    /// Tiny JPEG for the live map puck. Sent with the first active snapshot of a session.
+    /// Tiny JPEG for the live map puck. Re-attached on every active push so a
+    /// replaced application context cannot drop the photo before the watch reads it.
     private var pendingAvatarJPEG: Data?
     private var pendingAvatarName = ""
-    private var didSendAvatar = false
 
     func canLaunchWatchApp() async -> Bool {
         guard await activateIfNeeded() else { return false }
@@ -31,7 +31,6 @@ final class WatchLink: NSObject, WCSessionDelegate, PhoneWatchLiveSink {
     @MainActor
     func prepareLiveAvatar(image: UIImage?, name: String) {
         pendingAvatarName = name
-        didSendAvatar = false
         guard let image else {
             pendingAvatarJPEG = nil
             return
@@ -54,17 +53,13 @@ final class WatchLink: NSObject, WCSessionDelegate, PhoneWatchLiveSink {
             let session = WCSession.default
             guard session.activationState == .activated else { return }
             guard var payload = try? snapshot.dictionary() else { return }
-            if snapshot.active, !self.didSendAvatar {
+            if snapshot.active {
                 if let jpeg = self.pendingAvatarJPEG {
                     payload[PhoneWatchLiveSnapshot.avatarContextKey] = jpeg
                 }
                 if !self.pendingAvatarName.isEmpty {
                     payload[PhoneWatchLiveSnapshot.nameContextKey] = self.pendingAvatarName
                 }
-                self.didSendAvatar = true
-            }
-            if !snapshot.active {
-                self.didSendAvatar = false
             }
             try? session.updateApplicationContext(payload)
             if session.isReachable {
