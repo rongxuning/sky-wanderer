@@ -219,6 +219,23 @@ enum RouteKilometerLabels {
         return []
     }
 
+    /// Live workout. A disc sits on the point where its kilometer ended, with no lift.
+    static func trackDisc(kilometer: Int, at point: (x: Double, y: Double)) -> Disc {
+        Disc(kilometer: kilometer, centerX: point.x, centerY: point.y, radius: discSide(for: kilometer) / 2)
+    }
+
+    /// Kilometer numbers to show during a workout. The newest kilometer always shows.
+    /// An older one is dropped when it would touch a newer disc that is already kept,
+    /// which covers laps and out-and-back tracks as well as a zoomed-out map.
+    static func newestFirst(discs: [Disc], gap: Double = discGap) -> [Int] {
+        var kept: [Disc] = []
+        for disc in discs.filter({ $0.kilometer >= 1 }).sorted(by: { $0.kilometer > $1.kilometer }) {
+            if kept.contains(where: { $0.kilometer == disc.kilometer || overlaps($0, disc, gap: gap) }) { continue }
+            kept.append(disc)
+        }
+        return kept.map(\.kilometer).sorted()
+    }
+
     private static func separates(_ discs: [Disc], gap: Double) -> Bool {
         for index in discs.indices {
             for other in discs.indices where other < index {

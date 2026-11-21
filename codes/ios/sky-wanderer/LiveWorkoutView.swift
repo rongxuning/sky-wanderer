@@ -92,6 +92,7 @@ private struct LiveBody: View {
                     route: session.route,
                     planned: session.plannedRoute,
                     teammates: session.teammates,
+                    kilometers: session.kilometerMarks,
                     showsUser: !session.simulating,
                     userCoordinate: session.userFix?.coordinate,
                     basemapMode: basemap.mode,
