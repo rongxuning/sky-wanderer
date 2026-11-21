@@ -321,6 +321,7 @@ final class LiveSession: ObservableObject {
         stopLocationUpdates()
         heartProbe.stop()
         heartProbe.onHeart = nil
+        scrubStationaryTrack()
         let leftover = distanceMeters - splitStartDistance
         if leftover > 30 {
             closeSplit(distance: leftover, partial: true)
@@ -340,6 +341,28 @@ final class LiveSession: ObservableObject {
         liveActivity?.endLive()
         watchMirror?.endLive()
         return makeRecord(healthID: healthID, stoppedAt: stoppedAt)
+    }
+
+    /// Drops an in-place GPS nest so the saved record and Health route are not a scribble.
+    private func scrubStationaryTrack() {
+        let cleaned = TrackNoise.scrubStationaryDrift(recordedRoute)
+        guard cleaned.count != recordedRoute.count else { return }
+        recordedRoute = cleaned
+        route = Self.displayRoute(recordedRoute)
+        guard recordedRoute.count < 2 else { return }
+        gpsDistance = 0
+        distanceMeters = max(healthDistance, 0)
+        elevationGainMeters = 0
+        elevationLossMeters = 0
+        elevationTotals = ElevationNoise.Totals()
+        if let only = recordedRoute.first {
+            elevationTotals.baselineMeters = only.altitude
+            lastAltitude = only.altitude
+            altitudeMeters = only.altitude
+        }
+        kilometerMarks = []
+        splits = []
+        paceSecPerKm = 0
     }
 
     /// Drops the Apple session without saving it, then records only simulated points.
@@ -581,29 +604,26 @@ final class LiveSession: ObservableObject {
         )
         // Map follow uses every usable fix. Track and climb wait for real movement.
         userFix = fix
-        guard location.horizontalAccuracy < 40 else { return }
-        let moved: Double
-        if let lastLocation {
-            moved = location.distance(from: lastLocation)
-        } else {
-            moved = .infinity
-        }
-        // Standing still: GPS still wanders and altitude flutters ±10m. Do not grow
-        // the track or climb totals until the person actually moves.
-        let advancesTrack = moved > 0.8 && moved < 40
         let firstFix = lastLocation == nil
-        guard firstFix || advancesTrack else {
+        let moved = lastLocation.map { location.distance(from: $0) } ?? 0
+        let advancesTrack = TrackNoise.acceptsTrackFix(
+            horizontalAccuracy: location.horizontalAccuracy,
+            speedMetersPerSecond: location.speed,
+            movedMeters: moved,
+            isFirst: firstFix
+        )
+        guard advancesTrack else {
             if location.altitude.isFinite {
                 altitudeMeters = location.altitude
             }
             return
         }
-        if advancesTrack {
+        if !firstFix {
             gpsDistance += moved
         }
         lastLocation = location
         startTeammates(at: fix)
-        if location.speed > 0.4 {
+        if location.speed > TrackNoise.minSpeedMetersPerSecond {
             paceSecPerKm = 1000 / location.speed
         }
         appendPoint(fix)

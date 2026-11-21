@@ -54,6 +54,72 @@ enum ElevationNoise {
     }
 }
 
+/// Live GPS track. Standing still still produces a nest of short jumps; those must
+/// not become the saved route or the on-map polyline.
+enum TrackNoise {
+    /// Meters between accepted points. Sub-step wander is discarded.
+    static let minStepMeters = 5.0
+    static let maxStepMeters = 40.0
+    static let maxHorizontalAccuracyMeters = 20.0
+    /// Valid Core Location speeds below this mean the person is standing.
+    static let minSpeedMetersPerSecond = 0.45
+    /// Saved scribbles: path shorter than this and footprint smaller than `maxStationaryDiameterMeters`.
+    static let maxStationaryPathMeters = 80.0
+    static let maxStationaryDiameterMeters = 30.0
+
+    /// Whether this fix may extend the recorded track (map follow still uses every fix).
+    static func acceptsTrackFix(
+        horizontalAccuracy: Double,
+        speedMetersPerSecond: Double,
+        movedMeters: Double,
+        isFirst: Bool
+    ) -> Bool {
+        guard horizontalAccuracy >= 0, horizontalAccuracy < maxHorizontalAccuracyMeters else { return false }
+        if isFirst { return true }
+        guard movedMeters > minStepMeters, movedMeters < maxStepMeters else { return false }
+        // Negative speed means "unknown". Only reject when CL explicitly says nearly still.
+        if speedMetersPerSecond >= 0, speedMetersPerSecond < minSpeedMetersPerSecond {
+            return false
+        }
+        return true
+    }
+
+    /// Collapses an in-place GPS nest to a single point (or empty) so the detail map
+    /// does not show a scribble after a stationary session.
+    static func scrubStationaryDrift(_ points: [GeoPoint]) -> [GeoPoint] {
+        guard points.count >= 2 else { return points }
+        let path = RouteStats.distance(points)
+        let diameter = footprintDiameter(points)
+        if path <= maxStationaryPathMeters, diameter <= maxStationaryDiameterMeters {
+            return Array(points.prefix(1))
+        }
+        // Short activity with a long scribbled path inside a tiny footprint.
+        if path < 150, diameter > 1, path / diameter >= 4 {
+            return Array(points.prefix(1))
+        }
+        return points
+    }
+
+    /// Bounding-box diagonal. Enough to tell an in-place nest from a real out-and-back.
+    static func footprintDiameter(_ points: [GeoPoint]) -> Double {
+        guard let first = points.first else { return 0 }
+        var minLat = first.latitude
+        var maxLat = first.latitude
+        var minLon = first.longitude
+        var maxLon = first.longitude
+        for point in points {
+            minLat = min(minLat, point.latitude)
+            maxLat = max(maxLat, point.latitude)
+            minLon = min(minLon, point.longitude)
+            maxLon = max(maxLon, point.longitude)
+        }
+        return RouteStats.metersBetween(
+            GeoPoint(latitude: minLat, longitude: minLon, altitude: 0, timestamp: nil),
+            GeoPoint(latitude: maxLat, longitude: maxLon, altitude: 0, timestamp: nil)
+        )
+    }
+}
+
 enum RouteStats {
     static func distance(_ points: [GeoPoint]) -> Double {
         guard points.count >= 2 else { return 0 }

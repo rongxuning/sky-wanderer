@@ -121,6 +121,49 @@ check(
     "invalid verticalAccuracy is ignored"
 )
 
+check(
+    TrackNoise.acceptsTrackFix(horizontalAccuracy: 8, speedMetersPerSecond: -1, movedMeters: 0, isFirst: true),
+    "first fix with good accuracy is kept"
+)
+check(
+    !TrackNoise.acceptsTrackFix(horizontalAccuracy: 35, speedMetersPerSecond: -1, movedMeters: 0, isFirst: true),
+    "first fix with poor accuracy is dropped"
+)
+check(
+    !TrackNoise.acceptsTrackFix(horizontalAccuracy: 8, speedMetersPerSecond: 0.1, movedMeters: 8, isFirst: false),
+    "near-zero speed is standing still"
+)
+check(
+    !TrackNoise.acceptsTrackFix(horizontalAccuracy: 8, speedMetersPerSecond: -1, movedMeters: 2, isFirst: false),
+    "sub-5m jump is GPS wander"
+)
+check(
+    TrackNoise.acceptsTrackFix(horizontalAccuracy: 8, speedMetersPerSecond: 1.5, movedMeters: 8, isFirst: false),
+    "a real step while moving is kept"
+)
+
+// In-place nest: ~40m of path inside a ~15m footprint, like the 0.04km scribble.
+var nest = [point(31.22357, 121.41233, 5)]
+for (index, offset) in [0.00004, -0.00005, 0.00006, -0.00003, 0.00005, -0.00004, 0.00002].enumerated() {
+    let lat = 31.22357 + offset
+    let lon = 121.41233 + (index % 2 == 0 ? offset : -offset)
+    nest.append(point(lat, lon, 5 + Double(index)))
+}
+let nestPath = RouteStats.distance(nest)
+check(nestPath > 20 && nestPath < 80, "fixture path is a short scribble, got \(nestPath)")
+let scrubbed = TrackNoise.scrubStationaryDrift(nest)
+check(scrubbed.count == 1, "stationary nest collapses to one point, got \(scrubbed.count)")
+
+// A straight 200m line must survive scrubbing.
+let leg = [
+    point(31.22, 121.41, 5),
+    point(31.2205, 121.41, 5),
+    point(31.2210, 121.41, 5),
+    point(31.2215, 121.41, 5),
+    point(31.2220, 121.41, 5)
+]
+check(TrackNoise.scrubStationaryDrift(leg).count == leg.count, "a real out-and-back footprint is kept")
+
 let preserved = parse("""
 <gpx creator="Sky" xmlns="http://www.topografix.com/GPX/1/1">
   <metadata><name>元数据</name><author><name>阿宁</name></author></metadata>
