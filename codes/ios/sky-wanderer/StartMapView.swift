@@ -162,9 +162,9 @@ struct StartMapView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(SkyTheme.Color.ink)
+                .foregroundStyle(SkyTheme.Color.onStarryGray)
                 .frame(width: CGFloat(StartMapChrome.toolDiameter), height: CGFloat(StartMapChrome.toolDiameter))
-                .background(SkyTheme.Color.card, in: Circle())
+                .background(SkyTheme.Color.starryGray, in: Circle())
                 .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
         }
         .buttonStyle(.plain)

@@ -23,9 +23,9 @@ enum SkyTheme {
         static let nickname = SkyHex.color(0x636366)
         static let tertiary = SkyHex.color(0xC6C6C8)
         static let separator = SkyHex.color(0xC6C6C8)
-        /// 星空灰. Home floating tab capsule and avatar plate.
+        /// 星空灰. Home floating tab capsule, avatar plate, and training-map tool buttons.
         static let starryGray = SkyHex.color(0x2C2C2E)
-        /// Unselected tab icon and label on `starryGray`.
+        /// Icon and label on `starryGray` when the control is not the selected brand-blue state.
         static let onStarryGray = SkyHex.color(0xC6C6C8)
         static let success = SkyHex.color(0x34C759)
         static let warning = SkyHex.color(0xFF9500)

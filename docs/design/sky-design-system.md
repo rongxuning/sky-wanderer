@@ -30,7 +30,7 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 | `secondary` | `#8E8E93` | 次要文字、浅色底上的未选中标签 |
 | `nickname` | `#636366` | 记录详情里，头像正下方的用户名 |
 | `tertiary` | `#C6C6C8` | 更弱的说明。分隔线与此同色，token 名 `separator` |
-| `starryGray` | `#2C2C2E` | 星空灰。首页浮动标签胶囊与头像底盘 |
+| `starryGray` | `#2C2C2E` | 星空灰。首页浮动标签胶囊、头像底盘，以及训练地图左侧圆形工具按钮 |
 | `onStarryGray` | `#C6C6C8` | 铺在 `starryGray` 上的未选中图标和文字 |
 | `success` | `#34C759` | 完成、正向状态 |
 | `warning` | `#FF9500` | 需要注意 |
