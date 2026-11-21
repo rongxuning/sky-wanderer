@@ -447,7 +447,7 @@ enum AppleHealth {
     private static var shareTypes: Set<HKSampleType> {
         // save(route:) writes an HKWorkoutRoute, so share permission has to include the series type.
         var types: Set<HKSampleType> = [HKObjectType.workoutType(), HKSeriesType.workoutRoute()]
-        for identifier in [HKQuantityTypeIdentifier.heartRate, .activeEnergyBurned, .distanceWalkingRunning] {
+        for identifier in [HKQuantityTypeIdentifier.heartRate, .activeEnergyBurned, .distanceWalkingRunning, .stepCount] {
             if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
                 types.insert(type)
             }
@@ -495,6 +495,7 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
     struct Reading {
         var heartRate: Double?
         var distance: Double?
+        var steps: Double?
         var energy: Double?
         var power: Double?
         var stride: Double?
@@ -516,33 +517,83 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         configuration.locationType = .outdoor
         let session = try HKWorkoutSession(healthStore: AppleHealth.store, configuration: configuration)
         let builder = session.associatedWorkoutBuilder()
-        let dataSource = HKLiveWorkoutDataSource(healthStore: AppleHealth.store, workoutConfiguration: configuration)
-        if let oscillation = HKQuantityType.quantityType(forIdentifier: .runningVerticalOscillation) {
-            dataSource.enableCollection(for: oscillation, predicate: nil)
-        }
-        builder.dataSource = dataSource
+        try await begin(session: session, builder: builder, configuration: configuration, start: Date())
+    }
+
+    /// Mirrored session the watch already started. Do not start the activity again or move its start date.
+    func adoptMirrored(_ session: HKWorkoutSession) async throws {
+        let configuration = session.workoutConfiguration
+        let builder = session.associatedWorkoutBuilder()
+        let start = session.startDate ?? Date()
+        builder.dataSource = Self.makeDataSource(configuration)
         session.delegate = self
         builder.delegate = self
         self.session = session
         self.builder = builder
-        let start = Date()
+        let alreadyRunning = session.state == .running || session.state == .paused
+        if !alreadyRunning {
+            session.startActivity(with: start)
+        }
+        do {
+            try await collect(builder, from: start)
+            collecting = true
+        } catch {
+            let running = alreadyRunning || session.state == .running || session.state == .paused
+            if running {
+                collecting = true
+                return
+            }
+            discard()
+            throw error
+        }
+    }
+
+    static func makeDataSource(_ configuration: HKWorkoutConfiguration) -> HKLiveWorkoutDataSource {
+        let dataSource = HKLiveWorkoutDataSource(healthStore: AppleHealth.store, workoutConfiguration: configuration)
+        let identifiers: [HKQuantityTypeIdentifier] = [
+            .heartRate, .stepCount, .distanceWalkingRunning, .activeEnergyBurned,
+            .runningPower, .runningStrideLength, .runningGroundContactTime, .runningVerticalOscillation
+        ]
+        for identifier in identifiers {
+            if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
+                dataSource.enableCollection(for: type, predicate: nil)
+            }
+        }
+        return dataSource
+    }
+
+    private func begin(
+        session: HKWorkoutSession,
+        builder: HKLiveWorkoutBuilder,
+        configuration: HKWorkoutConfiguration,
+        start: Date
+    ) async throws {
+        builder.dataSource = Self.makeDataSource(configuration)
+        session.delegate = self
+        builder.delegate = self
+        self.session = session
+        self.builder = builder
         session.startActivity(with: start)
         do {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                builder.beginCollection(withStart: start) { success, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                    } else if success {
-                        continuation.resume()
-                    } else {
-                        continuation.resume(throwing: RecorderError.failed)
-                    }
-                }
-            }
+            try await collect(builder, from: start)
             collecting = true
         } catch {
             discard()
             throw error
+        }
+    }
+
+    private func collect(_ builder: HKLiveWorkoutBuilder, from start: Date) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            builder.beginCollection(withStart: start) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: RecorderError.failed)
+                }
+            }
         }
     }
 
@@ -617,6 +668,7 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         Reading(
             heartRate: recent(builder, .heartRate, HKUnit.count().unitDivided(by: .minute())),
             distance: sum(builder, .distanceWalkingRunning, .meter()),
+            steps: sum(builder, .stepCount, .count()),
             energy: sum(builder, .activeEnergyBurned, .kilocalorie()),
             power: recent(builder, .runningPower, .watt()),
             stride: recent(builder, .runningStrideLength, .meter()),

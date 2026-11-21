@@ -56,6 +56,7 @@ final class PhoneAppState: ObservableObject {
         }
         SessionKeychain.store(SessionContinuity.credential(in: loaded))
         Task { await self.confirmRemoteSession() }
+        Task { await WorkoutLiveActivityCenter.shared.endLingering() }
     }
 
     private static func ensurePreset(_ database: inout Database) {

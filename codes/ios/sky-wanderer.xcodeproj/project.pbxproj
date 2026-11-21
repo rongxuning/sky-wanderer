@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000014 /* sky-wanderer-watch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* sky-wanderer-watch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A10000000000000000000026 /* sky-wanderer-live.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A10000000000000000000021 /* sky-wanderer-live.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -17,6 +18,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = A10000000000000000000003;
 			remoteInfo = "sky-wanderer-watch";
+		};
+		A10000000000000000000028 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A10000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10000000000000000000027;
+			remoteInfo = "sky-wanderer-live";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -32,12 +40,24 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10000000000000000000025 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A10000000000000000000026 /* sky-wanderer-live.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000004 /* sky-wanderer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "sky-wanderer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000005 /* sky-wanderer-watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "sky-wanderer-watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000020 /* Sky.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Sky.xcconfig; sourceTree = "<group>"; };
+		A10000000000000000000021 /* sky-wanderer-live.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "sky-wanderer-live.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -55,6 +75,23 @@
 			);
 			target = A10000000000000000000003 /* sky-wanderer-watch */;
 		};
+		A10000000000000000000023 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				LiveActivity.entitlements,
+				WorkoutLiveWidget.swift,
+			);
+			target = A10000000000000000000002 /* sky-wanderer */;
+		};
+		A10000000000000000000024 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				LiveActivity.entitlements,
+			);
+			target = A10000000000000000000027 /* sky-wanderer-live */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -62,6 +99,8 @@
 		A10000000000000000000006 /* sky-wanderer */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000B /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "sky-wanderer"; sourceTree = "<group>"; };
 		A10000000000000000000007 /* sky-wanderer-watch */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A1000000000000000000000C /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = "sky-wanderer-watch"; sourceTree = "<group>"; };
 		A10000000000000000000008 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
+		/* WorkoutActivityAttributes.swift is in both the app and the live-activity extension. The widget file and plist are target exceptions. */
+		A10000000000000000000022 /* LiveActivity */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (A10000000000000000000023 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, A10000000000000000000024 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = LiveActivity; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,6 +118,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1000000000000000000002B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -89,6 +135,7 @@
 				A10000000000000000000006 /* sky-wanderer */,
 				A10000000000000000000007 /* sky-wanderer-watch */,
 				A10000000000000000000008 /* Shared */,
+				A10000000000000000000022 /* LiveActivity */,
 				A1000000000000000000000A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -98,6 +145,7 @@
 			children = (
 				A10000000000000000000004 /* sky-wanderer.app */,
 				A10000000000000000000005 /* sky-wanderer-watch.app */,
+				A10000000000000000000021 /* sky-wanderer-live.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -113,15 +161,18 @@
 				A1000000000000000000000E /* Frameworks */,
 				A1000000000000000000000F /* Resources */,
 				A10000000000000000000010 /* Embed Watch Content */,
+				A10000000000000000000025 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				A10000000000000000000015 /* PBXTargetDependency */,
+				A10000000000000000000029 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A10000000000000000000006 /* sky-wanderer */,
 				A10000000000000000000008 /* Shared */,
+				A10000000000000000000022 /* LiveActivity */,
 			);
 			name = "sky-wanderer";
 			productName = "sky-wanderer";
@@ -149,6 +200,26 @@
 			productReference = A10000000000000000000005 /* sky-wanderer-watch.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A10000000000000000000027 /* sky-wanderer-live */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000000000000000000002F /* Build configuration list for PBXNativeTarget "sky-wanderer-live" */;
+			buildPhases = (
+				A1000000000000000000002A /* Sources */,
+				A1000000000000000000002B /* Frameworks */,
+				A1000000000000000000002C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A10000000000000000000022 /* LiveActivity */,
+			);
+			name = "sky-wanderer-live";
+			productName = "sky-wanderer-live";
+			productReference = A10000000000000000000021 /* sky-wanderer-live.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -163,6 +234,9 @@
 						CreatedOnToolsVersion = 16.0;
 					};
 					A10000000000000000000003 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+					A10000000000000000000027 = {
 						CreatedOnToolsVersion = 16.0;
 					};
 				};
@@ -183,6 +257,7 @@
 			targets = (
 				A10000000000000000000002 /* sky-wanderer */,
 				A10000000000000000000003 /* sky-wanderer-watch */,
+				A10000000000000000000027 /* sky-wanderer-live */,
 			);
 		};
 /* End PBXProject section */
@@ -196,6 +271,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000000013 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A1000000000000000000002C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -219,6 +301,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A1000000000000000000002A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -226,6 +315,11 @@
 			isa = PBXTargetDependency;
 			target = A10000000000000000000003 /* sky-wanderer-watch */;
 			targetProxy = A10000000000000000000016 /* PBXContainerItemProxy */;
+		};
+		A10000000000000000000029 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10000000000000000000027 /* sky-wanderer-live */;
+			targetProxy = A10000000000000000000028 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -399,6 +493,68 @@
 			};
 			name = Release;
 		};
+		A1000000000000000000002D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QTV9DUCAY7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sky;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rongxuning.sky-wanderer.live";
+				PRODUCT_MODULE_NAME = SkyWandererLive;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A1000000000000000000002E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = LiveActivity/LiveActivity.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = QTV9DUCAY7;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LiveActivity/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Sky;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rongxuning.sky-wanderer.live";
+				PRODUCT_MODULE_NAME = SkyWandererLive;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -425,6 +581,15 @@
 			buildConfigurations = (
 				A1000000000000000000001E /* Debug */,
 				A1000000000000000000001F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000000000000000000002F /* Build configuration list for PBXNativeTarget "sky-wanderer-live" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000002D /* Debug */,
+				A1000000000000000000002E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -36,6 +36,13 @@ struct SkyTrackMap: UIViewRepresentable {
     var vertices: [TrackVertex] = []
     /// Library editing fits once. The other maps follow `RouteMap`'s refit.
     var refitsOnChange: Bool = true
+    /// Live workout. After a pinch or drag, the camera stays put until locate.
+    var suspendRefitAfterGesture: Bool = false
+    /// Locate. Keeps the user in the middle of the map area above `bottomInset`.
+    var followsUser: Bool = false
+    /// Bumps when locate is tapped so a held camera recenters once.
+    var locateToken: Int = 0
+    var onUserCameraChange: (() -> Void)? = nil
     var onTap: ((CLLocationCoordinate2D) -> Void)? = nil
     var onVertexDrag: ((Int, CLLocationCoordinate2D) -> Void)? = nil
 
@@ -84,6 +91,10 @@ struct SkyTrackMap: UIViewRepresentable {
         coordinator.obscuredBottomFraction = obscuredBottomFraction
         coordinator.fitToken = fitToken
         coordinator.refitsOnChange = refitsOnChange
+        coordinator.suspendRefitAfterGesture = suspendRefitAfterGesture
+        coordinator.followsUser = followsUser
+        coordinator.locateToken = locateToken
+        coordinator.onUserCameraChange = onUserCameraChange
         coordinator.bottomInset = bottomInset
         container.placement = creditPlacement
         container.creditBottomInset = max(creditBottomInset, bottomInset)
@@ -168,6 +179,10 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     var obscuredBottomFraction = 0.0
     var fitToken = 0
     var refitsOnChange = true
+    var suspendRefitAfterGesture = false
+    var followsUser = false
+    var locateToken = 0
+    var onUserCameraChange: (() -> Void)?
     var bottomInset: CGFloat = 0
     var tap: UITapGestureRecognizer?
     var vertexPan: UIPanGestureRecognizer?
@@ -187,8 +202,14 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     private var framedUser = false
     private var didFit = false
     private var lastFitToken = -1
+    private var lastLocateToken = -1
     private var lastSize = CGSize.zero
     private var dragIndex: Int?
+    /// A finger moved the camera. Route updates must not call `fit()` until locate.
+    private var holdCamera = false
+    private var adjustingCamera = false
+    private var lastCentered: CLLocationCoordinate2D?
+    private var lastCenteredInset: CGFloat = -1
 
     func noteLayout(_ container: SkyMapContainer) {
         let size = container.map.bounds.size
@@ -196,6 +217,11 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         let sizeChanged = abs(size.width - lastSize.width) > 0.5 || abs(size.height - lastSize.height) > 0.5
         lastSize = size
         guard sizeChanged else { return }
+        if followsUser, !holdCamera {
+            centerUser(on: container.map, animated: false)
+            return
+        }
+        guard !holdCamera else { return }
         if !didFit || (refitsOnChange && obscuredTopFraction > 0.02) {
             fit(on: container.map)
         }
@@ -243,10 +269,54 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         if firstUser { framedUser = true }
         let tokenChanged = fitToken != lastFitToken
         if tokenChanged { lastFitToken = fitToken }
+        let locateJumped = locateToken != lastLocateToken
+        if locateJumped {
+            lastLocateToken = locateToken
+            holdCamera = false
+        }
+        if followsUser && !holdCamera {
+            if locateJumped || lastCentered == nil || userMoved() || insetMoved() {
+                centerUser(on: map, animated: locateJumped && locateToken > 0)
+            }
+            return
+        }
+        guard !holdCamera else { return }
         let followContent = refitsOnChange && (routeDirty || plannedDirty)
         if modeChanged || tokenChanged || firstUser || followContent || !didFit {
             fit(on: map)
         }
+    }
+
+    func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+        guard suspendRefitAfterGesture, !adjustingCamera, !holdCamera else { return }
+        guard userIsGesturing(on: mapView) else { return }
+        holdCamera = true
+        if mapView.userTrackingMode != .none {
+            mapView.setUserTrackingMode(.none, animated: false)
+        }
+        onUserCameraChange?()
+    }
+
+    func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+        adjustingCamera = false
+    }
+
+    private func userIsGesturing(on view: UIView) -> Bool {
+        for recognizer in view.gestureRecognizers ?? [] {
+            if recognizer === tap || recognizer === vertexPan { continue }
+            let movesCamera = recognizer is UIPanGestureRecognizer || recognizer is UIPinchGestureRecognizer
+            guard movesCamera else { continue }
+            switch recognizer.state {
+            case .began, .changed, .ended:
+                return true
+            default:
+                break
+            }
+        }
+        for subview in view.subviews where userIsGesturing(on: subview) {
+            return true
+        }
+        return false
     }
 
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -362,17 +432,84 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         guard map.bounds.width > 40, map.bounds.height > 40 else { return }
         let hasLine = appliedRoute.count >= 2 || appliedPlanned.count >= 2 || !appliedTeammates.isEmpty
         if showsUser, !hasLine {
+            if suspendRefitAfterGesture {
+                centerUser(on: map, animated: false)
+                return
+            }
+            adjustingCamera = true
             map.setUserTrackingMode(.follow, animated: false)
             didFit = true
+            releaseCameraAdjust()
             return
         }
         if map.userTrackingMode != .none {
+            adjustingCamera = true
             map.setUserTrackingMode(.none, animated: false)
+            releaseCameraAdjust()
         }
         guard let region = camera(on: map) else { return }
         didFit = true
         if regionClose(map.region, to: region) { return }
+        adjustingCamera = true
         map.setRegion(region, animated: false)
+        releaseCameraAdjust()
+    }
+
+    /// Puts the user in the middle of the map that is not covered by `bottomInset`.
+    /// `setRegion` centers on the full view, so the latitude is shifted by half the covered band.
+    private func centerUser(on map: MKMapView, animated: Bool) {
+        guard map.bounds.width > 40, map.bounds.height > 40 else { return }
+        guard let stored = subjectCoordinate(on: map) else { return }
+        let point = displayed(stored)
+        let height = map.bounds.height
+        let inset = min(max(0, bottomInset), height * 0.85)
+        let current = map.region.span
+        let span: MKCoordinateSpan
+        if current.latitudeDelta > 0.0004, current.latitudeDelta < 0.2,
+           current.longitudeDelta > 0.0004, current.longitudeDelta < 0.2 {
+            span = current
+        } else {
+            span = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
+        }
+        var center = point
+        center.latitude -= span.latitudeDelta * (inset / (2 * height))
+        let region = MKCoordinateRegion(center: center, span: span)
+        lastCentered = stored
+        lastCenteredInset = bottomInset
+        didFit = true
+        if regionClose(map.region, to: region) { return }
+        adjustingCamera = true
+        if map.userTrackingMode != .none {
+            map.setUserTrackingMode(.none, animated: false)
+        }
+        map.setRegion(region, animated: animated)
+        releaseCameraAdjust()
+    }
+
+    private func subjectCoordinate(on map: MKMapView) -> CLLocationCoordinate2D? {
+        if let userCoordinate { return userCoordinate }
+        if showsUser, let location = map.userLocation.location, location.horizontalAccuracy >= 0 {
+            return location.coordinate
+        }
+        return nil
+    }
+
+    private func userMoved() -> Bool {
+        guard let userCoordinate else { return false }
+        guard let lastCentered else { return true }
+        let latitude = userCoordinate.latitude - lastCentered.latitude
+        let longitude = userCoordinate.longitude - lastCentered.longitude
+        return latitude * latitude + longitude * longitude > 0.0000000004
+    }
+
+    private func insetMoved() -> Bool {
+        abs(bottomInset - lastCenteredInset) > 0.5
+    }
+
+    private func releaseCameraAdjust() {
+        DispatchQueue.main.async { [weak self] in
+            self?.adjustingCamera = false
+        }
     }
 
     private func camera(on map: MKMapView) -> MKCoordinateRegion? {

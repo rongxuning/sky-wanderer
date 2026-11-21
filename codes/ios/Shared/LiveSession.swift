@@ -3,6 +3,27 @@ import CoreLocation
 import CoreMotion
 import Foundation
 
+/// Where the current heart-rate number can come from. The phone has no sensor of its own.
+enum LiveHeartSource: Equatable {
+    case unknown
+    case watch
+    case none
+}
+
+/// Lock-screen activity. The phone app sets this; the watch leaves it nil.
+@MainActor
+protocol LiveActivitySink: AnyObject {
+    func noteLive(
+        sportTitle: String,
+        elapsed: TimeInterval,
+        distanceMeters: Double,
+        paceSecPerKm: Double,
+        heartRate: Double,
+        paused: Bool
+    )
+    func endLive()
+}
+
 @MainActor
 final class LiveSession: ObservableObject {
     enum Phase {
@@ -23,6 +44,8 @@ final class LiveSession: ObservableObject {
     @Published var distanceMeters: Double = 0
     @Published var paceSecPerKm: Double = 0
     @Published var heartRate: Double = 0
+    /// `.none` means this session has no heart-rate sensor. Never filled from older Health samples.
+    @Published var heartSource: LiveHeartSource = .unknown
     @Published var cadence: Double = 0
     @Published var energyKilocalories: Double = 0
     @Published var elevationGainMeters: Double = 0
@@ -33,9 +56,12 @@ final class LiveSession: ObservableObject {
     @Published private(set) var cadenceSeries: [SeriesPoint] = []
     /// Downsampled for the map. The saved record and the HealthKit route use `recordedRoute`.
     @Published var route: [GeoPoint] = []
+    /// Latest accepted fix. The live map recenters on this, including before the track has two points.
+    @Published var userFix: GeoPoint?
     @Published var splits: [KilometerSplit] = []
     @Published var teammates: [TeammateLive] = []
     private(set) var routeSaveWarning: String?
+    weak var liveActivity: LiveActivitySink?
 
     private let recorder = AppleWorkoutRecorder()
     private let sync: TeammateSync = LocalTeammateSimulator()
@@ -66,6 +92,9 @@ final class LiveSession: ObservableObject {
     private var powerSeries: [SeriesPoint] = []
     private var oscillationSeries: [SeriesPoint] = []
     private var stepCount = 0.0
+    /// Watch step totals. Phone pedometer cadence is ignored while this window is still fresh.
+    private var watchStepsAnchor: (count: Double, date: Date)?
+    private var watchCadenceFreshUntil = Date.distantPast
     private var latestPower = 0.0
     private var latestStride = 0.0
     private var latestContact = 0.0
@@ -74,6 +103,8 @@ final class LiveSession: ObservableObject {
     private var simPoint = SampleLibrary.plannedRoutes(around: MapOrigin.fallback)[0].points.first ?? MapOrigin.fallback
     private var sampleTick = 0
     private var usedApple = false
+    /// Mirrored watch session is producing this workout. Phone pedometer is only the fallback.
+    private var preferWatchMetrics = false
     private var leavingApple = false
     private var teammatesStarted = false
     /// Every accepted point. Display uses a downsample of this.
@@ -116,12 +147,21 @@ final class LiveSession: ObservableObject {
         runningSince = Date()
         wireCallbacks()
         startTimer()
+        publishLive()
         // Location stays off until HealthKit either starts or we choose simulation.
         // Points collected before that choice were being kept, then simulation jumped
         // to the fallback origin and appended a fake track onto them.
         if AppleHealth.available {
             do {
                 try await AppleHealth.authorize()
+                guard phase == .running else { return }
+                // GPS starts before the watch answers, so the first seconds of the track are not dropped.
+                startPedometer()
+                startLocation()
+                if await adoptMirroredWatch() {
+                    scheduleTeammates()
+                    return
+                }
                 guard phase == .running else { return }
                 try await recorder.start(sport: sport)
                 guard phase == .running else {
@@ -130,10 +170,9 @@ final class LiveSession: ObservableObject {
                     return
                 }
                 usedApple = true
+                heartSource = .none
                 simulating = false
                 statusText = ""
-                startPedometer()
-                startLocation()
             } catch {
                 guard phase == .running else { return }
                 beginSimulation("健康数据没有启动，已改用本地模拟")
@@ -142,6 +181,39 @@ final class LiveSession: ObservableObject {
             beginSimulation("这台设备没有健康数据，已改用本地模拟")
         }
         guard phase == .running else { return }
+        scheduleTeammates()
+    }
+
+    /// Phone asks the paired watch to record this workout. False on watchOS, with no watch, or if mirroring does not start.
+    private func adoptMirroredWatch() async -> Bool {
+        #if os(iOS)
+        guard let mirrored = await WatchWorkoutBridge.mirroredSession(for: sport) else { return false }
+        guard phase == .running else {
+            mirrored.end()
+            return false
+        }
+        do {
+            try await recorder.adoptMirrored(mirrored)
+        } catch {
+            recorder.discard()
+            return false
+        }
+        guard phase == .running else {
+            recorder.discard()
+            return false
+        }
+        usedApple = true
+        preferWatchMetrics = true
+        heartSource = .watch
+        simulating = false
+        statusText = ""
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    private func scheduleTeammates() {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard let self, self.phase == .running, !self.teammatesStarted else { return }
@@ -158,6 +230,17 @@ final class LiveSession: ObservableObject {
         }
     }
 
+    /// Foreground return. Elapsed time is derived from the clock, and location is started again if the system stopped it.
+    func catchUp() {
+        guard phase == .running else { return }
+        elapsed = movingTime(at: Date())
+        publishLive()
+        guard !paused, !simulating else { return }
+        let status = location.authorizationStatus
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
+        startLocation()
+    }
+
     func pause() {
         guard phase == .running, !paused else { return }
         let now = Date()
@@ -165,11 +248,12 @@ final class LiveSession: ObservableObject {
         banked = elapsed
         runningSince = nil
         paused = true
-        location.stopUpdatingLocation()
+        stopLocationUpdates()
         lastLocation = nil
         lastAltitude = nil
         if usedApple { recorder.pause() }
         pedometer.stopUpdates()
+        publishLive()
     }
 
     func resume() {
@@ -177,11 +261,12 @@ final class LiveSession: ObservableObject {
         runningSince = Date()
         paused = false
         if usedApple { recorder.resume() }
+        publishLive()
         guard !simulating else { return }
         startPedometer()
         ignoreNextLocation = true
         resumeAnchorDate = Date()
-        location.startUpdatingLocation()
+        startLocation()
     }
 
     func stop() async -> WorkoutRecord {
@@ -198,7 +283,7 @@ final class LiveSession: ObservableObject {
         phase = .finished
         timer?.invalidate()
         pedometer.stopUpdates()
-        location.stopUpdatingLocation()
+        stopLocationUpdates()
         let leftover = distanceMeters - splitStartDistance
         if leftover > 30 {
             closeSplit(distance: leftover, partial: true)
@@ -215,6 +300,7 @@ final class LiveSession: ObservableObject {
         }
         usedApple = false
         sync.stop()
+        liveActivity?.endLive()
         return makeRecord(healthID: healthID, stoppedAt: stoppedAt)
     }
 
@@ -223,7 +309,7 @@ final class LiveSession: ObservableObject {
         guard phase == .running, !simulating, !leavingApple else { return }
         leavingApple = true
         usedApple = false
-        location.stopUpdatingLocation()
+        stopLocationUpdates()
         pedometer.stopUpdates()
         if recorder.isSessionOpen {
             recorder.discard()
@@ -260,12 +346,26 @@ final class LiveSession: ObservableObject {
         recorder.onFailure = { [weak self] message in
             Task { @MainActor in
                 guard let self, self.phase == .running, !self.simulating, !self.leavingApple else { return }
+                // A dropped watch session must not invent a track or a heart rate. Phone GPS and pedometer stay.
+                if self.preferWatchMetrics {
+                    self.preferWatchMetrics = false
+                    self.heartSource = .none
+                    self.watchCadenceFreshUntil = .distantPast
+                    self.watchStepsAnchor = nil
+                    self.statusText = "手表锻炼中断，已改用手机传感器"
+                    return
+                }
                 self.beginSimulation("锻炼中断（\(message)），已改用本地模拟")
             }
         }
         locationProxy.onLocation = { [weak self] location in
             Task { @MainActor in
                 self?.apply(location)
+            }
+        }
+        locationProxy.onAuthorization = { [weak self] manager in
+            Task { @MainActor in
+                self?.enableBackgroundLocation(manager)
             }
         }
     }
@@ -289,11 +389,14 @@ final class LiveSession: ObservableObject {
             let steps = data.numberOfSteps.doubleValue
             Task { @MainActor in
                 guard let self, !self.simulating, !self.paused, !self.leavingApple else { return }
-                if cadence > 0 {
+                let watchFresh = Date() < self.watchCadenceFreshUntil
+                if cadence > 0, !watchFresh {
                     self.cadence = cadence
                     self.splitCadences.append(cadence)
                 }
-                self.stepCount = steps
+                if self.watchStepsAnchor == nil {
+                    self.stepCount = steps
+                }
             }
         }
     }
@@ -302,8 +405,30 @@ final class LiveSession: ObservableObject {
         location.delegate = locationProxy
         location.activityType = .fitness
         location.desiredAccuracy = kCLLocationAccuracyBest
+        location.distanceFilter = kCLDistanceFilterNone
+        location.pausesLocationUpdatesAutomatically = false
         location.requestWhenInUseAuthorization()
-        location.startUpdatingLocation()
+        enableBackgroundLocation(location)
+    }
+
+    /// Background updates stay off until When In Use is granted. The delegate calls this again after the prompt.
+    private func enableBackgroundLocation(_ manager: CLLocationManager) {
+        guard phase == .running, !paused, !simulating else { return }
+        let status = manager.authorizationStatus
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
+        #if os(iOS)
+        manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = true
+        #endif
+        manager.startUpdatingLocation()
+    }
+
+    private func stopLocationUpdates() {
+        location.stopUpdatingLocation()
+        #if os(iOS)
+        location.allowsBackgroundLocationUpdates = false
+        location.showsBackgroundLocationIndicator = false
+        #endif
     }
 
     private func tick() {
@@ -318,6 +443,7 @@ final class LiveSession: ObservableObject {
         if sampleTick % 5 == 0 {
             captureSample()
         }
+        publishLive()
         if let last = route.last {
             sync.publish(AthleteSnapshot(
                 latitude: last.latitude,
@@ -339,6 +465,7 @@ final class LiveSession: ObservableObject {
         simPoint.timestamp = Date()
         gpsDistance += speed
         appendPoint(simPoint)
+        userFix = simPoint
         paceSecPerKm = 1000 / speed
         heartRate = (sport == .running ? 156 : 118) + sin(elapsed / 12) * 6
         cadence = sport == .running ? 174 + sin(elapsed / 9) * 4 : 110 + sin(elapsed / 10) * 3
@@ -358,6 +485,9 @@ final class LiveSession: ObservableObject {
         if let distance = reading.distance, distance > 0 {
             healthDistance = distance
         }
+        if preferWatchMetrics, let steps = reading.steps {
+            noteWatchSteps(steps)
+        }
         if let energy = reading.energy, energy > 0 {
             energyKilocalories = energy
         }
@@ -368,13 +498,43 @@ final class LiveSession: ObservableObject {
         refreshDistance()
     }
 
+    /// Current cadence from the watch workout's cumulative step count. Phone pedometer stays the fallback.
+    private func noteWatchSteps(_ steps: Double) {
+        guard steps.isFinite, steps >= 0 else { return }
+        let now = Date()
+        if let anchor = watchStepsAnchor {
+            let span = now.timeIntervalSince(anchor.date)
+            let delta = steps - anchor.count
+            if span >= 3, delta >= 0 {
+                let cadence = delta / (span / 60)
+                if cadence >= 40, cadence <= 250 {
+                    self.cadence = cadence
+                    splitCadences.append(cadence)
+                    watchCadenceFreshUntil = now.addingTimeInterval(8)
+                }
+                watchStepsAnchor = (steps, now)
+            }
+        } else {
+            watchStepsAnchor = (steps, now)
+        }
+        if steps > stepCount { stepCount = steps }
+    }
+
     private func apply(_ location: CLLocation) {
         guard phase == .running, !paused, !simulating, !leavingApple else { return }
         if ignoreNextLocation || location.timestamp < resumeAnchorDate {
             ignoreNextLocation = false
             return
         }
-        guard location.horizontalAccuracy >= 0, location.horizontalAccuracy < 40 else { return }
+        guard location.horizontalAccuracy >= 0 else { return }
+        let fix = GeoPoint(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            altitude: location.altitude,
+            timestamp: location.timestamp
+        )
+        userFix = fix
+        guard location.horizontalAccuracy < 40 else { return }
         if let lastLocation {
             let delta = location.distance(from: lastLocation)
             if delta > 0.8, delta < 40 {
@@ -391,13 +551,7 @@ final class LiveSession: ObservableObject {
         if location.speed > 0.4 {
             paceSecPerKm = 1000 / location.speed
         }
-        let point = GeoPoint(
-            latitude: location.coordinate.latitude,
-            longitude: location.coordinate.longitude,
-            altitude: location.altitude,
-            timestamp: location.timestamp
-        )
-        appendPoint(point)
+        appendPoint(fix)
         noteAltitude(location.altitude)
         refreshDistance()
     }
@@ -432,6 +586,7 @@ final class LiveSession: ObservableObject {
         elevationLossMeters = 0
         lastLocation = nil
         lastAltitude = nil
+        userFix = nil
         ignoreNextLocation = false
         resumeAnchorDate = .distantPast
         splits = []
@@ -449,6 +604,10 @@ final class LiveSession: ObservableObject {
         powerSeries = []
         oscillationSeries = []
         stepCount = 0
+        watchStepsAnchor = nil
+        watchCadenceFreshUntil = .distantPast
+        preferWatchMetrics = false
+        heartSource = .unknown
         latestPower = 0
         latestStride = 0
         latestContact = 0
@@ -548,6 +707,17 @@ final class LiveSession: ObservableObject {
         }
     }
 
+    private func publishLive() {
+        liveActivity?.noteLive(
+            sportTitle: sport.title,
+            elapsed: elapsed,
+            distanceMeters: distanceMeters,
+            paceSecPerKm: paceSecPerKm,
+            heartRate: simulating ? 0 : heartRate,
+            paused: paused
+        )
+    }
+
     /// Moving time already banked, plus the current unpaused segment.
     private func movingTime(at date: Date) -> TimeInterval {
         guard !paused, let runningSince else { return max(banked, elapsed) }
@@ -602,9 +772,14 @@ enum MapOrigin {
 
 final class LocationProxy: NSObject, CLLocationManagerDelegate {
     var onLocation: ((CLLocation) -> Void)?
+    var onAuthorization: ((CLLocationManager) -> Void)?
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         onLocation?(location)
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        onAuthorization?(manager)
     }
 }

@@ -1,7 +1,10 @@
+import HealthKit
 import SwiftUI
+import WatchKit
 
 @main
 struct SkyWandererWatchApp: App {
+    @WKApplicationDelegateAdaptor(WatchDelegate.self) var delegate
     @StateObject private var app = WatchAppState()
 
     var body: some Scene {
@@ -384,4 +387,111 @@ struct WatchMeView: View {
             }
         }
     }
+}
+
+/// Phone `startWatchApp` delivers the configuration here. The watch records heart rate and steps; the phone mirrors them.
+final class WatchDelegate: NSObject, WKApplicationDelegate {
+    func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        WatchMirroredWorkout.shared.start(workoutConfiguration)
+    }
+}
+
+final class WatchMirroredWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWorkoutBuilderDelegate {
+    static let shared = WatchMirroredWorkout()
+
+    private var session: HKWorkoutSession?
+    private var builder: HKLiveWorkoutBuilder?
+    private var collecting = false
+
+    func start(_ configuration: HKWorkoutConfiguration) {
+        guard session == nil else { return }
+        Task { @MainActor in
+            await self.begin(configuration)
+        }
+    }
+
+    @MainActor
+    private func begin(_ configuration: HKWorkoutConfiguration) async {
+        guard session == nil else { return }
+        do {
+            try await AppleHealth.authorize()
+            let session = try HKWorkoutSession(healthStore: AppleHealth.store, configuration: configuration)
+            let builder = session.associatedWorkoutBuilder()
+            builder.dataSource = AppleWorkoutRecorder.makeDataSource(configuration)
+            session.delegate = self
+            builder.delegate = self
+            self.session = session
+            self.builder = builder
+            let start = Date()
+            session.startActivity(with: start)
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                builder.beginCollection(withStart: start) { success, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else if success {
+                        continuation.resume()
+                    } else {
+                        continuation.resume(throwing: RecorderError.failed)
+                    }
+                }
+            }
+            collecting = true
+            session.startMirroringToCompanionDevice { [weak self] success, _ in
+                guard !success else { return }
+                Task { @MainActor in
+                    self?.discard()
+                }
+            }
+        } catch {
+            discard()
+        }
+    }
+
+    @MainActor
+    private func discard() {
+        let wasCollecting = collecting
+        collecting = false
+        let builder = self.builder
+        let session = self.session
+        self.builder = nil
+        self.session = nil
+        if wasCollecting {
+            builder?.discardWorkout()
+        }
+        session?.end()
+    }
+
+    func workoutSession(
+        _ workoutSession: HKWorkoutSession,
+        didChangeTo toState: HKWorkoutSessionState,
+        from fromState: HKWorkoutSessionState,
+        date: Date
+    ) {
+        guard toState == .ended || toState == .stopped else { return }
+        Task { @MainActor in
+            self.releaseAfterRemoteEnd(date)
+        }
+    }
+
+    /// The phone finishes the mirrored workout. Close collection here, and do not finish or discard a second copy.
+    @MainActor
+    private func releaseAfterRemoteEnd(_ date: Date) {
+        let builder = self.builder
+        let wasCollecting = collecting
+        session = nil
+        self.builder = nil
+        collecting = false
+        guard wasCollecting, let builder else { return }
+        builder.endCollection(withEnd: date) { _, _ in }
+    }
+
+    func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
+        Task { @MainActor in
+            self.discard()
+        }
+    }
+
+    func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {}
+
+    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
 }
