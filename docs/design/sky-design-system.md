@@ -27,9 +27,11 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 | `recordCard` | `#E6F1FE` | 记录列表卡片底。淡蓝，不另起一套页面色板 |
 | `recordCardToday` | `#B8D4F8` | 记录列表里，开始时间落在设备当地当天的卡片底。比 `recordCard` 更深，用来区分当天 |
 | `ink` | `#1C1C1E` | 主文字、标签 |
-| `secondary` | `#8E8E93` | 次要文字、未选中的标签 |
+| `secondary` | `#8E8E93` | 次要文字、浅色底上的未选中标签 |
 | `nickname` | `#636366` | 记录详情里，头像正下方的用户名 |
 | `tertiary` | `#C6C6C8` | 更弱的说明。分隔线与此同色，token 名 `separator` |
+| `starryGray` | `#2C2C2E` | 星空灰。首页浮动标签胶囊与头像底盘 |
+| `onStarryGray` | `#C6C6C8` | 铺在 `starryGray` 上的未选中图标和文字 |
 | `success` | `#34C759` | 完成、正向状态 |
 | `warning` | `#FF9500` | 需要注意 |
 | `danger` | `#FF3B30` | 破坏性操作、错误 |
@@ -137,7 +139,7 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 
 ### 标签栏
 
-用系统 Tab Bar。选中为 `primary`，未选中为 `secondary`。最多 5 项。
+首页用浮动胶囊，底色 `starryGray`（星空灰）。选中为 `primary`，未选中为 `onStarryGray`。最多 5 项。
 
 ### 导航栏
 

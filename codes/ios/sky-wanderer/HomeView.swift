@@ -355,14 +355,14 @@ struct ScenicAvatar: View {
 }
 
 private extension View {
-    /// Frosted plate shared by the home tab capsule and the avatar button.
+    /// Starry-gray plate shared by the home tab capsule and the avatar button.
     func skyFloatingGlass<S: InsettableShape>(in shape: S) -> some View {
-        background(.ultraThinMaterial, in: shape)
+        background(SkyTheme.Color.starryGray, in: shape)
             .overlay {
-                shape.strokeBorder(SkyTheme.Color.card.opacity(0.5), lineWidth: 0.5)
+                shape.strokeBorder(SkyTheme.Color.onPrimary.opacity(0.12), lineWidth: 0.5)
             }
             .shadow(
-                color: SkyTheme.Shadow.card.color.opacity(0.08),
+                color: SkyTheme.Shadow.card.color.opacity(0.18),
                 radius: 16,
                 y: 4
             )
@@ -430,7 +430,7 @@ private struct SkyGlassTabBar: View {
                     .font(SkyTheme.Font.caption)
                     .fontWeight(.medium)
             }
-            .foregroundStyle(selected ? SkyTheme.Color.primary : SkyTheme.Color.secondary)
+            .foregroundStyle(selected ? SkyTheme.Color.primary : SkyTheme.Color.onStarryGray)
             .frame(
                 minWidth: SkyTheme.Spacing.touchMin,
                 maxWidth: .infinity,
