@@ -163,6 +163,7 @@ struct WatchLiveView: View {
                 status: session.simulating ? "本地模拟" : (session.statusText.isEmpty ? nil : session.statusText),
                 onEnd: { Task { await end() } }
             )
+            .background(CanvasBackground())
             .navigationBarBackButtonHidden(true)
             WatchLiveMapPage(
                 route: session.route,
@@ -173,7 +174,6 @@ struct WatchLiveView: View {
             .navigationBarBackButtonHidden(true)
         }
         .tabViewStyle(.verticalPage)
-        .background(CanvasBackground())
         .navigationBarBackButtonHidden(true)
         .task {
             guard !started else { return }

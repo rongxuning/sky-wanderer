@@ -100,12 +100,15 @@ struct WatchLiveMapPage: View {
             kilometers: kilometers,
             showsUser: showsUser,
             userCoordinate: userFix?.coordinate,
-            cornerRadius: 14,
+            cornerRadius: 0,
             routeColor: Color.omniCobalt,
             routeLineWidth: 3,
-            hidesMapControls: true
+            hidesMapControls: true,
+            // Fit once, then let the crown / finger pan and zoom freely.
+            refitsOnChange: false,
+            suspendRefitAfterGesture: true
         )
-        .padding(2)
+        .ignoresSafeArea()
     }
 }
 
@@ -126,6 +129,7 @@ struct WatchPhoneLiveView: View {
                 paused: snap.paused,
                 status: "手机同步"
             )
+            .background(CanvasBackground())
             WatchLiveMapPage(
                 route: snap.routePoints,
                 kilometers: snap.kilometerMarks,
@@ -134,6 +138,5 @@ struct WatchPhoneLiveView: View {
             )
         }
         .tabViewStyle(.verticalPage)
-        .background(CanvasBackground())
     }
 }

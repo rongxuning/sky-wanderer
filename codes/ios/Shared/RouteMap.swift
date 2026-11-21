@@ -30,9 +30,16 @@ struct RouteMap: View {
     var fitToken: Int = 0
     /// Detail can switch styles. Other screens keep the standard map.
     var style: MapStyle = .standard
+    /// Live watch map. Route growth must not yank the camera while the person is panning.
+    var refitsOnChange: Bool = true
+    /// After a pan or zoom, keep that camera until `fitToken` bumps.
+    var suspendRefitAfterGesture: Bool = false
 
     @State private var position: MapCameraPosition = .automatic
     @State private var framedUser = false
+    /// A finger or the Digital Crown moved the camera.
+    @State private var holdCamera = false
+    @State private var adjustingCamera = false
     /// Updated as soon as layout reports a size, so a later fit in the same turn sees it.
     @State private var mapSize = RouteMapSizeBox()
 
@@ -113,14 +120,27 @@ struct RouteMap: View {
                 framedUser = true
             }
         }
-        .onChange(of: route.count) { _, _ in frameCamera() }
-        .onChange(of: planned) { _, _ in frameCamera() }
-        .onChange(of: kilometers.count) { _, _ in frameCamera() }
+        .onMapCameraChange(frequency: .onEnd) { _ in
+            guard suspendRefitAfterGesture, !adjustingCamera else { return }
+            holdCamera = true
+        }
+        .onChange(of: route.count) { _, _ in refitIfAllowed() }
+        .onChange(of: planned) { _, _ in refitIfAllowed() }
+        .onChange(of: kilometers.count) { _, _ in refitIfAllowed() }
         .onChange(of: userCoordinate?.latitude) { _, _ in frameUserOnce() }
         .onChange(of: userCoordinate?.longitude) { _, _ in frameUserOnce() }
-        .onChange(of: fitToken) { _, _ in frameCamera() }
-        .onChange(of: obscuredTopFraction) { _, _ in frameCamera() }
-        .onChange(of: obscuredBottomFraction) { _, _ in frameCamera() }
+        .onChange(of: fitToken) { _, _ in
+            holdCamera = false
+            frameCamera()
+        }
+        .onChange(of: obscuredTopFraction) { _, _ in refitIfAllowed() }
+        .onChange(of: obscuredBottomFraction) { _, _ in refitIfAllowed() }
+    }
+
+    private func refitIfAllowed() {
+        guard !holdCamera else { return }
+        guard refitsOnChange else { return }
+        frameCamera()
     }
 
     private func endpointMark(square: Bool) -> some View {
@@ -157,12 +177,18 @@ struct RouteMap: View {
 
     /// The first user fix is part of the frame. Later fixes do not move the camera.
     private func frameUserOnce() {
-        guard showsUser, userCoordinate != nil, !framedUser else { return }
+        guard showsUser, userCoordinate != nil, !framedUser, !holdCamera else { return }
         framedUser = true
         frameCamera()
     }
 
     private func frameCamera() {
+        adjustingCamera = true
+        defer {
+            DispatchQueue.main.async {
+                adjustingCamera = false
+            }
+        }
         var coords = route.map(\.coordinate) + planned.map(\.coordinate) + teammates.map(\.coordinate)
         coords.append(contentsOf: kilometers.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
