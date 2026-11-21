@@ -37,6 +37,13 @@ struct RecordFeedView: View {
             .sheet(isPresented: $showsMetricHelp) {
                 RecordMetricHelpSheet()
             }
+            .onChange(of: app.workouts.map(\.sport)) { _, sports in
+                // Stays mounted when the list is replaced by the empty state, so a
+                // cleared log cannot keep a sport that is no longer loaded.
+                if let sportFilter, !sports.contains(sportFilter) {
+                    self.sportFilter = nil
+                }
+            }
     }
 
     private var deleteAlertPresented: Binding<Bool> {
@@ -205,9 +212,6 @@ struct RecordFeedView: View {
         .onChange(of: app.workouts.map(\.id)) { _, ids in
             if let revealedWorkoutID, !ids.contains(revealedWorkoutID) {
                 self.revealedWorkoutID = nil
-            }
-            if let sportFilter, !RecordListFilter.sports(in: app.workouts).contains(sportFilter) {
-                self.sportFilter = nil
             }
         }
         .onChange(of: sportFilter) { _, _ in

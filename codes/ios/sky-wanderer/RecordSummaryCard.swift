@@ -152,9 +152,7 @@ struct RecordSummaryCard: View {
     private var accessibilitySummary: String {
         let heart = RecordListCardText.heartRate(workout.resolvedAverageHeartRate)
         let spokenHeart = heart == "—" ? heart : "\(heart)次每分"
-        let map = workout.route.count >= 2
-            ? "有轨迹，\(SkyBasemapCenter.shared.caption)"
-            : "这次没有轨迹"
+        let map = workout.route.count >= 2 ? "有轨迹" : "这次没有轨迹"
         return [
             workout.sport.title,
             RecordListCardText.started(workout.start),
