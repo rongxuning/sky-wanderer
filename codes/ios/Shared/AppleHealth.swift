@@ -520,11 +520,32 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         try await begin(session: session, builder: builder, configuration: configuration, start: Date())
     }
 
-    /// Mirrored session the watch already owns. The phone collects the same samples and finishes once.
+    /// Mirrored session the watch already started. Do not start the activity again or move its start date.
     func adoptMirrored(_ session: HKWorkoutSession) async throws {
         let configuration = session.workoutConfiguration
         let builder = session.associatedWorkoutBuilder()
-        try await begin(session: session, builder: builder, configuration: configuration, start: Date())
+        let start = session.startDate ?? Date()
+        builder.dataSource = Self.makeDataSource(configuration)
+        session.delegate = self
+        builder.delegate = self
+        self.session = session
+        self.builder = builder
+        let alreadyRunning = session.state == .running || session.state == .paused
+        if !alreadyRunning {
+            session.startActivity(with: start)
+        }
+        do {
+            try await collect(builder, from: start)
+            collecting = true
+        } catch {
+            let running = alreadyRunning || session.state == .running || session.state == .paused
+            if running {
+                collecting = true
+                return
+            }
+            discard()
+            throw error
+        }
     }
 
     static func makeDataSource(_ configuration: HKWorkoutConfiguration) -> HKLiveWorkoutDataSource {
@@ -554,21 +575,25 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         self.builder = builder
         session.startActivity(with: start)
         do {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                builder.beginCollection(withStart: start) { success, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                    } else if success {
-                        continuation.resume()
-                    } else {
-                        continuation.resume(throwing: RecorderError.failed)
-                    }
-                }
-            }
+            try await collect(builder, from: start)
             collecting = true
         } catch {
             discard()
             throw error
+        }
+    }
+
+    private func collect(_ builder: HKLiveWorkoutBuilder, from start: Date) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            builder.beginCollection(withStart: start) { success, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if success {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: RecorderError.failed)
+                }
+            }
         }
     }
 

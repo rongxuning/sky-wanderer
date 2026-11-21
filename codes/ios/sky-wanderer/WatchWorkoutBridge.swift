@@ -63,26 +63,36 @@ final class WatchLink: NSObject, WCSessionDelegate {
 final class WatchMirrorGate {
     static let shared = WatchMirrorGate()
     private var waiter: CheckedContinuation<HKWorkoutSession?, Never>?
-    /// False after a timeout, so a late mirror is ended instead of becoming a second workout.
-    private var acceptLate = false
+    /// Arrived before the waiter was installed. Delivered as soon as the waiter exists.
+    private var held: HKWorkoutSession?
+    /// Already returned to the phone. A second callback for this object must not end it.
+    private var delivered: HKWorkoutSession?
+    /// False after delivery, launch failure, or timeout. A different session is ended.
+    private var accept = false
 
     func request(_ sport: SportKind) async -> HKWorkoutSession? {
-        acceptLate = true
+        accept = true
+        held = nil
+        delivered = nil
         AppleHealth.store.workoutSessionMirroringStartHandler = { session in
             Task { @MainActor in
                 WatchMirrorGate.shared.receive(session)
             }
         }
-        let launched = await launch(sport)
-        guard launched else {
-            acceptLate = false
-            return nil
-        }
         return await withCheckedContinuation { continuation in
             waiter = continuation
+            if let held {
+                self.held = nil
+                deliver(held)
+            }
             Task { @MainActor in
+                let launched = await self.launch(sport)
+                if !launched {
+                    self.giveUp(resumeNil: true)
+                    return
+                }
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
-                self.finish(nil)
+                self.giveUp(resumeNil: self.waiter != nil)
             }
         }
     }
@@ -99,23 +109,34 @@ final class WatchMirrorGate {
     }
 
     private func receive(_ session: HKWorkoutSession) {
-        guard acceptLate else {
+        if session === delivered || session === held { return }
+        guard accept else {
             session.end()
             return
         }
-        finish(session)
+        if waiter != nil {
+            deliver(session)
+        } else {
+            held = session
+        }
     }
 
-    private func finish(_ session: HKWorkoutSession?) {
+    private func deliver(_ session: HKWorkoutSession) {
         let continuation = waiter
         waiter = nil
-        if continuation == nil {
-            session?.end()
-            return
-        }
-        if session == nil {
-            acceptLate = false
-        }
-        continuation.resume(returning: session)
+        delivered = session
+        accept = false
+        continuation?.resume(returning: session)
+    }
+
+    /// Launch failed or the wait expired. Ends a session that was never handed to the phone.
+    private func giveUp(resumeNil: Bool) {
+        accept = false
+        let extra = held
+        held = nil
+        extra?.end()
+        guard resumeNil, let continuation = waiter else { return }
+        waiter = nil
+        continuation.resume(returning: nil)
     }
 }

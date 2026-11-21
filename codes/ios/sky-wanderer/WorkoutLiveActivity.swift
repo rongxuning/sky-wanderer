@@ -24,7 +24,7 @@ final class WorkoutLiveActivityCenter: LiveActivitySink {
             heartRate: heartRate,
             paused: paused
         )
-        let content = ActivityContent(state: state, staleDate: nil)
+        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(30))
         if let activity {
             Task { await activity.update(content) }
             return
@@ -39,6 +39,14 @@ final class WorkoutLiveActivityCenter: LiveActivitySink {
             )
         } catch {
             retryAfter = Date().addingTimeInterval(30)
+        }
+    }
+
+    /// Cold start. A force-quit leaves the lock-screen activity behind because the session object is gone.
+    func endLingering() async {
+        let current = activity?.id
+        for existing in Activity<WorkoutActivityAttributes>.activities where existing.id != current {
+            await existing.end(nil, dismissalPolicy: .immediate)
         }
     }
 

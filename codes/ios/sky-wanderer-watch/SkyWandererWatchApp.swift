@@ -469,10 +469,20 @@ final class WatchMirroredWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWork
     ) {
         guard toState == .ended || toState == .stopped else { return }
         Task { @MainActor in
-            self.session = nil
-            self.builder = nil
-            self.collecting = false
+            self.releaseAfterRemoteEnd(date)
         }
+    }
+
+    /// The phone finishes the mirrored workout. Close collection here, and do not finish or discard a second copy.
+    @MainActor
+    private func releaseAfterRemoteEnd(_ date: Date) {
+        let builder = self.builder
+        let wasCollecting = collecting
+        session = nil
+        self.builder = nil
+        collecting = false
+        guard wasCollecting, let builder else { return }
+        builder.endCollection(withEnd: date) { _, _ in }
     }
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
