@@ -9,13 +9,14 @@ import UIKit
 /// empty line. The stroke is the stored track, never a stand-in city or drawing.
 struct RecordRouteThumbnail: View {
     var route: [GeoPoint]
+    @ScaledMetric(relativeTo: .caption2) private var emptySize: CGFloat = 11
 
     var body: some View {
         ZStack {
             Color(uiColor: SkyBasemapInstaller.backdrop)
             if route.count < 2 {
                 Text("这次没有轨迹")
-                    .font(.system(size: 11, weight: .semibold, relativeTo: .caption2))
+                    .font(.system(size: emptySize, weight: .semibold))
                     .foregroundStyle(SkyTheme.Color.ink)
                     .multilineTextAlignment(.center)
                     .padding(4)

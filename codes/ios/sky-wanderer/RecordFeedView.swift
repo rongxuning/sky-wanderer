@@ -11,6 +11,7 @@ struct RecordFeedView: View {
     /// Nil is 全部. Applied to the rows on screen; `app.workouts` is left as stored.
     @State private var sportFilter: SportKind?
     @State private var showsMetricHelp = false
+    @ScaledMetric(relativeTo: .subheadline) private var filterSize: CGFloat = 14
 
     var body: some View {
         feed
@@ -127,7 +128,7 @@ struct RecordFeedView: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
             }
-            .font(.system(size: 14, weight: .medium, relativeTo: .subheadline))
+            .font(.system(size: filterSize, weight: .medium))
             .foregroundStyle(SkyTheme.Color.primary)
             .frame(
                 minWidth: SkyTheme.Spacing.touchMin,
@@ -265,6 +266,7 @@ struct AnalysisPage: View {
 private struct RecordMonthTitle: View {
     var title: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .title3) private var monthSize: CGFloat = 20
     @State private var front = ""
     @State private var back = ""
     /// Which copy is at full opacity. The other copy is the one fading away.
@@ -317,7 +319,7 @@ private struct RecordMonthTitle: View {
 
     private func line(_ text: String, opacity: Double) -> some View {
         Text(text)
-            .font(.system(size: 20, weight: .bold, relativeTo: .title3))
+            .font(.system(size: monthSize, weight: .bold))
             .foregroundStyle(SkyTheme.Color.ink)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)

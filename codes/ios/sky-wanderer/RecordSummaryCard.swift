@@ -9,6 +9,11 @@ struct RecordSummaryCard: View {
     var onExplainMetrics: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .caption) private var sportSize: CGFloat = 12
+    @ScaledMetric(relativeTo: .caption2) private var dateSize: CGFloat = 11
+    @ScaledMetric(relativeTo: .title3) private var distanceSize: CGFloat = 20
+    @ScaledMetric(relativeTo: .headline) private var durationSize: CGFloat = 18
+    @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
 
     private var cardShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.corner), style: .continuous)
@@ -122,23 +127,23 @@ struct RecordSummaryCard: View {
     }
 
     private var sportFont: Font {
-        .system(size: 12, weight: .semibold, relativeTo: .caption)
+        .system(size: sportSize, weight: .semibold)
     }
 
     private var dateFont: Font {
-        .system(size: 11, weight: .regular, relativeTo: .caption2)
+        .system(size: dateSize, weight: .regular)
     }
 
     private var distanceFont: Font {
-        .system(size: 20, weight: .bold, relativeTo: .title3)
+        .system(size: distanceSize, weight: .bold)
     }
 
     private var durationFont: Font {
-        .system(size: 18, weight: .bold, relativeTo: .headline)
+        .system(size: durationSize, weight: .bold)
     }
 
     private var lowerFont: Font {
-        .system(size: 14, weight: .bold, relativeTo: .subheadline)
+        .system(size: lowerSize, weight: .bold)
     }
 
     private var distanceText: String {
@@ -217,6 +222,7 @@ struct RecordExplainFramesKey: PreferenceKey {
 
 struct RecordMetricHelpSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric(relativeTo: .subheadline) private var bodySize: CGFloat = 14
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -259,10 +265,10 @@ struct RecordMetricHelpSheet: View {
     private func section(_ title: String, _ body: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 14, weight: .semibold, relativeTo: .subheadline))
+                .font(.system(size: bodySize, weight: .semibold))
                 .foregroundStyle(SkyTheme.Color.ink)
             Text(body)
-                .font(.system(size: 14, weight: .regular, relativeTo: .subheadline))
+                .font(.system(size: bodySize, weight: .regular))
                 .foregroundStyle(SkyTheme.Color.nickname)
                 .fixedSize(horizontal: false, vertical: true)
         }
