@@ -5,6 +5,7 @@ import Foundation
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/Database.swift \
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Formatting.swift \
 //   codes/ios/Shared/RecordFeedList.swift \
+//   codes/ios/Shared/RecordListCard.swift \
 //   codes/ios/records-list-check/main.swift \
 //   -o /tmp/records-list-check && /tmp/records-list-check
 
@@ -32,6 +33,31 @@ func date(_ calendar: Calendar, year: Int, month: Int, day: Int, hour: Int, minu
     calendar.date(from: DateComponents(
         year: year, month: month, day: day, hour: hour, minute: minute, second: second
     ))!
+}
+
+func listedWorkout(sport: SportKind, start: Date) -> WorkoutRecord {
+    WorkoutRecord(
+        id: UUID(),
+        sport: sport,
+        start: start,
+        end: start.addingTimeInterval(60),
+        distanceMeters: 1000,
+        energyKilocalories: 1,
+        averageHeartRate: 120,
+        averageCadence: 160,
+        elevationGainMeters: 0,
+        route: [],
+        splits: [],
+        heartRate: [],
+        cadenceSeries: [],
+        paceSeries: [],
+        stride: [],
+        elevation: [],
+        groundContact: [],
+        power: [],
+        origin: .apple,
+        healthKitUUID: nil
+    )
 }
 
 let losAngeles = calendar(timeZone: "America/Los_Angeles")
@@ -198,6 +224,111 @@ check(
         octoberNowTop
     ]) == "2026年10月",
     "an empty title does not become the sticky month"
+)
+
+let saturday = date(shanghai, year: 2026, month: 11, day: 21, hour: 15, minute: 52, second: 39)
+check(
+    RecordListCardText.started(saturday) == "2026-11-21 15:52 星期六",
+    "list date drops seconds and writes 星期六"
+)
+let sunday = date(shanghai, year: 2026, month: 11, day: 15, hour: 7, minute: 41, second: 20)
+check(
+    RecordListCardText.started(sunday) == "2026-11-15 07:41 星期日",
+    "list date writes 星期日"
+)
+let justAfterMidnight = date(shanghai, year: 2026, month: 11, day: 21, hour: 0, minute: 30, second: 8)
+check(
+    RecordListCardText.started(justAfterMidnight) == "2026-11-21 00:30 星期六",
+    "list date follows the Shanghai calendar, not the machine zone"
+)
+check(!RecordListCardText.started(saturday).contains(":39"), "seconds are not part of the list date")
+
+check(RecordListCardText.distance(1_500) == "1.5公里", "1.5 km keeps one decimal and 公里")
+check(RecordListCardText.distance(25_100) == "25.1公里", "25.1 km")
+check(RecordListCardText.distance(123_456.7) == "123.5公里", "large distance rounds to one decimal")
+check(RecordListCardText.distance(1) == "—", "a meter or less is missing, not zero")
+check(RecordListCardText.distance(0) == "—", "zero distance is missing")
+check(RecordListCardText.distance(.nan) == "—", "a non-finite distance is missing")
+check(RecordListCardText.clock(29 * 60 + 52) == "00:29:52", "training clock keeps hours")
+check(RecordListCardText.clock(4 * 3600 + 29 * 60 + 27) == "04:29:27", "multi-hour training clock")
+check(RecordListCardText.clock(100 * 3600) == "100:00:00", "hours past 99 stay in the string")
+check(RecordListCardText.clock(-5) == "00:00:00", "a negative duration does not go negative")
+check(RecordListCardText.pace(19 * 60 + 21) == "19'21\"", "pace keeps minute and second marks")
+check(RecordListCardText.pace(10 * 60 + 43) == "10'43\"", "double-digit pace minutes")
+check(RecordListCardText.pace(0) == "—", "missing pace stays —")
+check(RecordListCardText.heartRate(146) == "146", "heart rate is the number only")
+check(RecordListCardText.heartRate(146.4) == "146", "heart rate rounds")
+check(RecordListCardText.heartRate(0) == "—", "missing heart rate stays —")
+check(!RecordListCardText.heartRate(146).contains("次"), "the list cell does not add a heart-rate unit")
+check(RecordListCardText.load(864) == "864", "load is the integer")
+check(RecordListCardText.load(0) == "—", "a zero load is the missing mark")
+check(RecordListCardText.load(10_000) == "10000", "a large load stays a full integer")
+check(RecordListCardText.score == "—", "the list has no per-record score")
+
+check(
+    RecordListMetricColumn.allCases.map(\.rawValue) == ["pace", "heartRate", "load", "score"],
+    "the lower row is pace, heart rate, load, score"
+)
+
+check(RecordListCardLayout.standardTextBlock == 90, "standard text block is 90pt")
+check(RecordListCardLayout.standardMapBlock == 90, "map block is 90pt")
+check(
+    RecordListCardLayout.standardTextBlock == RecordListCardLayout.standardHeight,
+    "text block matches the standard card height"
+)
+check(abs(RecordListCardLayout.columnWidth - 48.75) < 0.001, "213pt track splits into 48.75pt columns")
+check(RecordListCardLayout.cardWidth(screen: 393) == 377, "393pt phone card is 377pt wide")
+check(
+    RecordListCardLayout.informationWidth(cardWidth: 377) == 213,
+    "a 393pt phone keeps the 213pt information track"
+)
+check(
+    RecordListCardLayout.informationWidth(cardWidth: 304) == 182,
+    "a 320pt phone shrinks the information track instead of covering the map"
+)
+check(RecordListCardLayout.screenMargin == 8, "screen margin is 8pt")
+check(RecordListCardLayout.headerGap == 8, "month and 全部 keep an 8pt gap")
+check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
+check(RecordListCardLayout.mapSide == 82, "thumbnail is 82pt")
+check(RecordListCardLayout.mapTrailing == 16, "thumbnail inset is 16pt")
+check(RecordListCardLayout.contentInsetVertical == 6, "text inset is 6pt")
+check(RecordListCardLayout.mapInsetVertical == 4, "map inset is 4pt")
+check(RecordListCardLayout.topToMiddle == 14, "title to metrics is 14pt")
+check(RecordListCardLayout.middleToBottom == 4, "middle to bottom row is 4pt")
+
+let help = [
+    RecordMetricHelp.loadBody,
+    RecordMetricHelp.scoreBody,
+    RecordMetricHelp.missing
+].joined(separator: "\n")
+check(!help.contains("AU"), "help does not call the load AU")
+check(!help.contains("此稿"), "help does not quote the design draft")
+check(!help.contains("任意单位"), "help does not invent an arbitrary unit")
+check(RecordMetricHelp.loadBody.contains("Edwards TRIMP"), "load help names the existing calculation")
+check(RecordMetricHelp.scoreBody.contains("—"), "score help says the cell is missing")
+check(RecordMetricHelp.missing.contains("不是 0"), "a dash is not zero")
+
+let mixed = [
+    listedWorkout(sport: .running, start: date(shanghai, year: 2026, month: 11, day: 21, hour: 8)),
+    listedWorkout(sport: .hiking, start: date(shanghai, year: 2026, month: 11, day: 2, hour: 8)),
+    listedWorkout(sport: .running, start: date(shanghai, year: 2026, month: 10, day: 3, hour: 8))
+]
+let runningOnly = RecordListFilter.apply(.running, to: mixed)
+check(mixed.count == 3, "filtering does not rewrite the stored array")
+check(runningOnly.map(\.sport) == [.running, .running], "running keeps newest-first order")
+check(RecordListFilter.apply(nil, to: mixed).count == 3, "全部 keeps every loaded workout")
+check(
+    RecordListFilter.sports(in: mixed) == [.hiking, .running],
+    "the menu lists recorded sports in SportKind order"
+)
+check(
+    RecordListFilter.sports(in: [listedWorkout(sport: .running, start: saturday)]) == [.running],
+    "a running-only log does not offer hiking"
+)
+let filteredSpans = Format.recordMonthSpans(dates: runningOnly.map(\.start))
+check(
+    filteredSpans.map(\.title) == ["2026年11月", "2026年10月"],
+    "the sticky months follow the filtered rows"
 )
 
 if failures.isEmpty {
