@@ -27,18 +27,31 @@ struct WatchRoot: View {
     @ObservedObject private var companion = WatchCompanionMirror.shared
 
     var body: some View {
+        // Same SF Symbols as the phone glass tab bar: book / figure.run / map, plus 我的.
         TabView {
             NavigationStack {
                 WatchStartView()
             }
+            .tabItem {
+                Label("训练", systemImage: "figure.run")
+            }
             NavigationStack {
                 WatchListView()
             }
-            NavigationStack {
-                WatchSocialView()
+            .tabItem {
+                Label("记录", systemImage: "book")
             }
             NavigationStack {
-                WatchMeView()
+                WatchRoutesView()
+            }
+            .tabItem {
+                Label("路线", systemImage: "map")
+            }
+            NavigationStack {
+                WatchMeHomeView()
+            }
+            .tabItem {
+                Label("我的", systemImage: "person.crop.circle")
             }
         }
         .tabViewStyle(.verticalPage)
@@ -54,7 +67,7 @@ struct WatchStartView: View {
     var body: some View {
         VStack(spacing: 8) {
             HStack {
-                Text("开始运动")
+                Label("训练", systemImage: "figure.run")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                 Spacer()
                 NavigationLink(value: WatchPush.team) {
@@ -83,6 +96,7 @@ struct WatchStartView: View {
         }
         .padding(.horizontal, 6)
         .background(CanvasBackground())
+        .navigationTitle("训练")
         .navigationDestination(for: WatchPush.self) { push in
             switch push {
             case .team:
@@ -205,29 +219,38 @@ struct WatchListView: View {
                 }
                 .pickerStyle(.navigationLink)
                 Text("距离 \(Format.kilometers(stats.distanceMeters)) 公里")
+                    .foregroundStyle(Color.skyMetricDistance)
                 Text("心率 \(Format.integer(stats.averageHeartRate))")
-                    .foregroundStyle(Color.omniCoral)
+                    .foregroundStyle(Color.skyMetricHeart)
                 Text("爬升 \(stats.elevationGainMeters > 0 ? String(Int(stats.elevationGainMeters.rounded())) : "—") 米")
+                    .foregroundStyle(Color.skyMetricElevation)
                 Text("步频 \(Format.integer(stats.averageCadence))")
+                    .foregroundStyle(Color.skyMetricPace)
             }
-            ForEach(app.workouts) { workout in
-                NavigationLink(value: workout.id) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(workout.sport.title)
-                            .font(.system(size: 16, weight: .semibold, design: .rounded))
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            Text(Format.kilometers(workout.distanceMeters))
-                                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                                .foregroundStyle(Color.omniIce)
-                            Text("公里")
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+            if app.workouts.isEmpty {
+                Text("还没有训练记录")
+                    .foregroundStyle(Color.omniMuted)
+            } else {
+                ForEach(app.workouts) { workout in
+                    NavigationLink(value: workout.id) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(workout.sport.title) · \(Format.relativeDayTime(workout.start))")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .foregroundStyle(Color.omniMuted)
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text(Format.kilometers(workout.distanceMeters))
+                                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(Color.skyMetricDistance)
+                                Text(Format.clock(workout.trainingDuration))
+                                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color.skyMetricDuration)
+                            }
                         }
                     }
                 }
             }
         }
-        .navigationTitle("运动列表")
+        .navigationTitle("记录")
         .navigationDestination(for: UUID.self) { id in
             if let workout = app.workouts.first(where: { $0.id == id }) {
                 WatchDetailView(workout: workout)
@@ -244,112 +267,64 @@ struct WatchDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(workout.sport.title)
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
                 Text("\(Format.dayTime(workout.start)) · \(Format.duration(workout.trainingDuration))")
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.omniMuted)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(Format.clock(workout.trainingDuration))
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.skyMetricDuration)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     Text(Format.kilometers(workout.distanceMeters))
-                        .font(.system(size: 32, weight: .heavy, design: .rounded))
-                        .foregroundStyle(Color.omniIce)
-                    Text("公里")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.skyMetricDistance)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text("\(Format.pace(workout.averagePaceSecPerKm)) 每公里")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("心率 \(Format.integer(workout.resolvedAverageHeartRate))")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniCoral)
-                RouteMap(route: workout.route, cornerRadius: 12)
-                    .frame(height: 70)
+                HStack(spacing: 8) {
+                    detailMetric(Format.pace(workout.averagePaceSecPerKm), color: .skyMetricPace)
+                    detailMetric(Format.integer(workout.resolvedAverageHeartRate), color: .skyMetricHeart)
+                }
+                HStack(spacing: 8) {
+                    detailMetric(Format.integer(workout.averageCadence), color: .skyMetricPace)
+                    detailMetric(climbText, color: .skyMetricElevation)
+                }
+                RouteMap(
+                    route: workout.route,
+                    kilometers: RouteKilometers.markers(along: workout.route),
+                    cornerRadius: 12,
+                    hidesMapControls: true
+                )
+                .frame(height: 90)
                 if workout.origin != .apple {
                     Text(workout.origin == .sample ? "示例" : "本地模拟")
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .foregroundStyle(Color.omniMuted)
                 }
             }
+            .padding(.horizontal, 4)
         }
         .background(CanvasBackground())
-    }
-}
-
-struct WatchSocialView: View {
-    @EnvironmentObject private var app: WatchAppState
-
-    var body: some View {
-        List(app.posts) { post in
-            VStack(alignment: .leading, spacing: 2) {
-                Text(post.isMine ? "\(post.author) · 我的" : post.author)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                if !post.text.isEmpty {
-                    Text(post.text)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .lineLimit(2)
-                }
-                Text("\(post.sport.title) \(Format.kilometers(post.distanceMeters)) 公里")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniCobalt)
-            }
-        }
-        .navigationTitle("社交")
-    }
-}
-
-struct WatchMeView: View {
-    @EnvironmentObject private var app: WatchAppState
-    @State private var heart = 72.0
-    @State private var sleep = 7.4
-    @State private var steps = 6420
-    @State private var heartSample = true
-    @State private var sleepSample = true
-    @State private var stepsSample = true
-
-    private var estimate: TrainingEstimateSummary {
-        app.estimate()
+        .navigationTitle("详情")
     }
 
-    var body: some View {
-        List {
-            Section("健康") {
-                Text("心率 \(Int(heart.rounded()))\(heartSample ? " 示例" : "")")
-                    .foregroundStyle(Color.omniCoral)
-                Text("睡眠 \(String(format: "%.1f", sleep)) 小时\(sleepSample ? " 示例" : "")")
-                Text("步数 \(steps)\(stepsSample ? " 示例" : "")")
-            }
-            Section("训练估计") {
-                Text("体能储备 \(estimate.reserve)")
-                Text("训练负荷 \(estimate.recentLoad)")
-                Text(estimate.restHint)
-                Text("不是医疗建议")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniMuted)
-            }
-        }
-        .navigationTitle("我")
-        .task {
-            guard AppleHealth.available else { return }
-            do {
-                try await AppleHealth.authorize()
-            } catch {
-                return
-            }
-            let day = await AppleHealth.today()
-            if let value = day.heartRate, value > 0 {
-                heart = value
-                heartSample = false
-            }
-            if let value = day.sleepHours, value > 0 {
-                sleep = value
-                sleepSample = false
-            }
-            if let value = day.steps {
-                steps = value
-                stepsSample = false
-            }
-        }
+    private var climbText: String {
+        guard workout.elevationGainMeters > 0.5 else { return "—" }
+        return String(Int(workout.elevationGainMeters.rounded()))
+    }
+
+    private func detailMetric(_ value: String, color: Color) -> some View {
+        Text(value)
+            .font(.system(size: 16, weight: .heavy, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .minimumScaleFactor(0.7)
+            .lineLimit(1)
     }
 }
 

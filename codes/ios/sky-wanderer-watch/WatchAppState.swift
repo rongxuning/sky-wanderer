@@ -10,17 +10,20 @@ final class WatchAppState: ObservableObject {
     init() {
         if var loaded = AppFiles.load(filename), loaded.seeded {
             let before = loaded.workouts.count
+            let routeCount = loaded.routes.count
             loaded.workouts.removeAll { SampleLibrary.isSeededWorkout($0) }
             let needsLines = loaded.workouts.contains { RecordMotivation.storedLine($0.motivationLine) == nil }
+            Self.ensurePresetRoute(&loaded)
             RecordMotivation.assignMissing(&loaded.workouts)
             database = loaded
-            if loaded.workouts.count != before || needsLines {
+            if loaded.workouts.count != before || needsLines || loaded.routes.count != routeCount {
                 AppFiles.save(loaded, name: filename)
             }
         } else {
             var fresh = Database()
             fresh.posts = SampleLibrary.posts()
             fresh.seeded = true
+            Self.ensurePresetRoute(&fresh)
             database = fresh
             AppFiles.save(fresh, name: filename)
         }
@@ -33,8 +36,16 @@ final class WatchAppState: ObservableObject {
             .sorted { $0.start > $1.start }
     }
 
-    var posts: [SocialPost] {
-        database.posts.sorted { $0.createdAt > $1.createdAt }
+    var routes: [SavedRoute] {
+        database.routes.sorted { lhs, rhs in
+            if lhs.kind != rhs.kind {
+                return lhs.kind == .presetRunning
+            }
+            let left = lhs.importedAt ?? .distantPast
+            let right = rhs.importedAt ?? .distantPast
+            if left != right { return left > right }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
     }
 
     var members: [TeammateProfile] {
@@ -47,6 +58,10 @@ final class WatchAppState: ObservableObject {
 
     func estimate() -> TrainingEstimateSummary {
         TrainingEstimate.summarize(workouts: workouts)
+    }
+
+    func route(id: String) -> SavedRoute? {
+        database.routes.first { $0.id == id }
     }
 
     func toggleTeammate(_ id: String) {
@@ -97,6 +112,11 @@ final class WatchAppState: ObservableObject {
         mutate { database in
             WorkoutImport.merge(outcome.records, into: &database.workouts)
         }
+    }
+
+    private static func ensurePresetRoute(_ database: inout Database) {
+        guard !database.routes.contains(where: { $0.id == SavedRoute.presetRunningID }) else { return }
+        database.routes.insert(SampleLibrary.presetRunningRoute(), at: 0)
     }
 
     private func mutate(_ body: (inout Database) -> Void) {
