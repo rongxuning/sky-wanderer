@@ -406,7 +406,9 @@ final class LiveSession: ObservableObject {
         location.activityType = .fitness
         location.desiredAccuracy = kCLLocationAccuracyBest
         location.distanceFilter = kCLDistanceFilterNone
+        #if os(iOS)
         location.pausesLocationUpdatesAutomatically = false
+        #endif
         location.requestWhenInUseAuthorization()
         enableBackgroundLocation(location)
     }
