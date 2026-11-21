@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import WatchConnectivity
 
 /// Receives phone live snapshots over WatchConnectivity and opens the companion workout UI.
@@ -7,6 +8,8 @@ final class WatchCompanionMirror: NSObject, ObservableObject {
     static let shared = WatchCompanionMirror()
 
     @Published private(set) var snapshot = PhoneWatchLiveSnapshot.idle()
+    @Published private(set) var userAvatar: UIImage?
+    @Published private(set) var userName = ""
     @Published var showingPhoneWorkout = false
 
     private var activated = false
@@ -46,10 +49,18 @@ final class WatchCompanionMirror: NSObject, ObservableObject {
             showingPhoneWorkout = true
         } else if showingPhoneWorkout {
             showingPhoneWorkout = false
+            userAvatar = nil
+            userName = ""
         }
     }
 
     private func ingest(_ dictionary: [String: Any]) {
+        if let jpeg = dictionary[PhoneWatchLiveSnapshot.avatarContextKey] as? Data, let image = UIImage(data: jpeg) {
+            userAvatar = image
+        }
+        if let name = dictionary[PhoneWatchLiveSnapshot.nameContextKey] as? String {
+            userName = name
+        }
         guard let next = PhoneWatchLiveSnapshot.decode(from: dictionary) else { return }
         apply(next)
     }

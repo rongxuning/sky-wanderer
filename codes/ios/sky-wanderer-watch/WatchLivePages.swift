@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Shared live layout for phone-synced and watch-started workouts.
 struct WatchLiveMetricsPage: View {
@@ -93,6 +94,9 @@ struct WatchLiveMapPage: View {
     var kilometers: [KilometerMarker]
     var showsUser: Bool
     var userFix: GeoPoint?
+    var courseDegrees: Double? = nil
+    var userName: String = ""
+    var userAvatar: UIImage? = nil
 
     var body: some View {
         RouteMap(
@@ -100,12 +104,19 @@ struct WatchLiveMapPage: View {
             kilometers: kilometers,
             showsUser: showsUser,
             userCoordinate: userFix?.coordinate,
-            cornerRadius: 14,
+            liveUserMarker: true,
+            userCourseDegrees: courseDegrees,
+            userName: userName,
+            userAvatar: userAvatar,
+            cornerRadius: 0,
             routeColor: Color.omniCobalt,
             routeLineWidth: 3,
-            hidesMapControls: true
+            hidesMapControls: true,
+            // Fit once, then let the crown / finger pan and zoom freely.
+            refitsOnChange: false,
+            suspendRefitAfterGesture: true
         )
-        .padding(2)
+        .ignoresSafeArea()
     }
 }
 
@@ -126,14 +137,17 @@ struct WatchPhoneLiveView: View {
                 paused: snap.paused,
                 status: "手机同步"
             )
+            .background(CanvasBackground())
             WatchLiveMapPage(
                 route: snap.routePoints,
                 kilometers: snap.kilometerMarks,
                 showsUser: snap.userFix != nil,
-                userFix: snap.userFix
+                userFix: snap.userFix,
+                courseDegrees: snap.courseDegrees,
+                userName: mirror.userName,
+                userAvatar: mirror.userAvatar
             )
         }
         .tabViewStyle(.verticalPage)
-        .background(CanvasBackground())
     }
 }

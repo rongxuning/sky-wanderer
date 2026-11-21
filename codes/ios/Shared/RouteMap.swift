@@ -9,6 +9,13 @@ struct RouteMap: View {
     var kilometers: [KilometerMarker] = []
     var showsUser: Bool = false
     var userCoordinate: CLLocationCoordinate2D? = nil
+    /// Live workout puck. When set with `showsUser`, replaces the system blue dot.
+    var liveUserMarker: Bool = false
+    var userCourseDegrees: Double? = nil
+    var userName: String = ""
+    #if canImport(UIKit)
+    var userAvatar: UIImage? = nil
+    #endif
     var cornerRadius: CGFloat = 0
     /// Recorded-route stroke. Other screens keep the historical cobalt default.
     var routeColor: Color = Color.omniCobalt
@@ -30,9 +37,16 @@ struct RouteMap: View {
     var fitToken: Int = 0
     /// Detail can switch styles. Other screens keep the standard map.
     var style: MapStyle = .standard
+    /// Live watch map. Route growth must not yank the camera while the person is panning.
+    var refitsOnChange: Bool = true
+    /// After a pan or zoom, keep that camera until `fitToken` bumps.
+    var suspendRefitAfterGesture: Bool = false
 
     @State private var position: MapCameraPosition = .automatic
     @State private var framedUser = false
+    /// A finger or the Digital Crown moved the camera.
+    @State private var holdCamera = false
+    @State private var adjustingCamera = false
     /// Updated as soon as layout reports a size, so a later fit in the same turn sees it.
     @State private var mapSize = RouteMapSizeBox()
 
@@ -42,7 +56,19 @@ struct RouteMap: View {
 
     private var map: some View {
         Map(position: $position, interactionModes: [.pan, .zoom]) {
-            if showsUser {
+            if showsUser, liveUserMarker, let userCoordinate {
+                Annotation("当前位置", coordinate: userCoordinate, anchor: .center) {
+                    LiveUserMarker(
+                        name: userName,
+                        #if canImport(UIKit)
+                        image: userAvatar,
+                        #endif
+                        courseDegrees: userCourseDegrees,
+                        diameter: 26
+                    )
+                }
+                .annotationTitles(.hidden)
+            } else if showsUser {
                 UserAnnotation()
             }
             if planned.count >= 2 {
@@ -113,14 +139,34 @@ struct RouteMap: View {
                 framedUser = true
             }
         }
-        .onChange(of: route.count) { _, _ in frameCamera() }
-        .onChange(of: planned) { _, _ in frameCamera() }
-        .onChange(of: kilometers.count) { _, _ in frameCamera() }
+        .onMapCameraChange(frequency: .onEnd) { _ in
+            // Swallow the settle from our own frameCamera / first fit so
+            // suspendRefitAfterGesture maps (watch live) stay free to follow
+            // until the wearer actually pans or pinches.
+            if adjustingCamera {
+                adjustingCamera = false
+                return
+            }
+            guard suspendRefitAfterGesture else { return }
+            holdCamera = true
+        }
+        .onChange(of: route.count) { _, _ in refitIfAllowed() }
+        .onChange(of: planned) { _, _ in refitIfAllowed() }
+        .onChange(of: kilometers.count) { _, _ in refitIfAllowed() }
         .onChange(of: userCoordinate?.latitude) { _, _ in frameUserOnce() }
         .onChange(of: userCoordinate?.longitude) { _, _ in frameUserOnce() }
-        .onChange(of: fitToken) { _, _ in frameCamera() }
-        .onChange(of: obscuredTopFraction) { _, _ in frameCamera() }
-        .onChange(of: obscuredBottomFraction) { _, _ in frameCamera() }
+        .onChange(of: fitToken) { _, _ in
+            holdCamera = false
+            frameCamera()
+        }
+        .onChange(of: obscuredTopFraction) { _, _ in refitIfAllowed() }
+        .onChange(of: obscuredBottomFraction) { _, _ in refitIfAllowed() }
+    }
+
+    private func refitIfAllowed() {
+        guard !holdCamera else { return }
+        guard refitsOnChange else { return }
+        frameCamera()
     }
 
     private func endpointMark(square: Bool) -> some View {
@@ -157,12 +203,13 @@ struct RouteMap: View {
 
     /// The first user fix is part of the frame. Later fixes do not move the camera.
     private func frameUserOnce() {
-        guard showsUser, userCoordinate != nil, !framedUser else { return }
+        guard showsUser, userCoordinate != nil, !framedUser, !holdCamera else { return }
         framedUser = true
         frameCamera()
     }
 
     private func frameCamera() {
+        adjustingCamera = true
         var coords = route.map(\.coordinate) + planned.map(\.coordinate) + teammates.map(\.coordinate)
         coords.append(contentsOf: kilometers.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)

@@ -3,6 +3,9 @@ import Foundation
 /// Phone → Watch live workout snapshot. Kept small for WatchConnectivity.
 struct PhoneWatchLiveSnapshot: Codable, Equatable {
     static let contextKey = "sky.live.v1"
+    /// Optional JPEG thumbnail for the live map puck. Sent once per session.
+    static let avatarContextKey = "sky.live.avatar"
+    static let nameContextKey = "sky.live.name"
     static let version = 1
 
     var version: Int
@@ -17,6 +20,8 @@ struct PhoneWatchLiveSnapshot: Codable, Equatable {
     var paused: Bool
     var latitude: Double?
     var longitude: Double?
+    /// Degrees clockwise from true north for the live user puck.
+    var courseDegrees: Double?
     var route: [PhoneWatchCoord]
     var kilometers: [PhoneWatchKilometer]
 
@@ -66,6 +71,7 @@ struct PhoneWatchLiveSnapshot: Codable, Equatable {
             paused: false,
             latitude: nil,
             longitude: nil,
+            courseDegrees: nil,
             route: [],
             kilometers: []
         )
@@ -81,6 +87,7 @@ struct PhoneWatchLiveSnapshot: Codable, Equatable {
         altitudeMeters: Double,
         paused: Bool,
         userFix: GeoPoint?,
+        courseDegrees: Double? = nil,
         route: [GeoPoint],
         kilometers: [KilometerMarker],
         routeLimit: Int = 80
@@ -98,6 +105,7 @@ struct PhoneWatchLiveSnapshot: Codable, Equatable {
             paused: paused,
             latitude: userFix?.latitude,
             longitude: userFix?.longitude,
+            courseDegrees: courseDegrees,
             route: compactRoute(route, limit: routeLimit),
             kilometers: kilometers.map {
                 PhoneWatchKilometer(km: $0.kilometer, lat: $0.latitude, lon: $0.longitude, alt: $0.altitude)

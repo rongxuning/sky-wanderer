@@ -60,6 +60,8 @@ final class LiveSession: ObservableObject {
     @Published var route: [GeoPoint] = []
     /// Latest accepted fix. The live map recenters on this, including before the track has two points.
     @Published var userFix: GeoPoint?
+    /// Degrees clockwise from true north for the live user puck. `nil` until a course exists.
+    @Published var courseDegrees: Double?
     @Published var splits: [KilometerSplit] = []
     /// Where each full kilometer ended. The live map draws one numbered disc per entry.
     @Published private(set) var kilometerMarks: [KilometerMarker] = []
@@ -74,6 +76,8 @@ final class LiveSession: ObservableObject {
     private let pedometer = CMPedometer()
     private let location = CLLocationManager()
     private let locationProxy = LocationProxy()
+    /// HealthKit samples from the watch or a Bluetooth strap while this session runs.
+    private let heartProbe = AppleHealth.LiveHeartProbe()
     private var timer: Timer?
     private var startedAt = Date()
     private var runningSince: Date?
@@ -82,6 +86,8 @@ final class LiveSession: ObservableObject {
     private var healthDistance = 0.0
     private var lastLocation: CLLocation?
     private var lastAltitude: Double?
+    /// Thresholded climb/drop. Raw GPS altitude still updates `altitudeMeters` for display.
+    private var elevationTotals = ElevationNoise.Totals()
     /// First fix after resume is the cached pre-pause coordinate. Do not anchor on it.
     private var ignoreNextLocation = false
     /// Samples stamped before this were taken during the pause.
@@ -165,6 +171,7 @@ final class LiveSession: ObservableObject {
                 startPedometer()
                 startLocation()
                 if await adoptMirroredWatch() {
+                    startHeartProbe()
                     scheduleTeammates()
                     return
                 }
@@ -176,9 +183,12 @@ final class LiveSession: ObservableObject {
                     return
                 }
                 usedApple = true
-                heartSource = .none
+                // Stay `.unknown` until a sample arrives or the sheet times out to 「无来源」.
+                // A lingering watch workout or Bluetooth strap can still feed HealthKit.
+                heartSource = .unknown
                 simulating = false
                 statusText = ""
+                startHeartProbe()
             } catch {
                 guard phase == .running else { return }
                 beginSimulation("健康数据没有启动，已改用本地模拟")
@@ -188,6 +198,27 @@ final class LiveSession: ObservableObject {
         }
         guard phase == .running else { return }
         scheduleTeammates()
+    }
+
+    /// Reads heart-rate samples written during this workout (mirrored watch, lingering
+    /// watch session, or a paired Bluetooth strap). Does not invent older resting samples.
+    private func startHeartProbe() {
+        heartProbe.onHeart = { [weak self] bpm in
+            Task { @MainActor in
+                self?.applyProbedHeart(bpm)
+            }
+        }
+        heartProbe.start(from: startedAt)
+    }
+
+    private func applyProbedHeart(_ bpm: Double) {
+        guard phase == .running, !paused, !simulating, !leavingApple else { return }
+        guard bpm > 0 else { return }
+        heartRate = bpm
+        splitHearts.append(bpm)
+        if heartSource == .unknown || heartSource == .none {
+            heartSource = .watch
+        }
     }
 
     /// Phone asks the paired watch to record this workout. False on watchOS, with no watch, or if mirroring does not start.
@@ -257,6 +288,9 @@ final class LiveSession: ObservableObject {
         stopLocationUpdates()
         lastLocation = nil
         lastAltitude = nil
+        // Drop the altitude baseline so resume does not credit pause-time GPS
+        // wander as climb/descent. Cumulative gain/loss stay as-is.
+        elevationTotals.baselineMeters = nil
         if usedApple { recorder.pause() }
         pedometer.stopUpdates()
         publishLive()
@@ -290,6 +324,9 @@ final class LiveSession: ObservableObject {
         timer?.invalidate()
         pedometer.stopUpdates()
         stopLocationUpdates()
+        heartProbe.stop()
+        heartProbe.onHeart = nil
+        scrubStationaryTrack()
         let leftover = distanceMeters - splitStartDistance
         if leftover > 30 {
             closeSplit(distance: leftover, partial: true)
@@ -311,6 +348,29 @@ final class LiveSession: ObservableObject {
         return makeRecord(healthID: healthID, stoppedAt: stoppedAt)
     }
 
+    /// Drops an in-place GPS nest so the saved record and Health route are not a scribble.
+    private func scrubStationaryTrack() {
+        let cleaned = TrackNoise.scrubStationaryDrift(recordedRoute)
+        guard cleaned.count != recordedRoute.count else { return }
+        recordedRoute = cleaned
+        route = Self.displayRoute(recordedRoute)
+        guard recordedRoute.count < 2 else { return }
+        gpsDistance = 0
+        healthDistance = 0
+        distanceMeters = 0
+        elevationGainMeters = 0
+        elevationLossMeters = 0
+        elevationTotals = ElevationNoise.Totals()
+        if let only = recordedRoute.first {
+            elevationTotals.baselineMeters = only.altitude
+            lastAltitude = only.altitude
+            altitudeMeters = only.altitude
+        }
+        kilometerMarks = []
+        splits = []
+        paceSecPerKm = 0
+    }
+
     /// Drops the Apple session without saving it, then records only simulated points.
     private func beginSimulation(_ reason: String) {
         guard phase == .running, !simulating, !leavingApple else { return }
@@ -318,6 +378,8 @@ final class LiveSession: ObservableObject {
         usedApple = false
         stopLocationUpdates()
         pedometer.stopUpdates()
+        heartProbe.stop()
+        heartProbe.onHeart = nil
         if recorder.isSessionOpen {
             recorder.discard()
         }
@@ -356,7 +418,8 @@ final class LiveSession: ObservableObject {
                 // A dropped watch session must not invent a track or a heart rate. Phone GPS and pedometer stay.
                 if self.preferWatchMetrics {
                     self.preferWatchMetrics = false
-                    self.heartSource = .none
+                    // Probe can still pick up strap / residual HealthKit samples.
+                    self.heartSource = self.heartRate > 0 ? .watch : .unknown
                     self.watchCadenceFreshUntil = .distantPast
                     self.watchStepsAnchor = nil
                     self.statusText = "手表锻炼中断，已改用手机传感器"
@@ -475,6 +538,9 @@ final class LiveSession: ObservableObject {
         gpsDistance += speed
         appendPoint(simPoint)
         userFix = simPoint
+        var degrees = (simHeading * 180 / .pi).truncatingRemainder(dividingBy: 360)
+        if degrees < 0 { degrees += 360 }
+        courseDegrees = degrees
         paceSecPerKm = 1000 / speed
         heartRate = (sport == .running ? 156 : 118) + sin(elapsed / 12) * 6
         cadence = sport == .running ? 174 + sin(elapsed / 9) * 4 : 110 + sin(elapsed / 10) * 3
@@ -490,6 +556,9 @@ final class LiveSession: ObservableObject {
         if let heart = reading.heartRate, heart > 0 {
             heartRate = heart
             splitHearts.append(heart)
+            if heartSource == .unknown || heartSource == .none {
+                heartSource = .watch
+            }
         }
         if let distance = reading.distance, distance > 0 {
             healthDistance = distance
@@ -542,27 +611,62 @@ final class LiveSession: ObservableObject {
             altitude: location.altitude,
             timestamp: location.timestamp
         )
+        // Map follow uses every usable fix. Track and climb wait for real movement.
         userFix = fix
-        guard location.horizontalAccuracy < 40 else { return }
-        if let lastLocation {
-            let delta = location.distance(from: lastLocation)
-            if delta > 0.8, delta < 40 {
-                gpsDistance += delta
+        let firstFix = lastLocation == nil
+        let moved = lastLocation.map { location.distance(from: $0) } ?? 0
+        let advancesTrack = TrackNoise.acceptsTrackFix(
+            horizontalAccuracy: location.horizontalAccuracy,
+            speedMetersPerSecond: location.speed,
+            movedMeters: moved,
+            isFirst: firstFix
+        )
+        guard advancesTrack else {
+            if location.altitude.isFinite {
+                altitudeMeters = location.altitude
             }
+            // Gap / teleport: re-anchor so the next real step can be accepted.
+            // Without this, every later fix stays ≥ maxStep from a stale lastLocation
+            // and the track freezes for the rest of the session.
+            if moved >= TrackNoise.maxStepMeters,
+               location.horizontalAccuracy >= 0,
+               location.horizontalAccuracy < TrackNoise.maxHorizontalAccuracyMeters {
+                lastLocation = location
+                noteCourse(from: nil, to: location, moved: moved)
+            }
+            return
+        }
+        if !firstFix {
+            gpsDistance += moved
+            noteCourse(from: lastLocation, to: location, moved: moved)
         }
         lastLocation = location
-        startTeammates(at: GeoPoint(
-            latitude: location.coordinate.latitude,
-            longitude: location.coordinate.longitude,
-            altitude: location.altitude,
-            timestamp: location.timestamp
-        ))
-        if location.speed > 0.4 {
+        startTeammates(at: fix)
+        if location.speed > TrackNoise.minSpeedMetersPerSecond {
             paceSecPerKm = 1000 / location.speed
         }
         appendPoint(fix)
-        noteAltitude(location.altitude)
+        noteAltitude(location.altitude, verticalAccuracy: location.verticalAccuracy)
         refreshDistance()
+    }
+
+    private func noteCourse(from previous: CLLocation?, to location: CLLocation, moved: Double) {
+        if location.course >= 0 {
+            courseDegrees = location.course
+            return
+        }
+        guard let previous, moved >= 2 else { return }
+        courseDegrees = Self.bearingDegrees(from: previous.coordinate, to: location.coordinate)
+    }
+
+    private static func bearingDegrees(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D) -> Double {
+        let lat1 = start.latitude * .pi / 180
+        let lat2 = end.latitude * .pi / 180
+        let dLon = (end.longitude - start.longitude) * .pi / 180
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        let bearing = atan2(y, x) * 180 / .pi
+        return bearing < 0 ? bearing + 360 : bearing
     }
 
     private func appendPoint(_ point: GeoPoint) {
@@ -596,7 +700,9 @@ final class LiveSession: ObservableObject {
         altitudeMeters = 0
         lastLocation = nil
         lastAltitude = nil
+        elevationTotals = ElevationNoise.Totals()
         userFix = nil
+        courseDegrees = nil
         ignoreNextLocation = false
         resumeAnchorDate = .distantPast
         splits = []
@@ -637,18 +743,17 @@ final class LiveSession: ObservableObject {
         }
     }
 
-    private func noteAltitude(_ altitude: Double) {
+    private func noteAltitude(_ altitude: Double, verticalAccuracy: Double = 5) {
         guard altitude.isFinite else { return }
         altitudeMeters = altitude
-        if let lastAltitude {
-            let delta = altitude - lastAltitude
-            if delta > 0 {
-                elevationGainMeters += delta
-            } else if delta < 0 {
-                elevationLossMeters -= delta
-            }
-        }
-        lastAltitude = altitude
+        ElevationNoise.note(
+            altitude: altitude,
+            verticalAccuracy: verticalAccuracy,
+            into: &elevationTotals
+        )
+        lastAltitude = elevationTotals.baselineMeters
+        elevationGainMeters = elevationTotals.gainMeters
+        elevationLossMeters = elevationTotals.lossMeters
     }
 
     private func noteSplitProgress() {
@@ -755,6 +860,7 @@ final class LiveSession: ObservableObject {
             altitudeMeters: altitudeMeters,
             paused: paused,
             userFix: userFix,
+            courseDegrees: courseDegrees,
             route: recordedRoute.isEmpty ? route : recordedRoute,
             kilometers: kilometerMarks
         ))

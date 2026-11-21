@@ -163,17 +163,19 @@ struct WatchLiveView: View {
                 status: session.simulating ? "本地模拟" : (session.statusText.isEmpty ? nil : session.statusText),
                 onEnd: { Task { await end() } }
             )
+            .background(CanvasBackground())
             .navigationBarBackButtonHidden(true)
             WatchLiveMapPage(
                 route: session.route,
                 kilometers: session.kilometerMarks,
                 showsUser: !session.simulating,
-                userFix: session.userFix
+                userFix: session.userFix,
+                courseDegrees: session.courseDegrees,
+                userName: app.database.accounts.first(where: { $0.retiredAt == nil })?.name ?? ""
             )
             .navigationBarBackButtonHidden(true)
         }
         .tabViewStyle(.verticalPage)
-        .background(CanvasBackground())
         .navigationBarBackButtonHidden(true)
         .task {
             guard !started else { return }
