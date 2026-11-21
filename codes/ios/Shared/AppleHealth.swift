@@ -408,6 +408,54 @@ enum AppleHealth {
         }
     }
 
+    /// Live workout. Streams heart-rate samples stamped at or after `start`.
+    /// Used when the phone builder has no sensor of its own but the watch (or a
+    /// Bluetooth strap) is writing into HealthKit during this session.
+    final class LiveHeartProbe {
+        var onHeart: ((Double) -> Void)?
+        private var query: HKAnchoredObjectQuery?
+        private let unit = HKUnit.count().unitDivided(by: .minute())
+
+        func start(from start: Date) {
+            stop()
+            guard AppleHealth.available else { return }
+            guard let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
+            let predicate = HKQuery.predicateForSamples(withStart: start, end: nil, options: .strictStartDate)
+            let query = HKAnchoredObjectQuery(
+                type: type,
+                predicate: predicate,
+                anchor: nil,
+                limit: HKObjectQueryNoLimit
+            ) { [weak self] _, samples, _, _, _ in
+                self?.emit(samples)
+            }
+            query.updateHandler = { [weak self] _, samples, _, _, _ in
+                self?.emit(samples)
+            }
+            self.query = query
+            AppleHealth.store.execute(query)
+        }
+
+        func stop() {
+            if let query {
+                AppleHealth.store.stop(query)
+            }
+            query = nil
+        }
+
+        private func emit(_ samples: [HKSample]?) {
+            guard let samples = samples as? [HKQuantitySample], let latest = samples.max(by: { $0.endDate < $1.endDate }) else {
+                return
+            }
+            let bpm = latest.quantity.doubleValue(for: unit)
+            guard bpm.isFinite, bpm > 0 else { return }
+            let handler = onHeart
+            DispatchQueue.main.async {
+                handler?(bpm)
+            }
+        }
+    }
+
     private static func stepCountToday() async -> Int? {
         guard let type = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return nil }
         let start = Calendar.current.startOfDay(for: Date())

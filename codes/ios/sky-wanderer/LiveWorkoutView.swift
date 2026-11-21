@@ -75,7 +75,8 @@ private struct LiveBody: View {
     @State private var expanded = false
     @State private var dragTranslation: CGFloat = 0
     @State private var stripHeight: CGFloat = PlannedRouteStrip.occupiedHeight
-    @State private var followUser = false
+    /// Live training keeps the blue dot in the middle of the map above the sheet.
+    @State private var followUser = true
     @State private var userMovedCamera = false
     @State private var locateToken = 0
     @ObservedObject private var basemap = SkyBasemapCenter.shared
@@ -97,7 +98,10 @@ private struct LiveBody: View {
                     showsUser: !session.simulating,
                     userCoordinate: session.userFix?.coordinate,
                     basemapMode: basemap.mode,
-                    bottomInset: covered,
+                    // Keep layoutMargins small so MapKit does not also inset the
+                    // camera; `obscuredBottomFraction` alone places the user/route
+                    // in the band above the sheet. Credit still clears the sheet.
+                    bottomInset: 8,
                     obscuredBottomFraction: fraction,
                     creditBottomInset: covered,
                     refitsOnChange: !followUser && !userMovedCamera,
@@ -371,11 +375,13 @@ private struct LiveDataSheet: View {
         }
     }
 
-    /// Phone has no heart-rate sensor. A dash stays a dash until this session measures one.
+    /// Phone has no heart-rate sensor. Wait for the watch / strap / HealthKit probe
+    /// before labeling the dash as 「无来源」.
     private var heartUnavailable: Bool {
         guard !session.simulating, session.heartRate <= 0 else { return false }
         if session.heartSource == .none { return true }
-        return session.heartSource == .watch && session.elapsed > 20
+        // Mirror wait is ~20s; give HealthKit a little longer before declaring no source.
+        return session.elapsed > 35
     }
 
     private var heartUnit: String {

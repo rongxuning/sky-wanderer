@@ -506,14 +506,25 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         releaseCameraAdjust()
     }
 
-    /// Puts the user in the middle of the map that is not covered by `bottomInset`.
-    /// `setRegion` centers on the full view, so the latitude is shifted by half the covered band.
+    /// Puts the user in the middle of the map band above the live sheet.
+    ///
+    /// Cover height comes from `obscuredBottomFraction` when the live sheet set it,
+    /// otherwise from `bottomInset`. `setRegion` still centers on the full view, so
+    /// latitude moves south by half the covered band. Callers that also lift the
+    /// legal label with a large `layoutMargins.bottom` must not pass that same
+    /// height as `bottomInset` here — that double-shifts the blue dot upward.
     private func centerUser(on map: MKMapView, animated: Bool) {
         guard map.bounds.width > 40, map.bounds.height > 40 else { return }
         guard let stored = subjectCoordinate(on: map) else { return }
         let point = displayed(stored)
         let height = map.bounds.height
-        let inset = min(max(0, bottomInset), height * 0.85)
+        let cover: CGFloat
+        if obscuredBottomFraction > 0.05, obscuredBottomFraction < 0.85 {
+            cover = CGFloat(obscuredBottomFraction) * height
+        } else {
+            cover = bottomInset
+        }
+        let inset = min(max(0, cover), height * 0.85)
         let current = map.region.span
         let span: MKCoordinateSpan
         if current.latitudeDelta > 0.0004, current.latitudeDelta < 0.2,
@@ -523,10 +534,10 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
             span = MKCoordinateSpan(latitudeDelta: 0.008, longitudeDelta: 0.008)
         }
         var center = point
-        center.latitude -= span.latitudeDelta * (inset / (2 * height))
+        center.latitude -= span.latitudeDelta * Double(inset / (2 * height))
         let region = MKCoordinateRegion(center: center, span: span)
         lastCentered = stored
-        lastCenteredInset = bottomInset
+        lastCenteredInset = cover
         didFit = true
         if regionClose(map.region, to: region) { return }
         adjustingCamera = true
@@ -554,7 +565,14 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     }
 
     private func insetMoved() -> Bool {
-        abs(bottomInset - lastCenteredInset) > 0.5
+        let height = lastSize.height > 1 ? lastSize.height : 0
+        let cover: CGFloat
+        if obscuredBottomFraction > 0.05, obscuredBottomFraction < 0.85, height > 1 {
+            cover = CGFloat(obscuredBottomFraction) * height
+        } else {
+            cover = bottomInset
+        }
+        return abs(cover - lastCenteredInset) > 0.5
     }
 
     private func releaseCameraAdjust() {

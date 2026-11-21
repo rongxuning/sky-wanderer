@@ -74,6 +74,8 @@ final class LiveSession: ObservableObject {
     private let pedometer = CMPedometer()
     private let location = CLLocationManager()
     private let locationProxy = LocationProxy()
+    /// HealthKit samples from the watch or a Bluetooth strap while this session runs.
+    private let heartProbe = AppleHealth.LiveHeartProbe()
     private var timer: Timer?
     private var startedAt = Date()
     private var runningSince: Date?
@@ -165,6 +167,7 @@ final class LiveSession: ObservableObject {
                 startPedometer()
                 startLocation()
                 if await adoptMirroredWatch() {
+                    startHeartProbe()
                     scheduleTeammates()
                     return
                 }
@@ -176,9 +179,12 @@ final class LiveSession: ObservableObject {
                     return
                 }
                 usedApple = true
-                heartSource = .none
+                // Stay `.unknown` until a sample arrives or the sheet times out to 「无来源」.
+                // A lingering watch workout or Bluetooth strap can still feed HealthKit.
+                heartSource = .unknown
                 simulating = false
                 statusText = ""
+                startHeartProbe()
             } catch {
                 guard phase == .running else { return }
                 beginSimulation("健康数据没有启动，已改用本地模拟")
@@ -188,6 +194,27 @@ final class LiveSession: ObservableObject {
         }
         guard phase == .running else { return }
         scheduleTeammates()
+    }
+
+    /// Reads heart-rate samples written during this workout (mirrored watch, lingering
+    /// watch session, or a paired Bluetooth strap). Does not invent older resting samples.
+    private func startHeartProbe() {
+        heartProbe.onHeart = { [weak self] bpm in
+            Task { @MainActor in
+                self?.applyProbedHeart(bpm)
+            }
+        }
+        heartProbe.start(from: startedAt)
+    }
+
+    private func applyProbedHeart(_ bpm: Double) {
+        guard phase == .running, !paused, !simulating, !leavingApple else { return }
+        guard bpm > 0 else { return }
+        heartRate = bpm
+        splitHearts.append(bpm)
+        if heartSource == .unknown || heartSource == .none {
+            heartSource = .watch
+        }
     }
 
     /// Phone asks the paired watch to record this workout. False on watchOS, with no watch, or if mirroring does not start.
@@ -290,6 +317,8 @@ final class LiveSession: ObservableObject {
         timer?.invalidate()
         pedometer.stopUpdates()
         stopLocationUpdates()
+        heartProbe.stop()
+        heartProbe.onHeart = nil
         let leftover = distanceMeters - splitStartDistance
         if leftover > 30 {
             closeSplit(distance: leftover, partial: true)
@@ -318,6 +347,8 @@ final class LiveSession: ObservableObject {
         usedApple = false
         stopLocationUpdates()
         pedometer.stopUpdates()
+        heartProbe.stop()
+        heartProbe.onHeart = nil
         if recorder.isSessionOpen {
             recorder.discard()
         }
@@ -356,7 +387,8 @@ final class LiveSession: ObservableObject {
                 // A dropped watch session must not invent a track or a heart rate. Phone GPS and pedometer stay.
                 if self.preferWatchMetrics {
                     self.preferWatchMetrics = false
-                    self.heartSource = .none
+                    // Probe can still pick up strap / residual HealthKit samples.
+                    self.heartSource = self.heartRate > 0 ? .watch : .unknown
                     self.watchCadenceFreshUntil = .distantPast
                     self.watchStepsAnchor = nil
                     self.statusText = "手表锻炼中断，已改用手机传感器"
@@ -490,6 +522,9 @@ final class LiveSession: ObservableObject {
         if let heart = reading.heartRate, heart > 0 {
             heartRate = heart
             splitHearts.append(heart)
+            if heartSource == .unknown || heartSource == .none {
+                heartSource = .watch
+            }
         }
         if let distance = reading.distance, distance > 0 {
             healthDistance = distance

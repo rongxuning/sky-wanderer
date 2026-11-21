@@ -95,8 +95,10 @@ final class WatchMirrorGate {
     private var delivered: HKWorkoutSession?
     /// False after delivery, launch failure, or timeout. A different session is ended.
     private var accept = false
-    /// Bumped on every request so a previous 8-second wait cannot clear the next one.
+    /// Bumped on every request so a previous wait cannot clear the next one.
     private var generation = 0
+    /// Watch unlock / Health prompt often needs more than a few seconds.
+    private static let mirrorWaitNanoseconds: UInt64 = 20_000_000_000
 
     func request(_ sport: SportKind) async -> HKWorkoutSession? {
         generation += 1
@@ -122,7 +124,7 @@ final class WatchMirrorGate {
                     self.giveUp(resumeNil: true)
                     return
                 }
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
+                try? await Task.sleep(nanoseconds: Self.mirrorWaitNanoseconds)
                 guard token == self.generation else { return }
                 self.giveUp(resumeNil: self.waiter != nil)
             }
