@@ -26,6 +26,7 @@ struct LiveWorkoutView: View {
             started = true
             let live = app.session(for: draft.sport, route: draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts).points, teammates: draft.members)
             live.liveActivity = WorkoutLiveActivityCenter.shared
+            live.watchMirror = WatchLink.shared
             session = live
             await live.start()
         }

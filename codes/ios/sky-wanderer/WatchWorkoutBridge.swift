@@ -12,28 +12,54 @@ enum WatchWorkoutBridge {
     }
 }
 
-final class WatchLink: NSObject, WCSessionDelegate {
+final class WatchLink: NSObject, WCSessionDelegate, PhoneWatchLiveSink {
     static let shared = WatchLink()
     private let lock = NSLock()
     private var activation: CheckedContinuation<Void, Never>?
 
     func canLaunchWatchApp() async -> Bool {
+        guard await activateIfNeeded() else { return false }
+        let session = WCSession.default
+        return session.isPaired && session.isWatchAppInstalled
+    }
+
+    @MainActor
+    func pushLive(_ snapshot: PhoneWatchLiveSnapshot) {
+        guard WCSession.isSupported() else { return }
+        Task { @MainActor in
+            guard await self.activateIfNeeded() else { return }
+            let session = WCSession.default
+            guard session.activationState == .activated else { return }
+            guard let payload = try? snapshot.dictionary() else { return }
+            try? session.updateApplicationContext(payload)
+            if session.isReachable {
+                session.sendMessage(payload, replyHandler: nil) { _ in }
+            }
+        }
+    }
+
+    @MainActor
+    func endLive() {
+        pushLive(.idle())
+    }
+
+    @discardableResult
+    private func activateIfNeeded() async -> Bool {
         guard WCSession.isSupported() else { return false }
         let session = WCSession.default
         session.delegate = self
-        if session.activationState != .activated {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                self.lock.lock()
-                self.activation = continuation
-                self.lock.unlock()
-                session.activate()
-                Task {
-                    try? await Task.sleep(nanoseconds: 3_000_000_000)
-                    self.finishActivation()
-                }
+        if session.activationState == .activated { return true }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            self.lock.lock()
+            self.activation = continuation
+            self.lock.unlock()
+            session.activate()
+            Task {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                self.finishActivation()
             }
         }
-        return session.isPaired && session.isWatchAppInstalled
+        return session.activationState == .activated
     }
 
     func session(
