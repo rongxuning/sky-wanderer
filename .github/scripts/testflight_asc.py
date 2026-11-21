@@ -730,19 +730,46 @@ def _profile_certificate_ids(profile: dict) -> set[str]:
 
 
 def matching_store_profile(profiles: list[dict], certificate_id: str) -> dict | None:
+    """An active App Store profile for this certificate. Content may be fetched separately."""
     for profile in profiles:
         attributes = profile.get("attributes") or {}
         if attributes.get("profileType") != "IOS_APP_STORE":
             continue
         if attributes.get("profileState") not in (None, "ACTIVE"):
             continue
-        if not attributes.get("profileContent"):
-            continue
         certificates = _profile_certificate_ids(profile)
         if certificates and certificate_id not in certificates:
             continue
         return profile
     return None
+
+
+def fresh_profile_name(existing: list[dict]) -> str:
+    """Profile names are unique. An expired profile keeps its name, so a replacement needs another."""
+    taken = {str((item.get("attributes") or {}).get("name") or "") for item in existing}
+    if LIVE_PROFILE_NAME not in taken:
+        return LIVE_PROFILE_NAME
+    stamp = time.strftime("%Y%m%d%H%M%S", time.gmtime())
+    candidate = f"{LIVE_PROFILE_NAME} {stamp}"
+    if candidate in taken:
+        candidate = f"{candidate}-{os.getpid()}"
+    return candidate
+
+
+def profile_content(transport: Transport, profile: dict) -> str:
+    content = str((profile.get("attributes") or {}).get("profileContent") or "")
+    if content or not profile.get("id"):
+        return content
+    status, payload = transport.request(
+        "GET",
+        f"{ASC_API}/v1/profiles/{profile['id']}?fields[profiles]=profileContent",
+    )
+    if status != 200:
+        raise AscError(
+            f"Could not read profile {profile['id']} (HTTP {status}). {_error_detail(payload)}".strip()
+        )
+    data = payload.get("data") or {}
+    return str((data.get("attributes") or {}).get("profileContent") or "")
 
 
 def ensure_live_profile(transport: Transport, p12: Path, password: str, dest: Path) -> None:
@@ -760,8 +787,10 @@ def ensure_live_profile(transport: Transport, p12: Path, password: str, dest: Pa
             f"Could not list profiles for {LIVE_BUNDLE_ID} (HTTP {status}). "
             f"{_error_detail(payload)}".strip()
         )
-    chosen = matching_store_profile(payload.get("data") or [], certificate_id)
-    if chosen is None:
+    profiles = payload.get("data") or []
+    chosen = matching_store_profile(profiles, certificate_id)
+    content = profile_content(transport, chosen) if chosen is not None else ""
+    if not content:
         status, payload = transport.request(
             "POST",
             f"{ASC_API}/v1/profiles",
@@ -769,7 +798,7 @@ def ensure_live_profile(transport: Transport, p12: Path, password: str, dest: Pa
                 "data": {
                     "type": "profiles",
                     "attributes": {
-                        "name": LIVE_PROFILE_NAME,
+                        "name": fresh_profile_name(profiles),
                         "profileType": "IOS_APP_STORE",
                     },
                     "relationships": {
@@ -789,7 +818,7 @@ def ensure_live_profile(transport: Transport, p12: Path, password: str, dest: Pa
                 f"{_error_detail(payload)}".strip()
             )
         chosen = payload.get("data") or {}
-    content = str((chosen.get("attributes") or {}).get("profileContent") or "")
+        content = str((chosen.get("attributes") or {}).get("profileContent") or "")
     if not content:
         raise AscError(f"App Store profile for {LIVE_BUNDLE_ID} did not include profile content.")
     dest.write_bytes(b64decode_relaxed(content))
@@ -1311,19 +1340,28 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
     if iphone.get("UIBackgroundModes") != ["location"]:
         raise SystemExit("iPhone UIBackgroundModes must be exactly location")
     assert normalize_serial("serial=0000AB12") == "AB12"
-    assert matching_store_profile(
-        [
-            {
-                "attributes": {
-                    "profileType": "IOS_APP_STORE",
-                    "profileState": "ACTIVE",
-                    "profileContent": "YQ==",
-                },
-                "relationships": {"certificates": {"data": [{"id": "CERT"}]}},
-            }
-        ],
-        "CERT",
-    )
+    active = {
+        "id": "PROF",
+        "attributes": {
+            "name": LIVE_PROFILE_NAME,
+            "profileType": "IOS_APP_STORE",
+            "profileState": "ACTIVE",
+        },
+        "relationships": {"certificates": {"data": [{"id": "CERT"}]}},
+    }
+    expired = {
+        "attributes": {
+            "name": LIVE_PROFILE_NAME,
+            "profileType": "IOS_APP_STORE",
+            "profileState": "INVALID",
+            "profileContent": "YQ==",
+        },
+        "relationships": {"certificates": {"data": [{"id": "CERT"}]}},
+    }
+    assert matching_store_profile([expired], "CERT") is None
+    assert matching_store_profile([active], "CERT") is active
+    assert fresh_profile_name([expired]) != LIVE_PROFILE_NAME
+    assert fresh_profile_name([]) == LIVE_PROFILE_NAME
     if watch.get("WKBackgroundModes") != ["workout-processing"]:
         raise SystemExit("Watch WKBackgroundModes must keep workout-processing")
 
