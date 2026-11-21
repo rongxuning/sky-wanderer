@@ -9,6 +9,13 @@ struct RouteMap: View {
     var kilometers: [KilometerMarker] = []
     var showsUser: Bool = false
     var userCoordinate: CLLocationCoordinate2D? = nil
+    /// Live workout puck. When set with `showsUser`, replaces the system blue dot.
+    var liveUserMarker: Bool = false
+    var userCourseDegrees: Double? = nil
+    var userName: String = ""
+    #if canImport(UIKit)
+    var userAvatar: UIImage? = nil
+    #endif
     var cornerRadius: CGFloat = 0
     /// Recorded-route stroke. Other screens keep the historical cobalt default.
     var routeColor: Color = Color.omniCobalt
@@ -49,7 +56,19 @@ struct RouteMap: View {
 
     private var map: some View {
         Map(position: $position, interactionModes: [.pan, .zoom]) {
-            if showsUser {
+            if showsUser, liveUserMarker, let userCoordinate {
+                Annotation("当前位置", coordinate: userCoordinate, anchor: .center) {
+                    LiveUserMarker(
+                        name: userName,
+                        #if canImport(UIKit)
+                        image: userAvatar,
+                        #endif
+                        courseDegrees: userCourseDegrees,
+                        diameter: 26
+                    )
+                }
+                .annotationTitles(.hidden)
+            } else if showsUser {
                 UserAnnotation()
             }
             if planned.count >= 2 {

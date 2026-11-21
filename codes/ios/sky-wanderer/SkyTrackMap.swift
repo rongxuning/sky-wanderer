@@ -26,6 +26,11 @@ struct SkyTrackMap: UIViewRepresentable {
     var kilometers: [KilometerMarker] = []
     var showsUser: Bool = false
     var userCoordinate: CLLocationCoordinate2D? = nil
+    /// Live workout. Custom avatar + heading tip instead of the system blue dot.
+    var liveUserMarker: Bool = false
+    var userCourseDegrees: Double? = nil
+    var userName: String = ""
+    var userAvatar: UIImage? = nil
     var showsEndpoints: Bool = false
     var basemapMode: SkyBasemapMode
     var bottomInset: CGFloat = 0
@@ -88,6 +93,10 @@ struct SkyTrackMap: UIViewRepresentable {
         coordinator.mode = basemapMode
         coordinator.showsUser = showsUser
         coordinator.userCoordinate = userCoordinate
+        coordinator.liveUserMarker = liveUserMarker
+        coordinator.userCourseDegrees = userCourseDegrees
+        coordinator.userName = userName
+        coordinator.userAvatar = userAvatar
         coordinator.showsEndpoints = showsEndpoints
         coordinator.obscuredTopFraction = obscuredTopFraction
         coordinator.obscuredBottomFraction = obscuredBottomFraction
@@ -105,7 +114,7 @@ struct SkyTrackMap: UIViewRepresentable {
         map.isZoomEnabled = true
         map.isRotateEnabled = false
         map.isPitchEnabled = false
-        map.showsUserLocation = showsUser
+        map.showsUserLocation = showsUser && !liveUserMarker
         map.pointOfInterestFilter = basemapMode == .tianditu ? .excludingAll : nil
         let inset = max(0, bottomInset)
         if abs(map.layoutMargins.bottom - inset) > 0.5 {
@@ -177,6 +186,10 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     var mode: SkyBasemapMode = .system
     var showsUser = false
     var userCoordinate: CLLocationCoordinate2D?
+    var liveUserMarker = false
+    var userCourseDegrees: Double?
+    var userName = ""
+    var userAvatar: UIImage?
     var showsEndpoints = false
     var obscuredTopFraction = 0.0
     var obscuredBottomFraction = 0.0
@@ -197,6 +210,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     private var teammateAnnotations: [TeammateAnnotation] = []
     private var kilometerAnnotations: [TrackKilometerAnnotation] = []
     private var vertexAnnotations: [VertexAnnotation] = []
+    private var liveUserAnnotation: LiveUserAnnotation?
     private var appliedMode: SkyBasemapMode?
     private var appliedRoute: [GeoPoint] = []
     private var appliedPlanned: [GeoPoint] = []
@@ -277,6 +291,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
             }
             refreshKilometers(on: map)
         }
+        syncLiveUser(on: map)
         if modeChanged || routeDirty || plannedDirty, let routeOverlay {
             map.removeOverlay(routeOverlay)
             map.addOverlay(routeOverlay)
@@ -424,6 +439,39 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         }
         teammateAnnotations = notes
         map.addAnnotations(notes)
+    }
+
+    private func syncLiveUser(on map: MKMapView) {
+        guard liveUserMarker, showsUser, let stored = userCoordinate else {
+            if let liveUserAnnotation {
+                map.removeAnnotation(liveUserAnnotation)
+                self.liveUserAnnotation = nil
+            }
+            return
+        }
+        let coordinate = displayed(stored)
+        if let liveUserAnnotation {
+            liveUserAnnotation.coordinate = coordinate
+            liveUserAnnotation.courseDegrees = userCourseDegrees
+            liveUserAnnotation.userName = userName
+            liveUserAnnotation.avatar = userAvatar
+            if let view = map.view(for: liveUserAnnotation) as? LiveUserMarkerAnnotationView {
+                view.apply(
+                    name: userName,
+                    image: userAvatar,
+                    courseDegrees: userCourseDegrees
+                )
+            }
+            return
+        }
+        let note = LiveUserAnnotation(
+            coordinate: coordinate,
+            courseDegrees: userCourseDegrees,
+            userName: userName,
+            avatar: userAvatar
+        )
+        liveUserAnnotation = note
+        map.addAnnotation(note)
     }
 
     /// Zooming changes which discs touch, so this runs on every camera change as well.
@@ -619,6 +667,13 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
 
 enum TrackAnnotationViews {
     static func view(for annotation: MKAnnotation, on map: MKMapView) -> MKAnnotationView? {
+        if let mark = annotation as? LiveUserAnnotation {
+            let view = map.dequeueReusableAnnotationView(withIdentifier: LiveUserMarkerAnnotationView.reuseID) as? LiveUserMarkerAnnotationView
+                ?? LiveUserMarkerAnnotationView(annotation: mark, reuseIdentifier: LiveUserMarkerAnnotationView.reuseID)
+            view.annotation = mark
+            view.apply(name: mark.userName, image: mark.avatar, courseDegrees: mark.courseDegrees)
+            return view
+        }
         if let mark = annotation as? EndpointAnnotation {
             let view = map.dequeueReusableAnnotationView(withIdentifier: EndpointMarkerView.reuseID) as? EndpointMarkerView
                 ?? EndpointMarkerView(annotation: mark, reuseIdentifier: EndpointMarkerView.reuseID)
@@ -648,6 +703,127 @@ enum TrackAnnotationViews {
             return view
         }
         return nil
+    }
+}
+
+final class LiveUserAnnotation: NSObject, MKAnnotation {
+    dynamic var coordinate: CLLocationCoordinate2D
+    var courseDegrees: Double?
+    var userName: String
+    var avatar: UIImage?
+
+    init(coordinate: CLLocationCoordinate2D, courseDegrees: Double?, userName: String, avatar: UIImage?) {
+        self.coordinate = coordinate
+        self.courseDegrees = courseDegrees
+        self.userName = userName
+        self.avatar = avatar
+        super.init()
+    }
+}
+
+/// Avatar disc with a heading tip. The geographic point sits at the disc center.
+final class LiveUserMarkerAnnotationView: MKAnnotationView {
+    static let reuseID = "live-user"
+
+    private let host = UIView()
+    private let disc = UIImageView()
+    private let initial = UILabel()
+    private let tip = LiveUserTipView()
+    private let diameter: CGFloat = 28
+    private let tipSize: CGFloat = 11
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        canShowCallout = false
+        isEnabled = false
+        displayPriority = .required
+        zPriority = .max
+        disc.contentMode = .scaleAspectFill
+        disc.clipsToBounds = true
+        disc.layer.borderColor = UIColor.white.cgColor
+        disc.layer.borderWidth = 2
+        initial.font = .systemFont(ofSize: 12, weight: .bold)
+        initial.textColor = .white
+        initial.textAlignment = .center
+        initial.backgroundColor = UIColor(red: 2 / 255, green: 132 / 255, blue: 199 / 255, alpha: 1)
+        host.addSubview(disc)
+        host.addSubview(initial)
+        host.addSubview(tip)
+        addSubview(host)
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.28
+        layer.shadowRadius = 3
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func apply(name: String, image: UIImage?, courseDegrees: Double?) {
+        let side = diameter
+        let tipHeight = tipSize * 0.9
+        let total = side + tipHeight
+        host.frame = CGRect(x: 0, y: 0, width: total, height: total)
+        let discOrigin = CGPoint(x: (total - side) / 2, y: (total - side) / 2)
+        disc.frame = CGRect(origin: discOrigin, size: CGSize(width: side, height: side))
+        disc.layer.cornerRadius = side / 2
+        initial.frame = disc.frame
+        initial.layer.cornerRadius = side / 2
+        initial.clipsToBounds = true
+        tip.frame = CGRect(
+            x: (total - tipSize) / 2,
+            y: discOrigin.y - tipHeight * 0.55,
+            width: tipSize,
+            height: tipHeight
+        )
+        if let image {
+            disc.image = image
+            disc.isHidden = false
+            initial.isHidden = true
+        } else {
+            disc.image = nil
+            disc.isHidden = true
+            initial.isHidden = false
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            initial.text = trimmed.first.map(String.init) ?? "我"
+        }
+        bounds = host.bounds
+        // Keep the disc centered on the coordinate while the tip rotates around it.
+        centerOffset = .zero
+        let radians = CGFloat((courseDegrees ?? 0) * .pi / 180)
+        host.transform = CGAffineTransform(rotationAngle: radians)
+        accessibilityLabel = "当前位置"
+        isAccessibilityElement = true
+    }
+}
+
+private final class LiveUserTipView: UIView {
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        context.setFillColor(UIColor.white.cgColor)
+        context.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        context.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        context.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        context.closePath()
+        context.fillPath()
+        context.setStrokeColor(UIColor(red: 2 / 255, green: 132 / 255, blue: 199 / 255, alpha: 1).cgColor)
+        context.setLineWidth(1)
+        context.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        context.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        context.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        context.closePath()
+        context.strokePath()
     }
 }
 

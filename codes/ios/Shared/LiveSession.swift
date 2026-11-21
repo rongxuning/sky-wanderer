@@ -60,6 +60,8 @@ final class LiveSession: ObservableObject {
     @Published var route: [GeoPoint] = []
     /// Latest accepted fix. The live map recenters on this, including before the track has two points.
     @Published var userFix: GeoPoint?
+    /// Degrees clockwise from true north for the live user puck. `nil` until a course exists.
+    @Published var courseDegrees: Double?
     @Published var splits: [KilometerSplit] = []
     /// Where each full kilometer ended. The live map draws one numbered disc per entry.
     @Published private(set) var kilometerMarks: [KilometerMarker] = []
@@ -532,6 +534,9 @@ final class LiveSession: ObservableObject {
         gpsDistance += speed
         appendPoint(simPoint)
         userFix = simPoint
+        var degrees = (simHeading * 180 / .pi).truncatingRemainder(dividingBy: 360)
+        if degrees < 0 { degrees += 360 }
+        courseDegrees = degrees
         paceSecPerKm = 1000 / speed
         heartRate = (sport == .running ? 156 : 118) + sin(elapsed / 12) * 6
         cadence = sport == .running ? 174 + sin(elapsed / 9) * 4 : 110 + sin(elapsed / 10) * 3
@@ -620,6 +625,7 @@ final class LiveSession: ObservableObject {
         }
         if !firstFix {
             gpsDistance += moved
+            noteCourse(from: lastLocation, to: location, moved: moved)
         }
         lastLocation = location
         startTeammates(at: fix)
@@ -629,6 +635,25 @@ final class LiveSession: ObservableObject {
         appendPoint(fix)
         noteAltitude(location.altitude, verticalAccuracy: location.verticalAccuracy)
         refreshDistance()
+    }
+
+    private func noteCourse(from previous: CLLocation?, to location: CLLocation, moved: Double) {
+        if location.course >= 0 {
+            courseDegrees = location.course
+            return
+        }
+        guard let previous, moved >= 2 else { return }
+        courseDegrees = Self.bearingDegrees(from: previous.coordinate, to: location.coordinate)
+    }
+
+    private static func bearingDegrees(from start: CLLocationCoordinate2D, to end: CLLocationCoordinate2D) -> Double {
+        let lat1 = start.latitude * .pi / 180
+        let lat2 = end.latitude * .pi / 180
+        let dLon = (end.longitude - start.longitude) * .pi / 180
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        let bearing = atan2(y, x) * 180 / .pi
+        return bearing < 0 ? bearing + 360 : bearing
     }
 
     private func appendPoint(_ point: GeoPoint) {
@@ -664,6 +689,7 @@ final class LiveSession: ObservableObject {
         lastAltitude = nil
         elevationTotals = ElevationNoise.Totals()
         userFix = nil
+        courseDegrees = nil
         ignoreNextLocation = false
         resumeAnchorDate = .distantPast
         splits = []
@@ -821,6 +847,7 @@ final class LiveSession: ObservableObject {
             altitudeMeters: altitudeMeters,
             paused: paused,
             userFix: userFix,
+            courseDegrees: courseDegrees,
             route: recordedRoute.isEmpty ? route : recordedRoute,
             kilometers: kilometerMarks
         ))

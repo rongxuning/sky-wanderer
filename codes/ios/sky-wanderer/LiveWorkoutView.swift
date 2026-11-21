@@ -27,6 +27,7 @@ struct LiveWorkoutView: View {
             let live = app.session(for: draft.sport, route: draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts).points, teammates: draft.members)
             live.liveActivity = WorkoutLiveActivityCenter.shared
             live.watchMirror = WatchLink.shared
+            WatchLink.shared.prepareLiveAvatar(image: app.accountAvatar, name: app.account?.name ?? "")
             session = live
             await live.start()
         }
@@ -97,6 +98,10 @@ private struct LiveBody: View {
                     kilometers: session.kilometerMarks,
                     showsUser: !session.simulating,
                     userCoordinate: session.userFix?.coordinate,
+                    liveUserMarker: true,
+                    userCourseDegrees: session.courseDegrees,
+                    userName: app.account?.name ?? "",
+                    userAvatar: app.accountAvatar,
                     basemapMode: basemap.mode,
                     // Keep layoutMargins small so MapKit does not also inset the
                     // camera; `obscuredBottomFraction` alone places the user/route

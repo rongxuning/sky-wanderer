@@ -169,7 +169,9 @@ struct WatchLiveView: View {
                 route: session.route,
                 kilometers: session.kilometerMarks,
                 showsUser: !session.simulating,
-                userFix: session.userFix
+                userFix: session.userFix,
+                courseDegrees: session.courseDegrees,
+                userName: app.database.accounts.first(where: { $0.retiredAt == nil })?.name ?? ""
             )
             .navigationBarBackButtonHidden(true)
         }
