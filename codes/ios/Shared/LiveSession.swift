@@ -50,6 +50,8 @@ final class LiveSession: ObservableObject {
     @Published var energyKilocalories: Double = 0
     @Published var elevationGainMeters: Double = 0
     @Published var elevationLossMeters: Double = 0
+    /// Latest GPS altitude in meters. The watch companion screen shows this as 实时海拔.
+    @Published var altitudeMeters: Double = 0
     /// Heart-rate samples taken while moving. The live sheet plots these.
     @Published private(set) var heartSeries: [SeriesPoint] = []
     /// Cadence samples taken while moving, in steps per minute.
@@ -64,6 +66,8 @@ final class LiveSession: ObservableObject {
     @Published var teammates: [TeammateLive] = []
     private(set) var routeSaveWarning: String?
     weak var liveActivity: LiveActivitySink?
+    /// Phone → Watch live mirror. The watch target leaves this nil.
+    weak var watchMirror: PhoneWatchLiveSink?
 
     private let recorder = AppleWorkoutRecorder()
     private let sync: TeammateSync = LocalTeammateSimulator()
@@ -303,6 +307,7 @@ final class LiveSession: ObservableObject {
         usedApple = false
         sync.stop()
         liveActivity?.endLive()
+        watchMirror?.endLive()
         return makeRecord(healthID: healthID, stoppedAt: stoppedAt)
     }
 
@@ -588,6 +593,7 @@ final class LiveSession: ObservableObject {
         energyKilocalories = 0
         elevationGainMeters = 0
         elevationLossMeters = 0
+        altitudeMeters = 0
         lastLocation = nil
         lastAltitude = nil
         userFix = nil
@@ -633,6 +639,7 @@ final class LiveSession: ObservableObject {
 
     private func noteAltitude(_ altitude: Double) {
         guard altitude.isFinite else { return }
+        altitudeMeters = altitude
         if let lastAltitude {
             let delta = altitude - lastAltitude
             if delta > 0 {
@@ -729,14 +736,28 @@ final class LiveSession: ObservableObject {
     }
 
     private func publishLive() {
+        let shownHeart = simulating ? 0 : heartRate
         liveActivity?.noteLive(
             sportTitle: sport.title,
             elapsed: elapsed,
             distanceMeters: distanceMeters,
             paceSecPerKm: paceSecPerKm,
-            heartRate: simulating ? 0 : heartRate,
+            heartRate: shownHeart,
             paused: paused
         )
+        watchMirror?.pushLive(PhoneWatchLiveSnapshot.from(
+            sport: sport,
+            elapsed: elapsed,
+            distanceMeters: distanceMeters,
+            paceSecPerKm: paceSecPerKm,
+            heartRate: shownHeart,
+            cadence: cadence,
+            altitudeMeters: altitudeMeters,
+            paused: paused,
+            userFix: userFix,
+            route: recordedRoute.isEmpty ? route : recordedRoute,
+            kilometers: kilometerMarks
+        ))
     }
 
     /// Moving time already banked, plus the current unpaused segment.

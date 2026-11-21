@@ -10,6 +10,13 @@ extension Color {
     static let omniCoral = Color(red: 1, green: 107 / 255, blue: 107 / 255)
     static let omniMuted = Color(red: 100 / 255, green: 116 / 255, blue: 139 / 255)
     static let omniIdle = Color(red: 148 / 255, green: 163 / 255, blue: 184 / 255)
+
+    /// Sky metric colors from `docs/design/sky-design-system.md`. Watch reads these; the phone DesignSystem keeps the same hex.
+    static let skyMetricDuration = Color(red: 161 / 255, green: 98 / 255, blue: 7 / 255)
+    static let skyMetricDistance = Color(red: 2 / 255, green: 119 / 255, blue: 189 / 255)
+    static let skyMetricPace = Color(red: 11 / 255, green: 127 / 255, blue: 122 / 255)
+    static let skyMetricHeart = Color(red: 209 / 255, green: 57 / 255, blue: 36 / 255)
+    static let skyMetricElevation = Color(red: 21 / 255, green: 128 / 255, blue: 61 / 255)
 }
 
 struct CanvasBackground: View {

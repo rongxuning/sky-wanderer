@@ -11,6 +11,9 @@ struct SkyWandererWatchApp: App {
         WindowGroup {
             WatchRoot()
                 .environmentObject(app)
+                .task {
+                    WatchCompanionMirror.shared.activate()
+                }
         }
     }
 }
@@ -21,6 +24,8 @@ enum WatchPush: Hashable {
 }
 
 struct WatchRoot: View {
+    @ObservedObject private var companion = WatchCompanionMirror.shared
+
     var body: some View {
         TabView {
             NavigationStack {
@@ -37,6 +42,9 @@ struct WatchRoot: View {
             }
         }
         .tabViewStyle(.verticalPage)
+        .fullScreenCover(isPresented: $companion.showingPhoneWorkout) {
+            WatchPhoneLiveView(mirror: companion)
+        }
     }
 }
 
@@ -128,73 +136,29 @@ struct WatchLiveView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(sport.title)
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                    Spacer()
-                    Button {
-                        Task { await end() }
-                    } label: {
-                        Label("结束", systemImage: "stop.fill")
-                            .font(.system(size: 12, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.omniCoral, in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(Format.kilometers(session.distanceMeters))
-                        .font(.system(size: 36, weight: .heavy, design: .rounded))
-                        .foregroundStyle(Color.omniIce)
-                    Text("公里")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                }
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text(Format.pace(session.paceSecPerKm))
-                            .font(.system(size: 18, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Color.omniIce)
-                        Text("配速")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.omniMuted)
-                    }
-                    Spacer()
-                    VStack(alignment: .leading) {
-                        Text(Format.integer(session.heartRate))
-                            .font(.system(size: 18, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Color.omniCoral)
-                        Label("心率", systemImage: "heart.fill")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.omniCoral)
-                    }
-                }
-                RouteMap(route: session.route, teammates: session.teammates, showsUser: !session.simulating, cornerRadius: 16)
-                    .frame(height: 72)
-                Text(session.simulating ? "本地模拟" : "Apple")
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniMuted)
-                Text(session.teammates.isEmpty ? "未组队" : "队友 · 本地模拟")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniMuted)
-                ForEach(session.teammates.prefix(3)) { mate in
-                    HStack {
-                        Text(mate.name)
-                        Spacer()
-                        Text(Format.pace(mate.paceSecPerKm))
-                            .foregroundStyle(Color.omniIce)
-                        Text(Format.integer(mate.heartRate))
-                            .foregroundStyle(Color.omniCoral)
-                    }
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                }
-            }
+        TabView {
+            WatchLiveMetricsPage(
+                sportTitle: sport.title,
+                elapsed: session.elapsed,
+                distanceMeters: session.distanceMeters,
+                paceSecPerKm: session.paceSecPerKm,
+                heartRate: session.heartRate,
+                cadence: session.cadence,
+                altitudeMeters: session.altitudeMeters,
+                paused: session.paused,
+                status: session.simulating ? "本地模拟" : (session.statusText.isEmpty ? nil : session.statusText),
+                onEnd: { Task { await end() } }
+            )
+            .navigationBarBackButtonHidden(true)
+            WatchLiveMapPage(
+                route: session.route,
+                kilometers: session.kilometerMarks,
+                showsUser: !session.simulating,
+                userFix: session.userFix
+            )
+            .navigationBarBackButtonHidden(true)
         }
+        .tabViewStyle(.verticalPage)
         .background(CanvasBackground())
         .navigationBarBackButtonHidden(true)
         .task {
@@ -392,6 +356,11 @@ struct WatchMeView: View {
 /// Phone `startWatchApp` delivers the configuration here. The watch records heart rate and steps; the phone mirrors them.
 final class WatchDelegate: NSObject, WKApplicationDelegate {
     func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        let sport = SportKind.from(workoutConfiguration.activityType) ?? .running
+        Task { @MainActor in
+            WatchCompanionMirror.shared.activate()
+            WatchCompanionMirror.shared.notePhoneLaunch(sport: sport)
+        }
         WatchMirroredWorkout.shared.start(workoutConfiguration)
     }
 }
@@ -481,6 +450,7 @@ final class WatchMirroredWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         session = nil
         self.builder = nil
         collecting = false
+        WatchCompanionMirror.shared.apply(.idle())
         guard wasCollecting, let builder else { return }
         builder.endCollection(withEnd: date) { _, _ in }
     }

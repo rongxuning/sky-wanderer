@@ -5,6 +5,8 @@ struct RouteMap: View {
     var route: [GeoPoint]
     var planned: [GeoPoint] = []
     var teammates: [TeammateLive] = []
+    /// Full-kilometer pins. The watch live map shows these as black discs.
+    var kilometers: [KilometerMarker] = []
     var showsUser: Bool = false
     var userCoordinate: CLLocationCoordinate2D? = nil
     var cornerRadius: CGFloat = 0
@@ -65,6 +67,16 @@ struct RouteMap: View {
                 }
                 .annotationTitles(.hidden)
             }
+            ForEach(kilometers) { mark in
+                Annotation("第 \(mark.kilometer) 公里", coordinate: CLLocationCoordinate2D(
+                    latitude: mark.latitude,
+                    longitude: mark.longitude
+                ), anchor: .center) {
+                    kilometerMark(mark.kilometer)
+                        .accessibilityLabel("第 \(mark.kilometer) 公里")
+                }
+                .annotationTitles(.hidden)
+            }
             ForEach(teammates) { mate in
                 Annotation(mate.name, coordinate: mate.coordinate) {
                     VStack(spacing: 2) {
@@ -103,6 +115,7 @@ struct RouteMap: View {
         }
         .onChange(of: route.count) { _, _ in frameCamera() }
         .onChange(of: planned) { _, _ in frameCamera() }
+        .onChange(of: kilometers.count) { _, _ in frameCamera() }
         .onChange(of: userCoordinate?.latitude) { _, _ in frameUserOnce() }
         .onChange(of: userCoordinate?.longitude) { _, _ in frameUserOnce() }
         .onChange(of: fitToken) { _, _ in frameCamera() }
@@ -131,6 +144,17 @@ struct RouteMap: View {
         .shadow(color: Color.black.opacity(0.22), radius: 2, y: 1)
     }
 
+    /// Matches the phone live-map kilometer discs: black fill, white number.
+    private func kilometerMark(_ kilometer: Int) -> some View {
+        let side: CGFloat = kilometer >= 10 ? 18 : 16
+        return Text("\(kilometer)")
+            .font(.system(size: kilometer >= 10 ? 9 : 10, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: side, height: side)
+            .background(Color.black, in: Circle())
+            .shadow(color: Color.black.opacity(0.22), radius: 2, y: 1)
+    }
+
     /// The first user fix is part of the frame. Later fixes do not move the camera.
     private func frameUserOnce() {
         guard showsUser, userCoordinate != nil, !framedUser else { return }
@@ -140,7 +164,10 @@ struct RouteMap: View {
 
     private func frameCamera() {
         var coords = route.map(\.coordinate) + planned.map(\.coordinate) + teammates.map(\.coordinate)
-        let hasLine = !route.isEmpty || !planned.isEmpty || !teammates.isEmpty
+        coords.append(contentsOf: kilometers.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        })
+        let hasLine = !route.isEmpty || !planned.isEmpty || !teammates.isEmpty || !kilometers.isEmpty
         if showsUser, let userCoordinate, hasLine {
             coords.append(userCoordinate)
         }
