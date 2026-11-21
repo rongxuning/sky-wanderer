@@ -22,6 +22,8 @@ struct SkyTrackMap: UIViewRepresentable {
     var route: [GeoPoint]
     var planned: [GeoPoint] = []
     var teammates: [TeammateLive] = []
+    /// Live workout. One black disc per finished kilometer.
+    var kilometers: [KilometerMarker] = []
     var showsUser: Bool = false
     var userCoordinate: CLLocationCoordinate2D? = nil
     var showsEndpoints: Bool = false
@@ -117,6 +119,7 @@ struct SkyTrackMap: UIViewRepresentable {
             route: route,
             planned: planned,
             teammates: teammates,
+            kilometers: kilometers,
             vertices: vertices,
             map: map
         )
@@ -192,11 +195,13 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     private var plannedOverlay: TrackOverlay?
     private var endpointAnnotations: [EndpointAnnotation] = []
     private var teammateAnnotations: [TeammateAnnotation] = []
+    private var kilometerAnnotations: [TrackKilometerAnnotation] = []
     private var vertexAnnotations: [VertexAnnotation] = []
     private var appliedMode: SkyBasemapMode?
     private var appliedRoute: [GeoPoint] = []
     private var appliedPlanned: [GeoPoint] = []
     private var appliedTeammates: [TeammateLive] = []
+    private var appliedKilometers: [KilometerMarker] = []
     private var appliedVertices: [TrackVertex] = []
     private var appliedEndpoints = false
     private var framedUser = false
@@ -217,6 +222,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         let sizeChanged = abs(size.width - lastSize.width) > 0.5 || abs(size.height - lastSize.height) > 0.5
         lastSize = size
         guard sizeChanged else { return }
+        defer { refreshKilometers(on: container.map) }
         if followsUser, !holdCamera {
             centerUser(on: container.map, animated: false)
             return
@@ -231,6 +237,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         route: [GeoPoint],
         planned: [GeoPoint],
         teammates: [TeammateLive],
+        kilometers: [KilometerMarker],
         vertices: [TrackVertex],
         map: MKMapView
     ) {
@@ -260,6 +267,15 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         if modeChanged || vertices != appliedVertices {
             appliedVertices = vertices
             replaceVertices(vertices, on: map)
+        }
+        if modeChanged || kilometers != appliedKilometers {
+            appliedKilometers = kilometers
+            if modeChanged, !kilometerAnnotations.isEmpty {
+                // The other datum moves every disc. Rebuild them from the stored points.
+                map.removeAnnotations(kilometerAnnotations)
+                kilometerAnnotations = []
+            }
+            refreshKilometers(on: map)
         }
         if modeChanged || routeDirty || plannedDirty, let routeOverlay {
             map.removeOverlay(routeOverlay)
@@ -299,6 +315,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
 
     func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
         adjustingCamera = false
+        refreshKilometers(on: mapView)
     }
 
     private func userIsGesturing(on view: UIView) -> Bool {
@@ -407,6 +424,40 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         }
         teammateAnnotations = notes
         map.addAnnotations(notes)
+    }
+
+    /// Zooming changes which discs touch, so this runs on every camera change as well.
+    private func refreshKilometers(on map: MKMapView) {
+        let wanted = visibleKilometers(on: map)
+        let stale = kilometerAnnotations.filter { !wanted.contains($0.marker) }
+        if !stale.isEmpty {
+            map.removeAnnotations(stale)
+            kilometerAnnotations.removeAll { !wanted.contains($0.marker) }
+        }
+        let shown = kilometerAnnotations.map(\.marker)
+        let fresh = wanted.filter { !shown.contains($0) }.map { marker in
+            TrackKilometerAnnotation(marker: marker, coordinate: displayed(marker))
+        }
+        guard !fresh.isEmpty else { return }
+        kilometerAnnotations.append(contentsOf: fresh)
+        map.addAnnotations(fresh)
+    }
+
+    private func visibleKilometers(on map: MKMapView) -> [KilometerMarker] {
+        guard !appliedKilometers.isEmpty, map.bounds.width > 40, map.bounds.height > 40 else { return [] }
+        let discs = appliedKilometers.map { marker in
+            let point = map.convert(displayed(marker), toPointTo: map)
+            return RouteKilometerLabels.trackDisc(
+                kilometer: marker.kilometer,
+                at: (x: Double(point.x), y: Double(point.y))
+            )
+        }
+        let numbers = Set(RouteKilometerLabels.newestFirst(discs: discs))
+        return appliedKilometers.filter { numbers.contains($0.kilometer) }
+    }
+
+    private func displayed(_ marker: KilometerMarker) -> CLLocationCoordinate2D {
+        displayed(CLLocationCoordinate2D(latitude: marker.latitude, longitude: marker.longitude))
     }
 
     private func replaceVertices(_ vertices: [TrackVertex], on map: MKMapView) {
@@ -564,6 +615,13 @@ enum TrackAnnotationViews {
             view.apply(name: mark.title ?? "")
             return view
         }
+        if let mark = annotation as? TrackKilometerAnnotation {
+            let view = map.dequeueReusableAnnotationView(withIdentifier: TrackKilometerMarkerView.reuseID) as? TrackKilometerMarkerView
+                ?? TrackKilometerMarkerView(annotation: mark, reuseIdentifier: TrackKilometerMarkerView.reuseID)
+            view.annotation = mark
+            view.apply(kilometer: mark.marker.kilometer)
+            return view
+        }
         if let mark = annotation as? VertexAnnotation {
             let view = map.dequeueReusableAnnotationView(withIdentifier: VertexMarkerView.reuseID) as? VertexMarkerView
                 ?? VertexMarkerView(annotation: mark, reuseIdentifier: VertexMarkerView.reuseID)
@@ -670,6 +728,59 @@ final class TeammateMarkerView: MKAnnotationView {
         centerOffset = CGPoint(x: 0, y: -bounds.midY)
         accessibilityLabel = name
         isAccessibilityElement = true
+    }
+}
+
+final class TrackKilometerAnnotation: NSObject, MKAnnotation {
+    let marker: KilometerMarker
+    let coordinate: CLLocationCoordinate2D
+
+    init(marker: KilometerMarker, coordinate: CLLocationCoordinate2D) {
+        self.marker = marker
+        self.coordinate = coordinate
+        super.init()
+    }
+}
+
+/// Black disc with the kilometer number in white, centered on the point where that kilometer ended.
+final class TrackKilometerMarkerView: MKAnnotationView {
+    static let reuseID = "track-kilometer"
+
+    private let badge = UILabel()
+
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        badge.font = .systemFont(ofSize: 12, weight: .bold)
+        badge.textColor = .white
+        badge.textAlignment = .center
+        badge.backgroundColor = .black
+        badge.clipsToBounds = true
+        addSubview(badge)
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.22
+        layer.shadowRadius = 2
+        layer.shadowOffset = CGSize(width: 0, height: 1)
+        canShowCallout = false
+        isEnabled = false
+        collisionMode = .none
+        displayPriority = .required
+        // Below the user dot and teammates, which arrive at the same point.
+        zPriority = .min
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    func apply(kilometer: Int) {
+        let side = CGFloat(RouteKilometerLabels.discSide(for: kilometer))
+        badge.text = String(kilometer)
+        badge.frame = CGRect(x: 0, y: 0, width: side, height: side)
+        badge.layer.cornerRadius = side / 2
+        bounds = badge.bounds
+        centerOffset = .zero
+        isAccessibilityElement = true
+        accessibilityLabel = "第 \(kilometer) 公里"
     }
 }
 

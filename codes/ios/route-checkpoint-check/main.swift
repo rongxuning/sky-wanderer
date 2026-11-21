@@ -1456,6 +1456,28 @@ let fromRoute = RouteKilometerLabels.visible(
 check(fromRoute.allSatisfy { $0 <= markerCount && $0 >= 1 }, "no disc past the last full kilometer")
 check(RouteKilometerLabels.visible(discs: [], avoiding: []).isEmpty, "no discs when the route has no full kilometer")
 
+func liveLine(_ spacing: Double, count: Int = 20) -> [RouteKilometerLabels.Disc] {
+    (1...count).map { kilometer in
+        RouteKilometerLabels.trackDisc(kilometer: kilometer, at: (x: Double(kilometer) * spacing, y: 80))
+    }
+}
+
+let liveDisc = RouteKilometerLabels.trackDisc(kilometer: 7, at: (x: 30, y: 40))
+check(liveDisc.centerX == 30 && liveDisc.centerY == 40, "a live disc sits on the track point")
+check(liveDisc.radius == 11, "a live disc is the same size as a route disc")
+check(RouteKilometerLabels.newestFirst(discs: liveLine(80)) == Array(1...20), "a spread-out workout shows every kilometer")
+let livePacked = RouteKilometerLabels.newestFirst(discs: liveLine(12))
+check(livePacked.last == 20, "the newest kilometer always shows \(livePacked)")
+check(livePacked.count > 1 && livePacked.count < 20, "a zoomed-out workout thins older kilometers \(livePacked)")
+check(livePacked == livePacked.sorted(), "live kilometers stay in order")
+let liveLaps = (1...6).map { kilometer in
+    RouteKilometerLabels.trackDisc(kilometer: kilometer, at: (x: kilometer.isMultiple(of: 2) ? 200 : 100, y: 50))
+}
+check(RouteKilometerLabels.newestFirst(discs: liveLaps) == [5, 6], "laps keep the newest kilometer at each spot")
+let liveStacked = (1...3).map { RouteKilometerLabels.trackDisc(kilometer: $0, at: (x: 10, y: 10)) }
+check(RouteKilometerLabels.newestFirst(discs: liveStacked) == [3], "kilometers on one spot leave the newest")
+check(RouteKilometerLabels.newestFirst(discs: []).isEmpty, "no live discs before the first kilometer")
+
 let km3 = RouteKilometerLabels.disc(kilometer: 3, at: (x: 10, y: 40))
 check(km3.radius == 11, "one digit disc is 22 points across")
 near(km3.centerY, 40 - (11 + 12), 0.001, "the disc is lifted off the track")

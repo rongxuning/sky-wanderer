@@ -59,6 +59,8 @@ final class LiveSession: ObservableObject {
     /// Latest accepted fix. The live map recenters on this, including before the track has two points.
     @Published var userFix: GeoPoint?
     @Published var splits: [KilometerSplit] = []
+    /// Where each full kilometer ended. The live map draws one numbered disc per entry.
+    @Published private(set) var kilometerMarks: [KilometerMarker] = []
     @Published var teammates: [TeammateLive] = []
     private(set) var routeSaveWarning: String?
     weak var liveActivity: LiveActivitySink?
@@ -592,6 +594,7 @@ final class LiveSession: ObservableObject {
         ignoreNextLocation = false
         resumeAnchorDate = .distantPast
         splits = []
+        kilometerMarks = []
         splitStartDistance = 0
         splitStartElapsed = 0
         splitStartEnergy = 0
@@ -655,6 +658,22 @@ final class LiveSession: ObservableObject {
             splitCadences = []
         }
         splitStartEnergy = energyKilocalories
+        markKilometer()
+    }
+
+    /// Pins the kilometer that just closed to the newest recorded point. Without a fix
+    /// there is no pin. When several kilometers close in one tick, only the last has a
+    /// known place.
+    private func markKilometer() {
+        let kilometer = splits.count
+        guard let spot = recordedRoute.last else { return }
+        kilometerMarks.append(KilometerMarker(
+            kilometer: kilometer,
+            latitude: spot.latitude,
+            longitude: spot.longitude,
+            altitude: spot.altitude,
+            distanceMeters: Double(kilometer) * 1000
+        ))
     }
 
     private func closeSplit(distance: Double, partial: Bool, energy: Double? = nil) {
