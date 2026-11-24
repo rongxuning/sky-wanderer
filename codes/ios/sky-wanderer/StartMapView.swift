@@ -151,11 +151,15 @@ struct StartMapView: View {
     private var toolColumn: some View {
         VStack(spacing: CGFloat(StartMapChrome.toolGap)) {
             ForEach(StartMapChrome.tools, id: \.label) { tool in
-                toolButton(tool.symbol, tool.label) {
+                toolButton(symbol(for: tool), tool.label) {
                     performTool(tool.label)
                 }
             }
         }
+    }
+
+    private func symbol(for tool: StartMapChrome.Tool) -> String {
+        tool.label == "类型" ? draft.sport.symbol : tool.symbol
     }
 
     private func toolButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {

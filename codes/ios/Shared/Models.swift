@@ -15,6 +15,13 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         case .running: return "跑步"
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .hiking: return "figure.hiking"
+        case .running: return "figure.run"
+        }
+    }
 }
 
 struct GeoPoint: Codable, Hashable {
