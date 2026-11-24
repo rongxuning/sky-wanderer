@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// 82pt map for one record card: the basemap with the stored track on it.
+/// Square map for one record card: the basemap with the stored track on it.
 ///
 /// The image comes from the same offscreen map as the share image, so the
 /// datum, tiles, and track stroke match the detail screen. Until it arrives
@@ -170,7 +170,7 @@ struct RecordTrackLine: View {
         }
         let spanX = max(maxX - minX, 1)
         let spanY = max(maxY - minY, 1)
-        let pad: CGFloat = 12
+        let pad = min(size.width, size.height) * CGFloat(RecordListCardLayout.mapTrackInsetFraction)
         let width = max(size.width - pad * 2, 1)
         let height = max(size.height - pad * 2, 1)
         let scale = min(width / spanX, height / spanY)

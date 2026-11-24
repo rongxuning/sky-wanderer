@@ -3,8 +3,9 @@ import UIKit
 
 /// Share image from the same basemap and the same `TrackOverlay` as the screen.
 /// This is an offscreen `MKMapView`, not an `MKMapSnapshotter` of the system map.
-/// `thumbnail` drops the credit capsule, the empty-route caption, and the endpoint
-/// markers, which would cover a small image. Record cards use it.
+/// `thumbnail` drops the credit capsule, the legal line, the provider logo,
+/// the empty-route caption, and the endpoint markers. The track is fitted to
+/// the center with an equal inset on every edge. Record cards use it.
 enum TrackMapImage {
     @MainActor
     static func render(route: [GeoPoint], size: CGSize, overlap: CGFloat, thumbnail: Bool = false) async -> UIImage? {
@@ -51,7 +52,9 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         window.frame = CGRect(origin: .zero, size: size)
         window.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.normal.rawValue - 1)
         window.isUserInteractionEnabled = false
-        let map = MKMapView(frame: CGRect(origin: .zero, size: size))
+        let map: MKMapView = thumbnail
+            ? ThumbnailMapView(frame: CGRect(origin: .zero, size: size))
+            : MKMapView(frame: CGRect(origin: .zero, size: size))
         map.delegate = self
         map.overrideUserInterfaceStyle = .light
         map.isRotateEnabled = false
@@ -59,7 +62,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         map.showsCompass = false
         map.showsScale = false
         map.showsUserLocation = false
-        map.pointOfInterestFilter = mode == .tianditu ? .excludingAll : nil
+        map.pointOfInterestFilter = thumbnail || mode == .tianditu ? .excludingAll : nil
         map.backgroundColor = SkyBasemapInstaller.backdrop
         window.addSubview(map)
         if !thumbnail {
@@ -80,8 +83,9 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         self.window = window
         self.map = map
         installContent(on: map)
-        if let region = region(for: route, mode: mode) {
-            map.setRegion(region, animated: false)
+        show(route, on: map, mode: mode)
+        if thumbnail {
+            MapLegalChrome.hideThumbnailChrome(on: map)
         }
         watch()
     }
@@ -115,13 +119,17 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
     func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
         guard fullyRendered else { return }
         fullRenders += 1
-        MapLegalChrome.setAppleAttributionHidden(SkyBasemapCenter.shared.mode == .tianditu, on: mapView)
+        if thumbnail {
+            MapLegalChrome.hideThumbnailChrome(on: mapView)
+        } else {
+            MapLegalChrome.setAppleAttributionHidden(SkyBasemapCenter.shared.mode == .tianditu, on: mapView)
+        }
     }
 
     private func installContent(on map: MKMapView) {
         mode = SkyBasemapCenter.shared.mode
         tiles = SkyBasemapInstaller.attach(to: map, mode: mode, removing: tiles)
-        map.pointOfInterestFilter = mode == .tianditu ? .excludingAll : nil
+        map.pointOfInterestFilter = thumbnail || mode == .tianditu ? .excludingAll : nil
         map.removeOverlays(map.overlays.filter { $0 is TrackOverlay })
         map.removeAnnotations(map.annotations)
         let shown = TrackDatum.displayed(route, mode: mode)
@@ -140,7 +148,11 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             let creditY = size.height - max(0, overlap) - creditSize.height - 10
             credit.frame = CGRect(x: 12, y: max(8, creditY), width: creditSize.width, height: creditSize.height)
         }
-        MapLegalChrome.setAppleAttributionHidden(mode == .tianditu, on: map)
+        if thumbnail {
+            MapLegalChrome.hideThumbnailChrome(on: map)
+        } else {
+            MapLegalChrome.setAppleAttributionHidden(mode == .tianditu, on: map)
+        }
     }
 
     private func watch() {
@@ -152,9 +164,10 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
                 if current != self.mode, let map = self.map {
                     self.fullRenders = 0
                     self.installContent(on: map)
-                    if let region = self.region(for: self.route, mode: current) {
-                        map.setRegion(region, animated: false)
-                    }
+                    self.show(self.route, on: map, mode: current)
+                }
+                if self.thumbnail, let map = self.map {
+                    MapLegalChrome.hideThumbnailChrome(on: map)
                 }
                 let idle = !TiandituTileActivity.busy
                 let ready = self.fullRenders > 0 && idle && (current == .system || elapsed > 0.9)
@@ -181,6 +194,9 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
 
     private func capture() -> UIImage? {
         guard let window else { return nil }
+        if thumbnail, let map {
+            MapLegalChrome.hideThumbnailChrome(on: map)
+        }
         let scale = scene.screen.scale > 0 ? scene.screen.scale : 3
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
@@ -189,6 +205,42 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         return renderer.image { _ in
             window.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
         }
+    }
+
+    /// Centers the track in the thumbnail. Equal point insets keep a gap on every edge.
+    /// A straight north-south or east-west trace has a zero side; that side is opened
+    /// just enough for MapKit to keep the line in the middle.
+    private func show(_ route: [GeoPoint], on map: MKMapView, mode: SkyBasemapMode) {
+        if thumbnail, let rect = Self.trackRect(route, mode: mode) {
+            let pad = min(size.width, size.height) * CGFloat(RecordListCardLayout.mapTrackInsetFraction)
+            let insets = UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad)
+            map.setVisibleMapRect(rect, edgePadding: insets, animated: false)
+            return
+        }
+        if let region = region(for: route, mode: mode) {
+            map.setRegion(region, animated: false)
+        }
+    }
+
+    private static func trackRect(_ route: [GeoPoint], mode: SkyBasemapMode) -> MKMapRect? {
+        let shown = TrackDatum.displayed(route, mode: mode)
+        guard shown.count >= 2 else { return nil }
+        var rect = MKMapRect.null
+        for point in shown {
+            let coordinate = point.coordinate
+            guard CLLocationCoordinate2DIsValid(coordinate) else { continue }
+            let mapPoint = MKMapPoint(coordinate)
+            let dot = MKMapRect(origin: mapPoint, size: MKMapSize(width: 0, height: 0))
+            rect = rect.union(dot)
+        }
+        guard !rect.isNull, !rect.isInfinite else { return nil }
+        if rect.size.width < 1 {
+            rect = rect.insetBy(dx: -0.5, dy: 0)
+        }
+        if rect.size.height < 1 {
+            rect = rect.insetBy(dx: 0, dy: -0.5)
+        }
+        return rect
     }
 
     private func region(for route: [GeoPoint], mode: SkyBasemapMode) -> MKCoordinateRegion? {
@@ -217,5 +269,14 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         label.frame = CGRect(x: 0, y: 0, width: ceil(text.width) + 24, height: ceil(text.height) + 16)
         label.layer.cornerRadius = label.bounds.height / 2
         return label
+    }
+}
+
+/// Hides the provider line after MapKit lays it out, so a snapshot cannot
+/// burn 法律信息 or the 高德地图 mark back in.
+private final class ThumbnailMapView: MKMapView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        MapLegalChrome.hideThumbnailChrome(on: self)
     }
 }

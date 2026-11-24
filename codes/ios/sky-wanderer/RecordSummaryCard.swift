@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// White, square, full-width record card. Sport and date on top, distance and training time
+/// White, full-width record card. Sport chip and date on top, distance and training time
 /// across the middle, pace / heart rate / load / score along the bottom.
 /// The motivation line and cadence are not drawn.
 struct RecordSummaryCard: View {
@@ -9,13 +9,13 @@ struct RecordSummaryCard: View {
     var onExplainMetrics: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .caption) private var sportSize: CGFloat = 12
+    @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption2) private var dateSize: CGFloat = 11
-    @ScaledMetric(relativeTo: .title3) private var distanceSize: CGFloat = 20
+    @ScaledMetric(relativeTo: .title2) private var distanceSize: CGFloat = 24
     @ScaledMetric(relativeTo: .headline) private var durationSize: CGFloat = 18
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
 
-    /// Default content size keeps the 90pt line boxes. Larger sizes grow.
+    /// Default content size keeps the measured line boxes. Larger sizes grow.
     private var usesStandardMetrics: Bool { dynamicTypeSize == .large }
 
     var body: some View {
@@ -67,8 +67,12 @@ struct RecordSummaryCard: View {
         HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
             Text(workout.sport.title)
                 .font(sportFont)
-                .foregroundStyle(SkyTheme.Color.ink)
+                .foregroundStyle(SkyTheme.Color.onPrimary)
                 .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(SkyTheme.Color.primary, in: Capsule())
+                .fixedSize(horizontal: true, vertical: true)
                 .layoutPriority(1)
             Text(RecordListCardText.started(workout.start))
                 .font(dateFont)

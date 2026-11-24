@@ -94,6 +94,66 @@ enum MapLegalChrome {
         }
         walk(map)
     }
+
+    /// Record thumbnails are too small for the provider line. Hides 法律信息,
+    /// the 高德地图 mark, and any other attribution or logo view. Full-screen
+    /// maps keep their own credit.
+    static func hideThumbnailChrome(on map: MKMapView) {
+        func conceal(_ view: UIView) {
+            guard !view.isHidden else { return }
+            view.isHidden = true
+            view.alpha = 0
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+        }
+        func walk(_ view: UIView) {
+            for child in view.subviews {
+                if hidesThumbnailChrome(child) || isCornerChrome(child, in: map) {
+                    conceal(child)
+                }
+                walk(child)
+            }
+        }
+        walk(map)
+    }
+
+    /// Small direct children along the bottom edge. 法律信息 and the provider
+    /// mark sit here, sometimes beside the attribution label rather than inside it.
+    /// A view that has not been laid out yet, or that fills the map, stays visible.
+    private static func isCornerChrome(_ view: UIView, in map: MKMapView) -> Bool {
+        guard view.superview === map else { return false }
+        let bounds = map.bounds
+        guard bounds.width > 1, bounds.height > 1 else { return false }
+        let frame = view.frame
+        guard frame.width > 1, frame.height > 1 else { return false }
+        let small = frame.width < bounds.width * 0.85 && frame.height < bounds.height * 0.5
+        let alongBottom = frame.midY > bounds.height * 0.5
+        guard small, alongBottom else { return false }
+        let name = String(describing: type(of: view))
+        if name.contains("Container") || name.contains("Overlay") || name.contains("Annotation") || name.contains("Content") {
+            return false
+        }
+        return true
+    }
+
+    private static func hidesThumbnailChrome(_ view: UIView) -> Bool {
+        let name = String(describing: type(of: view))
+        if name.contains("Attribution") || name.contains("Logo") || name.contains("Legal") {
+            return true
+        }
+        let text = labelText(view) + " " + (view.accessibilityLabel ?? "")
+        if text.contains("法律") || text.contains("高德") {
+            return true
+        }
+        let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        return folded.contains("legal") || folded.contains("amap") || folded.contains("gaode")
+    }
+
+    private static func labelText(_ view: UIView) -> String {
+        guard let label = view as? UILabel else { return "" }
+        if let text = label.text, !text.isEmpty { return text }
+        return label.attributedText?.string ?? ""
+    }
 }
 
 /// Small capsule used on the map and burned into share images.

@@ -20,20 +20,21 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// At the default text size the text block and the map block are both 90.
-/// The 213pt information track is the width that keeps four 48.75pt columns
-/// with 6pt gaps on a 393pt phone. Cards run edge to edge and are square.
-/// Narrower cards shrink that track so the 82pt map still fits; wider cards
-/// do not stretch the columns.
+/// At the default text size the text block and the map block are both 112.
+/// The sport chip needs a 30pt line, and the distance line is 32pt so the
+/// larger kilometer figure is not clipped. The 213pt information track is the
+/// width that keeps four 48.75pt columns with 6pt gaps on a 393pt phone.
+/// Cards run edge to edge. Narrower cards shrink that track so the map still
+/// fits; wider cards do not stretch the columns.
 enum RecordListCardLayout {
-    static let standardHeight = 90.0
+    static let standardHeight = 112.0
     static let contentInsetVertical = 6.0
-    static let titleLine = 16.0
+    static let titleLine = 30.0
     static let topToMiddle = 14.0
-    static let upperLine = 24.0
+    static let upperLine = 32.0
     static let middleToBottom = 4.0
     static let lowerLine = 20.0
-    static let mapSide = 82.0
+    static let mapSide = 104.0
     static let mapInsetVertical = 4.0
     static let mapTrailing = 16.0
     static let contentLeading = 16.0
@@ -46,6 +47,9 @@ enum RecordListCardLayout {
     static let minimumMapGap = 8.0
     /// Thumbnail corner. Matches `SkyTheme.Radius.chip`.
     static let mapCorner = 12.0
+    /// Share of the thumbnail side left clear on every edge, so the track
+    /// sits in the center instead of touching the frame.
+    static let mapTrackInsetFraction = 0.14
 
     static var standardTextBlock: Double {
         contentInsetVertical * 2 + titleLine + topToMiddle + upperLine + middleToBottom + lowerLine
@@ -63,6 +67,38 @@ enum RecordListCardLayout {
     static func informationWidth(cardWidth: Double) -> Double {
         let room = cardWidth - contentLeading - mapTrailing - mapSide - minimumMapGap
         return min(informationWidth, max(0, room))
+    }
+}
+
+/// How a route sits inside the square record thumbnail.
+///
+/// The longer ground axis fills the inner box. The shorter axis stays centered,
+/// so every edge keeps `RecordListCardLayout.mapTrackInsetFraction` of the side
+/// or more. The full-screen 1.6× map fit is not used here.
+enum RecordThumbnailFit {
+    struct Frame {
+        var x: Double
+        var y: Double
+        var width: Double
+        var height: Double
+    }
+
+    /// Normalized frame inside a unit-square thumbnail.
+    /// `width` and `height` are the track extent in the same ground units.
+    static func normalizedFrame(width: Double, height: Double) -> Frame {
+        let inset = RecordListCardLayout.mapTrackInsetFraction
+        let inner = max(1 - inset * 2, 0.01)
+        let spanX = max(width, 0)
+        let spanY = max(height, 0)
+        let limit = max(spanX, spanY, 1e-9)
+        let drawWidth = inner * (spanX / limit)
+        let drawHeight = inner * (spanY / limit)
+        return Frame(
+            x: (1 - drawWidth) / 2,
+            y: (1 - drawHeight) / 2,
+            width: drawWidth,
+            height: drawHeight
+        )
     }
 }
 
