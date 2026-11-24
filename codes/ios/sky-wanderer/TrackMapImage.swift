@@ -233,7 +233,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             let dot = MKMapRect(origin: mapPoint, size: MKMapSize(width: 0, height: 0))
             rect = rect.union(dot)
         }
-        guard !rect.isNull, !rect.isInfinite else { return nil }
+        guard !rect.isNull else { return nil }
         if rect.size.width < 1 {
             rect = rect.insetBy(dx: -0.5, dy: 0)
         }
