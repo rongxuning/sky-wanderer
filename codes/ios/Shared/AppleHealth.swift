@@ -545,7 +545,7 @@ extension SportKind {
     var hkActivity: HKWorkoutActivityType {
         switch self {
         case .outdoorRunning, .indoorRunning: return .running
-        case .trailRunning: return .trailRunning
+        case .trailRunning: return .running
         case .hiking: return .hiking
         case .functionalStrength: return .functionalStrengthTraining
         case .hiit: return .highIntensityIntervalTraining
@@ -561,9 +561,8 @@ extension SportKind {
     static func from(_ workout: HKWorkout) -> SportKind {
         switch workout.workoutActivityType {
         case .running:
+            if isTrailRun(workout) { return .trailRunning }
             return isIndoor(workout) ? .indoorRunning : .outdoorRunning
-        case .trailRunning:
-            return .trailRunning
         case .hiking:
             return .hiking
         case .functionalStrengthTraining:
@@ -579,7 +578,6 @@ extension SportKind {
     static func from(_ type: HKWorkoutActivityType) -> SportKind {
         switch type {
         case .running: return .outdoorRunning
-        case .trailRunning: return .trailRunning
         case .hiking: return .hiking
         case .functionalStrengthTraining: return .functionalStrength
         case .highIntensityIntervalTraining: return .hiit
@@ -595,13 +593,22 @@ extension SportKind {
         return from(configuration.activityType)
     }
 
+    /// HealthKit has no trail-run activity type. A trail run is saved as `.running`
+    /// and tagged with this key so the app can tell it from an outdoor run.
+    static let trailRunMetadataKey = "SkyWandererTrailRun"
+
+    private static func isTrailRun(_ workout: HKWorkout) -> Bool {
+        flag(workout.metadata?[trailRunMetadataKey])
+    }
+
     private static func isIndoor(_ workout: HKWorkout) -> Bool {
-        if let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? NSNumber {
-            return indoor.boolValue
-        }
-        if let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool {
-            return indoor
-        }
+        flag(workout.metadata?[HKMetadataKeyIndoorWorkout])
+    }
+
+    /// HealthKit metadata booleans arrive as `NSNumber` or `Bool`.
+    private static func flag(_ value: Any?) -> Bool {
+        if let number = value as? NSNumber { return number.boolValue }
+        if let bool = value as? Bool { return bool }
         return false
     }
 }
@@ -740,10 +747,20 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         var routeError: String?
     }
 
+    /// Set for a trail run so the saved running workout carries `SportKind.trailRunMetadataKey`.
+    var tagsTrailRun = false
+
     func finish(route: [GeoPoint]) async -> FinishOutcome {
         guard let session, let builder else { return FinishOutcome(healthID: nil, routeError: nil) }
         collecting = false
         session.end()
+        if tagsTrailRun {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                builder.addMetadata([SportKind.trailRunMetadataKey: true]) { _, _ in
+                    continuation.resume()
+                }
+            }
+        }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             builder.endCollection(withEnd: Date()) { _, _ in
                 continuation.resume()
