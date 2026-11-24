@@ -546,6 +546,7 @@ extension SportKind {
         switch self {
         case .outdoorRunning, .indoorRunning: return .running
         case .trailRunning: return .running
+        case .outdoorWalking: return .walking
         case .hiking: return .hiking
         case .functionalStrength: return .functionalStrengthTraining
         case .hiit: return .highIntensityIntervalTraining
@@ -563,6 +564,9 @@ extension SportKind {
         case .running:
             if isTrailRun(workout) { return .trailRunning }
             return isIndoor(workout) ? .indoorRunning : .outdoorRunning
+        case .walking:
+            // Indoor walks stay `other` until the app has a dedicated indoor walking type.
+            return isIndoor(workout) ? .other : .outdoorWalking
         case .hiking:
             return .hiking
         case .functionalStrengthTraining:
@@ -578,6 +582,7 @@ extension SportKind {
     static func from(_ type: HKWorkoutActivityType) -> SportKind {
         switch type {
         case .running: return .outdoorRunning
+        case .walking: return .outdoorWalking
         case .hiking: return .hiking
         case .functionalStrengthTraining: return .functionalStrength
         case .highIntensityIntervalTraining: return .hiit
@@ -589,6 +594,9 @@ extension SportKind {
     static func from(_ configuration: HKWorkoutConfiguration) -> SportKind {
         if configuration.activityType == .running {
             return configuration.locationType == .indoor ? .indoorRunning : .outdoorRunning
+        }
+        if configuration.activityType == .walking {
+            return configuration.locationType == .indoor ? .other : .outdoorWalking
         }
         return from(configuration.activityType)
     }

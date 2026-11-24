@@ -11,6 +11,7 @@ class SportKindTest {
                 "户外跑步",
                 "室内跑步",
                 "越野跑",
+                "户外步行",
                 "徒步",
                 "功能性力量训练",
                 "HIIT训练",
@@ -24,6 +25,12 @@ class SportKindTest {
     fun legacyRunningMapsToOutdoor() {
         assertEquals(SportKind.OutdoorRunning, SportKind.fromStored("running"))
         assertEquals(SportKind.OutdoorRunning, SportKind.fromStored("Running"))
+    }
+
+    @Test
+    fun outdoorWalkingRoundTrips() {
+        assertEquals(SportKind.OutdoorWalking, SportKind.fromStored("outdoorWalking"))
+        assertEquals(SportKind.OutdoorWalking, SportKind.fromStored("outdoorwalking"))
     }
 
     @Test
