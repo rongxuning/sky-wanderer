@@ -213,7 +213,7 @@ func makeWorkout(
 ) -> WorkoutRecord {
     WorkoutRecord(
         id: id,
-        sport: .running,
+        sport: .outdoorRunning,
         start: start,
         end: end,
         distanceMeters: 2500,

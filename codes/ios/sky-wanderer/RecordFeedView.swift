@@ -231,7 +231,7 @@ struct RecordFeedView: View {
             Text("还没有训练记录")
                 .font(SkyTheme.Font.headline)
                 .foregroundStyle(SkyTheme.Color.ink)
-            Text("完成一次徒步或跑步后，会出现在这里。")
+            Text("完成一次训练，或从 Apple 健康导入后，会出现在这里。")
                 .font(SkyTheme.Font.footnote)
                 .foregroundStyle(SkyTheme.Color.secondary)
                 .multilineTextAlignment(.center)

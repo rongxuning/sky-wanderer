@@ -56,6 +56,27 @@ struct RecordRouteThumbnail: View {
     }
 }
 
+/// Square sport icon in the thumbnail slot, for sports that have no map or distance.
+struct RecordSportIcon: View {
+    var sport: SportKind
+
+    private var side: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: SkyBasemapInstaller.backdrop)
+            Image(systemName: sport.symbol)
+                .font(.system(size: side * 0.5, weight: .semibold))
+                .foregroundStyle(SkyTheme.Color.primary)
+        }
+        .frame(width: side, height: side)
+        .clipShape(
+            RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
+        )
+        .accessibilityHidden(true)
+    }
+}
+
 /// Renders card maps one at a time. Each render opens a short-lived offscreen
 /// window, so a long list must not start them all at once. Finished images are
 /// kept for the session, which makes scrolling back instant.

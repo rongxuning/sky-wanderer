@@ -32,8 +32,8 @@ final class LocalTeammateSimulator: TeammateSync {
                 north: Double(index + 1) * 80,
                 east: Double(index - 1) * 60,
                 heading: Double(index) * 1.3,
-                pace: context.sport == .running ? 340 + Double(index) * 12 : 720 + Double(index) * 20,
-                heart: context.sport == .running ? 148 + Double(index) * 6 : 112 + Double(index) * 4
+                pace: context.sport.isRunFamily ? 340 + Double(index) * 12 : 720 + Double(index) * 20,
+                heart: context.sport.isRunFamily ? 148 + Double(index) * 6 : 112 + Double(index) * 4
             )
         }
         emit()

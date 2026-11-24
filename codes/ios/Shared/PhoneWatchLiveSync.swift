@@ -26,7 +26,7 @@ struct PhoneWatchLiveSnapshot: Codable, Equatable {
     var kilometers: [PhoneWatchKilometer]
 
     var sport: SportKind {
-        SportKind(rawValue: sportRaw) ?? .running
+        SportKind(rawValue: sportRaw) ?? .outdoorRunning
     }
 
     var userFix: GeoPoint? {
@@ -61,7 +61,7 @@ struct PhoneWatchLiveSnapshot: Codable, Equatable {
         PhoneWatchLiveSnapshot(
             version: version,
             active: false,
-            sportRaw: SportKind.running.rawValue,
+            sportRaw: SportKind.outdoorRunning.rawValue,
             elapsed: 0,
             distanceMeters: 0,
             paceSecPerKm: 0,

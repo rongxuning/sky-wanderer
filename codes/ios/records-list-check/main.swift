@@ -263,6 +263,12 @@ check(!RecordListCardText.heartRate(146).contains("次"), "the list cell does no
 check(RecordListCardText.load(864) == "864", "load is the integer")
 check(RecordListCardText.load(0) == "—", "a zero load is the missing mark")
 check(RecordListCardText.load(10_000) == "10000", "a large load stays a full integer")
+check(RecordListCardText.energy(312.4) == "312千卡", "energy is whole kilocalories with 千卡")
+check(RecordListCardText.energy(0) == "—", "missing energy stays —")
+check(
+    SportKind.allCases.filter { !$0.listShowsRouteMetrics } == [.functionalStrength, .hiit, .other],
+    "strength, HIIT, and other use the icon and energy card"
+)
 check(RecordListCardText.score == "—", "the list has no per-record score")
 
 check(
@@ -320,22 +326,37 @@ check(RecordMetricHelp.loadBody.contains("Edwards TRIMP"), "load help names the 
 check(RecordMetricHelp.scoreBody.contains("—"), "score help says the cell is missing")
 check(RecordMetricHelp.missing.contains("不是 0"), "a dash is not zero")
 
-let mixed = [
-    listedWorkout(sport: .running, start: date(shanghai, year: 2026, month: 11, day: 21, hour: 8)),
-    listedWorkout(sport: .hiking, start: date(shanghai, year: 2026, month: 11, day: 2, hour: 8)),
-    listedWorkout(sport: .running, start: date(shanghai, year: 2026, month: 10, day: 3, hour: 8))
-]
-let runningOnly = RecordListFilter.apply(.running, to: mixed)
-check(mixed.count == 3, "filtering does not rewrite the stored array")
-check(runningOnly.map(\.sport) == [.running, .running], "running keeps newest-first order")
-check(RecordListFilter.apply(nil, to: mixed).count == 3, "全部 keeps every loaded workout")
 check(
-    RecordListFilter.sports(in: mixed) == [.hiking, .running],
+    SportKind.allCases.map(\.title) == [
+        "户外跑步", "室内跑步", "越野跑", "徒步", "功能性力量训练", "HIIT训练", "其他"
+    ],
+    "the app sport list is fixed and ordered"
+)
+check(SportKind(rawValue: "running") == .outdoorRunning, "legacy running raw value is outdoor running")
+check(SportKind.outdoorRunning.rawValue == "running", "outdoor running keeps the legacy storage key")
+
+let mixed = [
+    listedWorkout(sport: .outdoorRunning, start: date(shanghai, year: 2026, month: 11, day: 21, hour: 8)),
+    listedWorkout(sport: .hiking, start: date(shanghai, year: 2026, month: 11, day: 2, hour: 8)),
+    listedWorkout(sport: .hiit, start: date(shanghai, year: 2026, month: 11, day: 1, hour: 8)),
+    listedWorkout(sport: .other, start: date(shanghai, year: 2026, month: 10, day: 20, hour: 8)),
+    listedWorkout(sport: .outdoorRunning, start: date(shanghai, year: 2026, month: 10, day: 3, hour: 8))
+]
+let runningOnly = RecordListFilter.apply(.outdoorRunning, to: mixed)
+check(mixed.count == 5, "filtering does not rewrite the stored array")
+check(runningOnly.map(\.sport) == [.outdoorRunning, .outdoorRunning], "running keeps newest-first order")
+check(RecordListFilter.apply(nil, to: mixed).count == 5, "全部 keeps every loaded workout")
+check(
+    RecordListFilter.sports(in: mixed) == [.outdoorRunning, .hiking, .hiit, .other],
     "the menu lists recorded sports in SportKind order"
 )
 check(
-    RecordListFilter.sports(in: [listedWorkout(sport: .running, start: saturday)]) == [.running],
+    RecordListFilter.sports(in: [listedWorkout(sport: .outdoorRunning, start: saturday)]) == [.outdoorRunning],
     "a running-only log does not offer hiking"
+)
+check(
+    RecordListFilter.apply(.other, to: mixed).map(\.sport) == [.other],
+    "其他 filters Apple activities mapped outside the named list"
 )
 let filteredSpans = Format.recordMonthSpans(dates: runningOnly.map(\.start))
 check(

@@ -18,7 +18,7 @@ struct RecordsView: View {
                             .foregroundStyle(Color.omniMuted)
                     }
                     if app.workouts.isEmpty {
-                        Text("还没有徒步或跑步记录")
+                        Text("还没有训练记录")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                             .foregroundStyle(Color.omniMuted)
                             .padding(.top, 12)

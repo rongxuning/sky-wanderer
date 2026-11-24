@@ -135,6 +135,12 @@ enum RecordListCardText {
         return String(format: "%.1f", meters / 1000) + "公里"
     }
 
+    /// Whole kilocalories and 千卡, or 「—」 when none were recorded.
+    static func energy(_ kilocalories: Double) -> String {
+        guard kilocalories.isFinite, kilocalories >= 0.5 else { return "—" }
+        return "\(Int(kilocalories.rounded()))千卡"
+    }
+
     static func pace(_ secondsPerKm: Double) -> String {
         Format.pace(secondsPerKm)
     }

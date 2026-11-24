@@ -165,7 +165,7 @@ check(
 func workout(start: Date, meters: Double) -> WorkoutRecord {
     WorkoutRecord(
         id: UUID(),
-        sport: .running,
+        sport: .outdoorRunning,
         start: start,
         end: start.addingTimeInterval(1800),
         distanceMeters: meters,

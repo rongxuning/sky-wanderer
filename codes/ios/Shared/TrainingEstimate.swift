@@ -9,7 +9,7 @@ struct TrainingEstimateSummary: Equatable {
 enum TrainingEstimate {
     /// 训练估计，不是医疗建议。
     ///
-    /// 单次负荷是 Edwards TRIMP，跑步和徒步同一套，不再乘运动系数：
+    /// 单次负荷是 Edwards TRIMP，各运动类型同一套，不再乘运动系数：
     ///   round(Z1 分钟×1 + Z2 分钟×2 + Z3 分钟×3 + Z4 分钟×4 + Z5 分钟×5)
     /// 分钟可以是小数，最后再把和四舍五入成整数。
     /// 区间和详情页「心率区间」一致，参考最大心率固定 190（`ZoneDwell.heartBands`）：
