@@ -58,14 +58,21 @@ struct RouteMap: View {
         Map(position: $position, interactionModes: [.pan, .zoom]) {
             if showsUser, liveUserMarker, let userCoordinate {
                 Annotation("当前位置", coordinate: userCoordinate, anchor: .center) {
+                    // `#if` is illegal inside a call's argument list. Keep each call complete.
+                    #if canImport(UIKit)
                     LiveUserMarker(
                         name: userName,
-                        #if canImport(UIKit)
                         image: userAvatar,
-                        #endif
                         courseDegrees: userCourseDegrees,
                         diameter: 26
                     )
+                    #else
+                    LiveUserMarker(
+                        name: userName,
+                        courseDegrees: userCourseDegrees,
+                        diameter: 26
+                    )
+                    #endif
                 }
                 .annotationTitles(.hidden)
             } else if showsUser {
