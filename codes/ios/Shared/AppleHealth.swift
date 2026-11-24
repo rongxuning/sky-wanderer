@@ -8,8 +8,8 @@ import HealthKit
 protocol ActivitySource {
     var brandName: String { get }
     func prepare() async throws
-    /// Every Apple Health workout the store returns, mapped onto `SportKind`.
-    func importWorkouts() async throws -> [WorkoutRecord]
+    /// Apple Health workouts mapped onto `SportKind`. See `AppleHealth.importWorkouts`.
+    func importWorkouts(known: Set<String>, denied: WorkoutDenylist) async throws -> [WorkoutRecord]
 }
 
 struct AppleActivitySource: ActivitySource {
@@ -19,8 +19,8 @@ struct AppleActivitySource: ActivitySource {
         try await AppleHealth.authorize()
     }
 
-    func importWorkouts() async throws -> [WorkoutRecord] {
-        try await AppleHealth.importWorkouts()
+    func importWorkouts(known: Set<String>, denied: WorkoutDenylist) async throws -> [WorkoutRecord] {
+        try await AppleHealth.importWorkouts(known: known, denied: denied)
     }
 }
 
@@ -58,8 +58,19 @@ enum AppleHealth {
         }
     }
 
-    /// All Apple Health workouts. Activity types outside the app list become `other`.
-    static func importWorkouts() async throws -> [WorkoutRecord] {
+    /// Newest workouts already stored are rebuilt so a re-import can fill missing series.
+    static let refreshWindow = 20
+    /// New workouts built per pass. A caller with more history runs another pass.
+    static let newBatchSize = 100
+
+    /// Lists every Apple Health workout, then builds full records only for the newest
+    /// `refreshWindow` stored ones and up to `newBatchSize` that are not stored yet.
+    /// Deleted workouts are skipped. Activity types outside the app list become `other`.
+    /// A pass that returns `newBatchSize` unknown ids may have more history left.
+    static func importWorkouts(
+        known: Set<String>,
+        denied: WorkoutDenylist
+    ) async throws -> [WorkoutRecord] {
         guard available else { return [] }
         let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
@@ -78,7 +89,18 @@ enum AppleHealth {
             execute(query)
         }
         var records: [WorkoutRecord] = []
+        var refreshed = 0
+        var added = 0
         for workout in workouts {
+            let id = workout.uuid.uuidString
+            if denied.containsHealthKitUUID(id) { continue }
+            if known.contains(id) {
+                guard refreshed < refreshWindow else { continue }
+                refreshed += 1
+            } else {
+                guard added < newBatchSize else { continue }
+                added += 1
+            }
             records.append(await record(from: workout, sport: SportKind.from(workout)))
         }
         return records

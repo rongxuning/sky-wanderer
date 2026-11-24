@@ -472,6 +472,7 @@ final class LiveSession: ObservableObject {
     }
 
     private func startLocation() {
+        guard sport.usesOutdoorLocation else { return }
         location.delegate = locationProxy
         location.activityType = .fitness
         location.desiredAccuracy = kCLLocationAccuracyBest

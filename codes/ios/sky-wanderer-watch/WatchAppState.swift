@@ -104,12 +104,14 @@ final class WatchAppState: ObservableObject {
         } catch {
             return
         }
+        let known = Set(database.workouts.compactMap { WorkoutDenylist.healthIdentity($0.healthKitUUID) })
+        let denied = database.deletedWorkouts
         let outcome = await RecordsRefresh.performAsync {
-            try await AppleActivitySource().importWorkouts()
+            try await AppleActivitySource().importWorkouts(known: known, denied: denied)
         }
         guard !outcome.failed, !outcome.cancelled else { return }
         mutate { database in
-            WorkoutImport.merge(outcome.records, into: &database.workouts)
+            WorkoutImport.merge(outcome.records, into: &database.workouts, skipping: database.deletedWorkouts)
         }
     }
 

@@ -635,20 +635,32 @@ final class PhoneAppState: ObservableObject {
             banner = "暂时读不到 Apple 健康里的锻炼"
             return .failure
         }
-        let outcome = await RecordsRefresh.performAsync {
-            try await source.importWorkouts()
+        // Each pass builds a bounded batch. A full batch of unseen workouts means more history may remain.
+        var last = RecordsRefresh.Outcome.empty
+        while true {
+            let known = Set(database.workouts.compactMap { WorkoutDenylist.healthIdentity($0.healthKitUUID) })
+            let denied = database.deletedWorkouts
+            let outcome = await RecordsRefresh.performAsync {
+                try await source.importWorkouts(known: known, denied: denied)
+            }
+            if outcome.failed {
+                banner = "暂时读不到 Apple 健康里的锻炼"
+                return outcome
+            }
+            if outcome.cancelled {
+                return outcome
+            }
+            let unseen = outcome.records.filter {
+                guard let id = WorkoutDenylist.healthIdentity($0.healthKitUUID) else { return false }
+                return !known.contains(id)
+            }.count
+            mutate { database in
+                WorkoutImport.merge(outcome.records, into: &database.workouts, skipping: database.deletedWorkouts)
+            }
+            last = outcome
+            if unseen < AppleHealth.newBatchSize { break }
         }
-        if outcome.failed {
-            banner = "暂时读不到 Apple 健康里的锻炼"
-            return outcome
-        }
-        if outcome.cancelled {
-            return outcome
-        }
-        mutate { database in
-            WorkoutImport.merge(outcome.records, into: &database.workouts, skipping: database.deletedWorkouts)
-        }
-        return outcome
+        return last
     }
 
     func addPost(from record: WorkoutRecord, text: String, imageData: Data?) {
