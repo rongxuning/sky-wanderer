@@ -598,16 +598,17 @@ extension SportKind {
     static let trailRunMetadataKey = "SkyWandererTrailRun"
 
     private static func isTrailRun(_ workout: HKWorkout) -> Bool {
-        (workout.metadata?[trailRunMetadataKey] as? NSNumber)?.boolValue ?? false
+        flag(workout.metadata?[trailRunMetadataKey])
     }
 
     private static func isIndoor(_ workout: HKWorkout) -> Bool {
-        if let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? NSNumber {
-            return indoor.boolValue
-        }
-        if let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool {
-            return indoor
-        }
+        flag(workout.metadata?[HKMetadataKeyIndoorWorkout])
+    }
+
+    /// HealthKit metadata booleans arrive as `NSNumber` or `Bool`.
+    private static func flag(_ value: Any?) -> Bool {
+        if let number = value as? NSNumber { return number.boolValue }
+        if let bool = value as? Bool { return bool }
         return false
     }
 }
