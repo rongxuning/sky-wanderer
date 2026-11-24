@@ -528,7 +528,7 @@ final class LiveSession: ObservableObject {
     }
 
     private func advanceSimulation() {
-        let speed = sport == .running ? Double.random(in: 2.7...3.15) : Double.random(in: 1.15...1.45)
+        let speed = sport.isRunFamily ? Double.random(in: 2.7...3.15) : Double.random(in: 1.15...1.45)
         simHeading += Double.random(in: -0.25...0.25)
         let north = cos(simHeading) * speed
         let east = sin(simHeading) * speed
@@ -542,10 +542,10 @@ final class LiveSession: ObservableObject {
         if degrees < 0 { degrees += 360 }
         courseDegrees = degrees
         paceSecPerKm = 1000 / speed
-        heartRate = (sport == .running ? 156 : 118) + sin(elapsed / 12) * 6
-        cadence = sport == .running ? 174 + sin(elapsed / 9) * 4 : 110 + sin(elapsed / 10) * 3
-        // HealthKit is not feeding energy here. Rough display estimate only: 65 kcal/km running, 50 hiking.
-        energyKilocalories = (gpsDistance / 1000) * (sport == .running ? 65 : 50)
+        heartRate = (sport.isRunFamily ? 156 : 118) + sin(elapsed / 12) * 6
+        cadence = sport.isRunFamily ? 174 + sin(elapsed / 9) * 4 : 110 + sin(elapsed / 10) * 3
+        // HealthKit is not feeding energy here. Rough display estimate only: 65 kcal/km running, 50 otherwise.
+        energyKilocalories = (gpsDistance / 1000) * (sport.isRunFamily ? 65 : 50)
         noteAltitude(simPoint.altitude)
         splitHearts.append(heartRate)
         splitCadences.append(cadence)
@@ -811,13 +811,13 @@ final class LiveSession: ObservableObject {
         if paceSecPerKm > 0 { paceSeries.append(SeriesPoint(second: second, value: paceSecPerKm)) }
         elevationSeries.append(SeriesPoint(second: second, value: lastAltitude ?? route.last?.altitude ?? 0))
         if simulating {
-            let stride = sport == .running ? 1.12 + sin(elapsed / 15) * 0.06 : 0.76 + sin(elapsed / 18) * 0.04
-            let contact = sport == .running ? 230 + sin(elapsed / 11) * 12 : 284 + sin(elapsed / 13) * 8
-            let watts = sport == .running ? 240 + sin(elapsed / 8) * 20 : 148 + sin(elapsed / 9) * 12
+            let stride = sport.isRunFamily ? 1.12 + sin(elapsed / 15) * 0.06 : 0.76 + sin(elapsed / 18) * 0.04
+            let contact = sport.isRunFamily ? 230 + sin(elapsed / 11) * 12 : 284 + sin(elapsed / 13) * 8
+            let watts = sport.isRunFamily ? 240 + sin(elapsed / 8) * 20 : 148 + sin(elapsed / 9) * 12
             strideSeries.append(SeriesPoint(second: second, value: stride))
             contactSeries.append(SeriesPoint(second: second, value: contact))
             powerSeries.append(SeriesPoint(second: second, value: watts))
-            if sport == .running {
+            if sport.isRunFamily {
                 let oscillation = 84 + sin(elapsed / 10) * 6
                 oscillationSeries.append(SeriesPoint(second: second, value: oscillation))
             }

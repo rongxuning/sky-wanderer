@@ -32,7 +32,7 @@ let marks = [
     KilometerMarker(kilometer: 2, latitude: 31.26, longitude: 121.49, altitude: 28, distanceMeters: 2000)
 ]
 let snap = PhoneWatchLiveSnapshot.from(
-    sport: .running,
+    sport: .outdoorRunning,
     elapsed: 625,
     distanceMeters: 2_150,
     paceSecPerKm: 290,
@@ -47,7 +47,7 @@ let snap = PhoneWatchLiveSnapshot.from(
 )
 
 check(snap.active, "active snapshot")
-check(snap.sport == .running, "sport round-trips")
+check(snap.sport == .outdoorRunning, "sport round-trips")
 check(snap.route.count == 80, "route is compacted to the limit, got \(snap.route.count)")
 check(snap.kilometers.count == 2, "kilometer marks travel with the snapshot")
 near(snap.route.first?.lat ?? -1, route.first?.latitude ?? -2, 0.00001, "first route point kept")

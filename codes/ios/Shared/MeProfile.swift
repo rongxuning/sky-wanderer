@@ -136,11 +136,11 @@ enum MeTrainingShareState: String, Equatable, CaseIterable {
         case .unavailable:
             return "训练授权需要健康 App。这台设备上只能先看说明。"
         case .notDetermined:
-            return "授权后，徒步和跑步可以写入健康，包括路线、心率、距离和消耗。"
+            return "授权后，训练可以写入健康，包括路线、心率、距离和消耗。"
         case .denied:
             return "可以在系统设置的健康里重新打开写入。读取心率、睡眠和步数的开关也在那里。"
         case .authorized:
-            return "新的徒步和跑步可以写入健康。读取心率、睡眠和步数是否打开，要在健康 App 里看，系统不会告诉应用。"
+            return "新的训练可以写入健康。读取心率、睡眠和步数是否打开，要在健康 App 里看，系统不会告诉应用。"
         }
     }
 }
@@ -162,7 +162,7 @@ enum MeNotificationPreference: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .workout: return "一次徒步或跑步保存后提醒"
+        case .workout: return "一次训练保存后提醒"
         case .health: return "睡眠或步数有更新时提醒"
         case .team: return "队友开始或结束运动时提醒"
         }

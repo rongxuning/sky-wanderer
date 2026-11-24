@@ -8,7 +8,8 @@ import HealthKit
 protocol ActivitySource {
     var brandName: String { get }
     func prepare() async throws
-    func importRunsAndHikes() async throws -> [WorkoutRecord]
+    /// Every Apple Health workout the store returns, mapped onto `SportKind`.
+    func importWorkouts() async throws -> [WorkoutRecord]
 }
 
 struct AppleActivitySource: ActivitySource {
@@ -18,8 +19,8 @@ struct AppleActivitySource: ActivitySource {
         try await AppleHealth.authorize()
     }
 
-    func importRunsAndHikes() async throws -> [WorkoutRecord] {
-        try await AppleHealth.importRunsAndHikes()
+    func importWorkouts() async throws -> [WorkoutRecord] {
+        try await AppleHealth.importWorkouts()
     }
 }
 
@@ -57,18 +58,15 @@ enum AppleHealth {
         }
     }
 
-    static func importRunsAndHikes() async throws -> [WorkoutRecord] {
+    /// All Apple Health workouts. Activity types outside the app list become `other`.
+    static func importWorkouts() async throws -> [WorkoutRecord] {
         guard available else { return [] }
         let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
-            let predicate = NSCompoundPredicate(orPredicateWithSubpredicates: [
-                HKQuery.predicateForWorkouts(with: .running),
-                HKQuery.predicateForWorkouts(with: .hiking)
-            ])
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
             let query = HKSampleQuery(
                 sampleType: HKWorkoutType.workoutType(),
-                predicate: predicate,
-                limit: 80,
+                predicate: nil,
+                limit: HKObjectQueryNoLimit,
                 sortDescriptors: [sort]
             ) { _, samples, error in
                 if let error {
@@ -81,8 +79,7 @@ enum AppleHealth {
         }
         var records: [WorkoutRecord] = []
         for workout in workouts {
-            guard let sport = SportKind.from(workout.workoutActivityType) else { continue }
-            records.append(await record(from: workout, sport: sport))
+            records.append(await record(from: workout, sport: SportKind.from(workout)))
         }
         return records
     }
@@ -525,17 +522,65 @@ enum AppleHealth {
 extension SportKind {
     var hkActivity: HKWorkoutActivityType {
         switch self {
-        case .running: return .running
+        case .outdoorRunning, .indoorRunning: return .running
+        case .trailRunning: return .trailRunning
         case .hiking: return .hiking
+        case .functionalStrength: return .functionalStrengthTraining
+        case .hiit: return .highIntensityIntervalTraining
+        case .other: return .other
         }
     }
 
-    static func from(_ type: HKWorkoutActivityType) -> SportKind? {
-        switch type {
-        case .running: return .running
-        case .hiking: return .hiking
-        default: return nil
+    var hkLocationType: HKWorkoutSessionLocationType {
+        usesOutdoorLocation ? .outdoor : .indoor
+    }
+
+    /// Maps a HealthKit workout, including indoor vs outdoor running metadata.
+    static func from(_ workout: HKWorkout) -> SportKind {
+        switch workout.workoutActivityType {
+        case .running:
+            return isIndoor(workout) ? .indoorRunning : .outdoorRunning
+        case .trailRunning:
+            return .trailRunning
+        case .hiking:
+            return .hiking
+        case .functionalStrengthTraining:
+            return .functionalStrength
+        case .highIntensityIntervalTraining:
+            return .hiit
+        default:
+            return .other
         }
+    }
+
+    /// Activity type alone. Running without location metadata is outdoor.
+    static func from(_ type: HKWorkoutActivityType) -> SportKind {
+        switch type {
+        case .running: return .outdoorRunning
+        case .trailRunning: return .trailRunning
+        case .hiking: return .hiking
+        case .functionalStrengthTraining: return .functionalStrength
+        case .highIntensityIntervalTraining: return .hiit
+        default: return .other
+        }
+    }
+
+    /// Configuration from a mirrored or phone-started session.
+    static func from(_ configuration: HKWorkoutConfiguration) -> SportKind {
+        if configuration.activityType == .running {
+            return configuration.locationType == .indoor ? .indoorRunning : .outdoorRunning
+        }
+        return from(configuration.activityType)
+    }
+
+    private static func isIndoor(_ workout: HKWorkout) -> Bool {
+        if let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? NSNumber {
+            return indoor.boolValue
+        }
+        if let indoor = workout.metadata?[HKMetadataKeyIndoorWorkout] as? Bool {
+            return indoor
+        }
+        return false
     }
 }
 
@@ -562,7 +607,7 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
     func start(sport: SportKind) async throws {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = sport.hkActivity
-        configuration.locationType = .outdoor
+        configuration.locationType = sport.hkLocationType
         let session = try HKWorkoutSession(healthStore: AppleHealth.store, configuration: configuration)
         let builder = session.associatedWorkoutBuilder()
         try await begin(session: session, builder: builder, configuration: configuration, start: Date())

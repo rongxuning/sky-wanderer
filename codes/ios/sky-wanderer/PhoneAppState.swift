@@ -80,7 +80,6 @@ final class PhoneAppState: ObservableObject {
     var workouts: [WorkoutRecord] {
         database.workouts
             .filter { !SampleLibrary.isSeededWorkout($0) }
-            .filter { $0.sport == .hiking || $0.sport == .running }
             .sorted { $0.start > $1.start }
     }
 
@@ -637,7 +636,7 @@ final class PhoneAppState: ObservableObject {
             return .failure
         }
         let outcome = await RecordsRefresh.performAsync {
-            try await source.importRunsAndHikes()
+            try await source.importWorkouts()
         }
         if outcome.failed {
             banner = "暂时读不到 Apple 健康里的锻炼"
@@ -997,7 +996,7 @@ final class PhoneAppState: ObservableObject {
 
 @MainActor
 final class WorkoutDraft: ObservableObject {
-    @Published var sport: SportKind = .running
+    @Published var sport: SportKind = .outdoorRunning
     @Published var routeID = "free"
     @Published var memberIDs: [String] = []
     @Published var countdown = false

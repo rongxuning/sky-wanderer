@@ -3,23 +3,58 @@ import Foundation
 import CoreLocation
 #endif
 
+/// App-wide workout types. Start sheet, watch launch, list filters, and Apple
+/// Health import all read from this list. Unknown HealthKit activities land in
+/// `other` so every imported Apple workout can appear in the records list.
+///
+/// `outdoorRunning` keeps the legacy raw value `"running"` so saved workouts
+/// from before the outdoor/indoor split still decode.
 enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
+    case outdoorRunning = "running"
+    case indoorRunning
+    case trailRunning
     case hiking
-    case running
+    case functionalStrength
+    case hiit
+    case other
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .outdoorRunning: return "户外跑步"
+        case .indoorRunning: return "室内跑步"
+        case .trailRunning: return "越野跑"
         case .hiking: return "徒步"
-        case .running: return "跑步"
+        case .functionalStrength: return "功能性力量训练"
+        case .hiit: return "HIIT训练"
+        case .other: return "其他"
         }
     }
 
     var symbol: String {
         switch self {
+        case .outdoorRunning, .indoorRunning, .trailRunning: return "figure.run"
         case .hiking: return "figure.hiking"
-        case .running: return "figure.run"
+        case .functionalStrength: return "figure.strengthtraining.functional"
+        case .hiit: return "figure.highintensity.intervaltraining"
+        case .other: return "figure.mixed.cardio"
+        }
+    }
+
+    /// Outdoor run, indoor run, and trail run share run-like pace and cadence.
+    var isRunFamily: Bool {
+        switch self {
+        case .outdoorRunning, .indoorRunning, .trailRunning: return true
+        case .hiking, .functionalStrength, .hiit, .other: return false
+        }
+    }
+
+    /// Types that record a GPS route outdoors when HealthKit is available.
+    var usesOutdoorLocation: Bool {
+        switch self {
+        case .outdoorRunning, .trailRunning, .hiking: return true
+        case .indoorRunning, .functionalStrength, .hiit, .other: return false
         }
     }
 }

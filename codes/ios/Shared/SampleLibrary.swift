@@ -42,7 +42,7 @@ enum SampleLibrary {
         [
             make(
                 id: "10000000-0000-0000-0000-000000000001",
-                sport: .running,
+                sport: .outdoorRunning,
                 month: 10, day: 14, hour: 7, minute: 12,
                 minutes: 38,
                 kilometers: 6.42,
@@ -70,7 +70,7 @@ enum SampleLibrary {
             ),
             make(
                 id: "10000000-0000-0000-0000-000000000003",
-                sport: .running,
+                sport: .outdoorRunning,
                 month: 10, day: 9, hour: 18, minute: 5,
                 minutes: 54,
                 kilometers: 10.02,
@@ -107,7 +107,7 @@ enum SampleLibrary {
                 author: "阿宁",
                 isMine: false,
                 createdAt: date(10, 15, 7, 40),
-                sport: .running,
+                sport: .outdoorRunning,
                 distanceMeters: 6_400,
                 duration: 38 * 60,
                 paceSecPerKm: 356,
@@ -135,7 +135,7 @@ enum SampleLibrary {
                 author: "周舟",
                 isMine: false,
                 createdAt: date(10, 11, 19, 12),
-                sport: .running,
+                sport: .outdoorRunning,
                 distanceMeters: 8_000,
                 duration: 47 * 60,
                 paceSecPerKm: 352,
@@ -200,10 +200,10 @@ enum SampleLibrary {
             heartRate: wave(duration, base: heart, amp: 8, floor: 70),
             cadenceSeries: wave(duration, base: cadence, amp: 6, floor: 60),
             paceSeries: wave(duration, base: duration / kilometers, amp: 18, floor: 180),
-            stride: wave(duration, base: sport == .running ? 1.15 : 0.78, amp: 0.08, floor: 0.4),
+            stride: wave(duration, base: sport.isRunFamily ? 1.15 : 0.78, amp: 0.08, floor: 0.4),
             elevation: elevationSeries(duration, route: route),
-            groundContact: wave(duration, base: sport == .running ? 228 : 286, amp: 14, floor: 160),
-            power: wave(duration, base: sport == .running ? 246 : 150, amp: 24, floor: 40),
+            groundContact: wave(duration, base: sport.isRunFamily ? 228 : 286, amp: 14, floor: 160),
+            power: wave(duration, base: sport.isRunFamily ? 246 : 150, amp: 24, floor: 40),
             origin: .sample,
             healthKitUUID: nil
         )

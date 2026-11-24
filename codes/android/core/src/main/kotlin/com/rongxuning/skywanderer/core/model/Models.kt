@@ -1,19 +1,39 @@
 package com.rongxuning.skywanderer.core.model
 
+/** Mirrors iOS `SportKind`. Legacy stored `"running"` maps to outdoor running. */
 enum class SportKind {
+    OutdoorRunning,
+    IndoorRunning,
+    TrailRunning,
     Hiking,
-    Running,
+    FunctionalStrength,
+    Hiit,
+    Other,
     ;
 
     val title: String
         get() = when (this) {
+            OutdoorRunning -> "户外跑步"
+            IndoorRunning -> "室内跑步"
+            TrailRunning -> "越野跑"
             Hiking -> "徒步"
-            Running -> "跑步"
+            FunctionalStrength -> "功能性力量训练"
+            Hiit -> "HIIT训练"
+            Other -> "其他"
         }
 
     companion object {
         fun fromStored(value: String): SportKind =
-            entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: Hiking
+            when (value.lowercase()) {
+                "running", "outdoorrunning" -> OutdoorRunning
+                "indoorrunning" -> IndoorRunning
+                "trailrunning" -> TrailRunning
+                "hiking" -> Hiking
+                "functionalstrength" -> FunctionalStrength
+                "hiit" -> Hiit
+                "other" -> Other
+                else -> entries.firstOrNull { it.name.equals(value, ignoreCase = true) } ?: Other
+            }
     }
 }
 

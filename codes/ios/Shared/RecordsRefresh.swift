@@ -16,7 +16,7 @@ enum RecordsRefresh {
     struct Outcome: Equatable {
         var records: [WorkoutRecord]
         /// The import threw. An empty `records` with `failed == false` is a real
-        /// read that found no running or hiking workouts.
+        /// read that found no Apple Health workouts.
         var failed: Bool
         /// The refresh waiter stopped because the pull was cancelled. Not an error.
         var cancelled: Bool

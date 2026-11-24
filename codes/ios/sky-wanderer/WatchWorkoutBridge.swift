@@ -164,7 +164,7 @@ final class WatchMirrorGate {
     private func launch(_ sport: SportKind) async -> Bool {
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = sport.hkActivity
-        configuration.locationType = .outdoor
+        configuration.locationType = sport.hkLocationType
         return await withCheckedContinuation { continuation in
             AppleHealth.store.startWatchApp(with: configuration) { success, _ in
                 continuation.resume(returning: success)

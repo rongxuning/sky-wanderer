@@ -25,7 +25,7 @@ func near(_ actual: Double, _ expected: Double, _ tolerance: Double, _ message: 
 let now = Date(timeIntervalSince1970: 1_800_000_000)
 
 func workout(
-    sport: SportKind = .running,
+    sport: SportKind = .outdoorRunning,
     minutes: Double,
     averageHeartRate: Double,
     heartRate: [SeriesPoint] = [],
@@ -89,7 +89,7 @@ check(
 )
 check(
     workout(sport: .hiking, minutes: fortyOne, averageHeartRate: 137).sessionLoad
-        == workout(sport: .running, minutes: fortyOne, averageHeartRate: 137).sessionLoad,
+        == workout(sport: .outdoorRunning, minutes: fortyOne, averageHeartRate: 137).sessionLoad,
     "hiking and running share one load for the same heart-rate time"
 )
 
@@ -164,7 +164,7 @@ check(
 )
 check(
     workout(sport: .hiking, minutes: 60, averageHeartRate: 180, heartRate: mixed).sessionLoad
-        == workout(sport: .running, minutes: 60, averageHeartRate: 180, heartRate: mixed).sessionLoad,
+        == workout(sport: .outdoorRunning, minutes: 60, averageHeartRate: 180, heartRate: mixed).sessionLoad,
     "hiking and running match on the same series"
 )
 

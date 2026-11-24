@@ -65,36 +65,32 @@ struct WatchStartView: View {
     @EnvironmentObject private var app: WatchAppState
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Label("训练", systemImage: "figure.run")
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                Spacer()
-                NavigationLink(value: WatchPush.team) {
-                    Text(app.members.isEmpty ? "组队" : "组队 \(app.members.count)")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.omniCobalt)
+        ScrollView {
+            VStack(spacing: 8) {
+                HStack {
+                    Label("训练", systemImage: "figure.run")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    Spacer()
+                    NavigationLink(value: WatchPush.team) {
+                        Text(app.members.isEmpty ? "组队" : "组队 \(app.members.count)")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(Color.omniCobalt)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                ForEach(SportKind.allCases) { sport in
+                    NavigationLink(value: WatchPush.live(sport)) {
+                        Text(sport.title)
+                            .font(.system(size: 18, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Color.omniCobalt)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .glass(radius: 20)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            NavigationLink(value: WatchPush.live(.hiking)) {
-                Text("徒步")
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.omniCobalt)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glass(radius: 24)
-            }
-            .buttonStyle(.plain)
-            NavigationLink(value: WatchPush.live(.running)) {
-                Text("跑步")
-                    .font(.system(size: 26, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.omniCobalt)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glass(radius: 24)
-            }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 6)
         }
-        .padding(.horizontal, 6)
         .background(CanvasBackground())
         .navigationTitle("训练")
         .navigationDestination(for: WatchPush.self) { push in
@@ -333,7 +329,7 @@ struct WatchDetailView: View {
 /// Phone `startWatchApp` delivers the configuration here. The watch records heart rate and steps; the phone mirrors them.
 final class WatchDelegate: NSObject, WKApplicationDelegate {
     func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
-        let sport = SportKind.from(workoutConfiguration.activityType) ?? .running
+        let sport = SportKind.from(workoutConfiguration)
         Task { @MainActor in
             WatchCompanionMirror.shared.activate()
             WatchCompanionMirror.shared.notePhoneLaunch(sport: sport)

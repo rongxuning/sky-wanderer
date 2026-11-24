@@ -29,7 +29,7 @@ let storedStart = Date(timeIntervalSince1970: 1_762_790_000) // 2026-11-10 12:13
 func makeWorkout(start: Date, healthKitUUID: String) -> WorkoutRecord {
     WorkoutRecord(
         id: UUID(),
-        sport: .running,
+        sport: .outdoorRunning,
         start: start,
         end: start.addingTimeInterval(30 * 60),
         distanceMeters: 5_000,

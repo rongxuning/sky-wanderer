@@ -279,47 +279,48 @@ struct TypeSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
-            Text("类型")
-                .font(SkyTheme.Font.title)
-                .foregroundStyle(SkyTheme.Color.ink)
-                .padding(.top, SkyTheme.Spacing.related)
-            ForEach(SportKind.allCases) { sport in
-                Button {
-                    draft.sport = sport
-                    dismiss()
-                } label: {
-                    HStack {
-                        Text(sport.title)
-                            .font(SkyTheme.Font.title2)
-                        Spacer()
-                        if draft.sport == sport {
-                            Image(systemName: "checkmark")
-                                .font(SkyTheme.Font.headline)
-                                .foregroundStyle(SkyTheme.Color.primary)
+        ScrollView {
+            VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
+                Text("类型")
+                    .font(SkyTheme.Font.title)
+                    .foregroundStyle(SkyTheme.Color.ink)
+                    .padding(.top, SkyTheme.Spacing.related)
+                ForEach(SportKind.allCases) { sport in
+                    Button {
+                        draft.sport = sport
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Text(sport.title)
+                                .font(SkyTheme.Font.title2)
+                            Spacer()
+                            if draft.sport == sport {
+                                Image(systemName: "checkmark")
+                                    .font(SkyTheme.Font.headline)
+                                    .foregroundStyle(SkyTheme.Color.primary)
+                            }
+                        }
+                        .foregroundStyle(SkyTheme.Color.ink)
+                        .padding(SkyTheme.Spacing.cardPadding)
+                        .frame(minHeight: SkyTheme.Spacing.touchMin)
+                        .background(
+                            SkyTheme.Color.card,
+                            in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
+                                .stroke(
+                                    draft.sport == sport ? SkyTheme.Color.primary : SkyTheme.Color.cardBorder,
+                                    lineWidth: draft.sport == sport ? 1.5 : 1
+                                )
                         }
                     }
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    .padding(SkyTheme.Spacing.cardPadding)
-                    .frame(minHeight: SkyTheme.Spacing.touchMin)
-                    .background(
-                        SkyTheme.Color.card,
-                        in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
-                            .stroke(
-                                draft.sport == sport ? SkyTheme.Color.primary : SkyTheme.Color.cardBorder,
-                                lineWidth: draft.sport == sport ? 1.5 : 1
-                            )
-                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            Spacer(minLength: 0)
+            .padding(SkyTheme.Spacing.screenInset)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(SkyTheme.Spacing.screenInset)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(SkyTheme.Color.grouped)
         .presentationBackground(SkyTheme.Color.grouped)
         .tint(SkyTheme.Color.primary)
@@ -344,7 +345,7 @@ struct StartSettingsSheet: View {
                     .foregroundStyle(SkyTheme.Color.ink)
             }
             .tint(SkyTheme.Color.primary)
-            Text("有健康数据权限时，这次徒步或跑步会写入 Apple 健康。写不进去时，运动页会标明本地模拟。组队位置来自本机模拟，没有服务器。")
+            Text("有健康数据权限时，这次训练会写入 Apple 健康。写不进去时，运动页会标明本地模拟。组队位置来自本机模拟，没有服务器。")
                 .font(SkyTheme.Font.footnote)
                 .foregroundStyle(SkyTheme.Color.secondary)
             Spacer(minLength: 0)
