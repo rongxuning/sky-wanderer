@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Records tab. The month and the sport menu stay fixed. Cards scroll only below that bar.
+/// Records tab. The month and the sport filter chips stay fixed. Cards scroll only below that bar.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
     @State private var revealedWorkoutID: UUID?
@@ -86,61 +86,56 @@ struct RecordFeedView: View {
         }
     }
 
-    /// Header from the top of the screen through the month and 全部, in the tab bar's color. The list starts under it.
+    /// Header from the top of the screen through the month and sport chips, in the tab bar's color.
+    /// Month on the first row; Apple-style horizontal pills on the second. The list starts under it.
     private var monthTitleBar: some View {
-        HStack(alignment: .center, spacing: CGFloat(RecordListCardLayout.headerGap)) {
+        VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.headerGap)) {
             RecordMonthTitle(title: displayedMonthTitle)
-            sportMenu
-            Spacer(minLength: 0)
+                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            sportFilterBar
         }
-        .padding(.horizontal, SkyTheme.Spacing.screenInset)
+        .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
         .background(SkyTheme.Color.starryGray, ignoresSafeAreaEdges: .top)
         .zIndex(1)
     }
 
-    /// 全部, then each sport that is actually in the loaded log.
-    private var sportMenu: some View {
+    /// 全部, then each sport that is actually in the loaded log. Horizontal scroll of capsules.
+    private var sportFilterBar: some View {
+        let sports = RecordListFilter.sports(in: app.workouts)
         let selection = sportFilter?.title ?? "全部"
-        return Menu {
-            Button {
-                sportFilter = nil
-            } label: {
-                if sportFilter == nil {
-                    Label("全部", systemImage: "checkmark")
-                } else {
-                    Text("全部")
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: CGFloat(RecordListCardLayout.filterChipGap)) {
+                sportChip(title: "全部", selected: sportFilter == nil) {
+                    sportFilter = nil
                 }
-            }
-            ForEach(RecordListFilter.sports(in: app.workouts)) { sport in
-                Button {
-                    sportFilter = sport
-                } label: {
-                    if sportFilter == sport {
-                        Label(sport.title, systemImage: "checkmark")
-                    } else {
-                        Text(sport.title)
+                ForEach(sports) { sport in
+                    sportChip(title: sport.title, selected: sportFilter == sport) {
+                        sportFilter = sport
                     }
                 }
             }
-        } label: {
-            HStack(spacing: 2) {
-                Text(selection)
-                    .lineLimit(1)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .font(.system(size: filterSize, weight: .medium))
-            .foregroundStyle(SkyTheme.Color.primary)
-            .frame(
-                minWidth: SkyTheme.Spacing.touchMin,
-                minHeight: SkyTheme.Spacing.touchMin,
-                alignment: .leading
-            )
-            .contentShape(Rectangle())
+            .padding(.horizontal, SkyTheme.Spacing.screenInset)
         }
-        .buttonStyle(.plain)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("运动类型")
         .accessibilityValue(selection)
+    }
+
+    private func sportChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: filterSize, weight: .semibold))
+                .foregroundStyle(selected ? SkyTheme.Color.onPrimary : SkyTheme.Color.onStarryGray)
+                .lineLimit(1)
+                .padding(.horizontal, CGFloat(RecordListCardLayout.filterChipPaddingH))
+                .padding(.vertical, CGFloat(RecordListCardLayout.filterChipPaddingV))
+                .background(
+                    selected ? SkyTheme.Color.primary : SkyTheme.Color.starryChip,
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     private var recordScroll: some View {
