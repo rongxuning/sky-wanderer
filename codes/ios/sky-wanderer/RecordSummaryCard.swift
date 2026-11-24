@@ -28,9 +28,15 @@ struct RecordSummaryCard: View {
                     alignment: .leading
                 )
             Spacer(minLength: CGFloat(RecordListCardLayout.minimumMapGap))
-            RecordRouteThumbnail(workoutID: workout.id, route: workout.route)
-                .padding(.trailing, CGFloat(RecordListCardLayout.mapTrailing))
-                .layoutPriority(1)
+            Group {
+                if workout.sport.listShowsRouteMetrics {
+                    RecordRouteThumbnail(workoutID: workout.id, route: workout.route)
+                } else {
+                    RecordSportIcon(sport: workout.sport)
+                }
+            }
+            .padding(.trailing, CGFloat(RecordListCardLayout.mapTrailing))
+            .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .center)
         .frame(height: usesStandardMetrics ? CGFloat(RecordListCardLayout.standardHeight) : nil)
@@ -48,12 +54,20 @@ struct RecordSummaryCard: View {
             titleRow
             VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.middleToBottom)) {
                 HStack(spacing: CGFloat(RecordListCardLayout.columnGap)) {
-                    metric(distanceText, distanceFont, SkyTheme.Color.Metric.distance)
+                    if showsRouteMetrics {
+                        metric(distanceText, distanceFont, SkyTheme.Color.Metric.distance)
+                    } else {
+                        metric(energyText, distanceFont, SkyTheme.Color.Metric.energy)
+                    }
                     metric(RecordListCardText.clock(workout.trainingDuration), durationFont, SkyTheme.Color.Metric.duration)
                 }
                 .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
                 HStack(spacing: CGFloat(RecordListCardLayout.columnGap)) {
-                    metric(RecordListCardText.pace(workout.averagePaceSecPerKm), lowerFont, SkyTheme.Color.Metric.pace)
+                    if showsRouteMetrics {
+                        metric(RecordListCardText.pace(workout.averagePaceSecPerKm), lowerFont, SkyTheme.Color.Metric.pace)
+                    } else {
+                        Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+                    }
                     metric(RecordListCardText.heartRate(workout.resolvedAverageHeartRate), lowerFont, SkyTheme.Color.Metric.heartRate)
                     explainable(RecordListCardText.load(workout.sessionLoad), SkyTheme.Color.Metric.load)
                     explainable(RecordListCardText.score, SkyTheme.Color.Metric.score)
@@ -146,6 +160,12 @@ struct RecordSummaryCard: View {
         RecordListCardText.distance(workout.distanceMeters)
     }
 
+    private var energyText: String {
+        RecordListCardText.energy(workout.energyKilocalories)
+    }
+
+    private var showsRouteMetrics: Bool { workout.sport.listShowsRouteMetrics }
+
     private func figureColor(_ text: String, _ color: Color) -> Color {
         text == "—" ? SkyTheme.Color.secondary : color
     }
@@ -153,18 +173,28 @@ struct RecordSummaryCard: View {
     private var accessibilitySummary: String {
         let heart = RecordListCardText.heartRate(workout.resolvedAverageHeartRate)
         let spokenHeart = heart == "—" ? heart : "\(heart)次每分"
-        let map = workout.route.count >= 2 ? "有轨迹" : "这次没有轨迹"
-        return [
+        var parts: [String] = [
             workout.sport.title,
-            RecordListCardText.started(workout.start),
-            "距离 \(distanceText)",
-            "训练时间 \(RecordListCardText.clock(workout.trainingDuration))",
-            "平均配速 \(RecordListCardText.pace(workout.averagePaceSecPerKm))",
+            RecordListCardText.started(workout.start)
+        ]
+        if showsRouteMetrics {
+            parts.append("距离 \(distanceText)")
+        } else {
+            parts.append("消耗 \(energyText)")
+        }
+        parts.append("训练时间 \(RecordListCardText.clock(workout.trainingDuration))")
+        if showsRouteMetrics {
+            parts.append("平均配速 \(RecordListCardText.pace(workout.averagePaceSecPerKm))")
+        }
+        parts.append(contentsOf: [
             "平均心率 \(spokenHeart)",
             "训练负荷 \(RecordListCardText.load(workout.sessionLoad))",
-            "训练评分 \(RecordListCardText.score)",
-            map
-        ].joined(separator: "，")
+            "训练评分 \(RecordListCardText.score)"
+        ])
+        if showsRouteMetrics {
+            parts.append(workout.route.count >= 2 ? "有轨迹" : "这次没有轨迹")
+        }
+        return parts.joined(separator: "，")
     }
 }
 

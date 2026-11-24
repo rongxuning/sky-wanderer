@@ -263,6 +263,12 @@ check(!RecordListCardText.heartRate(146).contains("次"), "the list cell does no
 check(RecordListCardText.load(864) == "864", "load is the integer")
 check(RecordListCardText.load(0) == "—", "a zero load is the missing mark")
 check(RecordListCardText.load(10_000) == "10000", "a large load stays a full integer")
+check(RecordListCardText.energy(312.4) == "312千卡", "energy is whole kilocalories with 千卡")
+check(RecordListCardText.energy(0) == "—", "missing energy stays —")
+check(
+    SportKind.allCases.filter { !$0.listShowsRouteMetrics } == [.functionalStrength, .hiit, .other],
+    "strength, HIIT, and other use the icon and energy card"
+)
 check(RecordListCardText.score == "—", "the list has no per-record score")
 
 check(

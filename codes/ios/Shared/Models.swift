@@ -50,6 +50,15 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
+    /// Record-list cards show map, distance, and pace for these. Strength, HIIT, and other
+    /// show a sport icon, energy, and heart rate in the same card layout.
+    var listShowsRouteMetrics: Bool {
+        switch self {
+        case .outdoorRunning, .indoorRunning, .trailRunning, .hiking: return true
+        case .functionalStrength, .hiit, .other: return false
+        }
+    }
+
     /// Types that record a GPS route outdoors when HealthKit is available.
     var usesOutdoorLocation: Bool {
         switch self {
