@@ -72,6 +72,7 @@ struct LiveWorkoutView: View {
 private struct LiveBody: View {
     @ObservedObject var session: LiveSession
     @Binding var confirmEnd: Bool
+    @EnvironmentObject private var app: PhoneAppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expanded = false
     @State private var dragTranslation: CGFloat = 0
