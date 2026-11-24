@@ -1,15 +1,24 @@
 import SwiftUI
 import UIKit
 
-/// 82pt route mark for one record card.
+/// 82pt map for one record card: the basemap with the stored track on it.
 ///
-/// This is the existing track stroke, not a basemap. An 82pt cell cannot show
-/// the Tianditu approval line or the Apple map logo without covering the route,
-/// and a VoiceOver label is not that attribution. No route stays the detail
+/// The image comes from the same offscreen map as the share image, so the
+/// datum, tiles, and track stroke match the detail screen. Until it arrives
+/// the cell shows the bare stroke on the backdrop. No route stays the detail
 /// empty line. The stroke is the stored track, never a stand-in city or drawing.
 struct RecordRouteThumbnail: View {
+    var workoutID: UUID
     var route: [GeoPoint]
+    @ObservedObject private var basemap = SkyBasemapCenter.shared
     @ScaledMetric(relativeTo: .caption2) private var emptySize: CGFloat = 11
+    @State private var mapImage: UIImage?
+
+    private var side: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
+
+    private var loadKey: String {
+        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")"
+    }
 
     var body: some View {
         ZStack {
@@ -22,14 +31,81 @@ struct RecordRouteThumbnail: View {
                     .padding(4)
             } else {
                 RecordTrackLine(points: route)
+                if let mapImage {
+                    Image(uiImage: mapImage)
+                        .resizable()
+                        .frame(width: side, height: side)
+                        .transition(.opacity)
+                }
             }
         }
-        .frame(width: CGFloat(RecordListCardLayout.mapSide), height: CGFloat(RecordListCardLayout.mapSide))
+        .frame(width: side, height: side)
         .clipShape(
             RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
         )
+        .task(id: loadKey) {
+            guard route.count >= 2 else { return }
+            let image = await RecordMapThumbnails.shared.image(for: workoutID, route: route, side: side)
+            guard let image, !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                mapImage = image
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(route.count >= 2 ? "轨迹" : "这次没有轨迹")
+    }
+}
+
+/// Renders card maps one at a time. Each render opens a short-lived offscreen
+/// window, so a long list must not start them all at once. Finished images are
+/// kept for the session, which makes scrolling back instant.
+@MainActor
+final class RecordMapThumbnails {
+    static let shared = RecordMapThumbnails()
+
+    private let cache = NSCache<NSString, UIImage>()
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func image(for id: UUID, route: [GeoPoint], side: CGFloat) async -> UIImage? {
+        let key = Self.key(id: id, route: route, side: side)
+        if let hit = cache.object(forKey: key) { return hit }
+        await acquire()
+        defer { release() }
+        guard !Task.isCancelled else { return nil }
+        let currentKey = Self.key(id: id, route: route, side: side)
+        if let hit = cache.object(forKey: currentKey) { return hit }
+        let image = await TrackMapImage.render(
+            route: route,
+            size: CGSize(width: side, height: side),
+            overlap: 0,
+            thumbnail: true
+        )
+        if let image {
+            cache.setObject(image, forKey: currentKey)
+        }
+        return image
+    }
+
+    private static func key(id: UUID, route: [GeoPoint], side: CGFloat) -> NSString {
+        let mode = SkyBasemapCenter.shared.mode == .tianditu ? "t" : "s"
+        return "\(id.uuidString)-\(route.count)-\(mode)-\(Int(side))" as NSString
+    }
+
+    private func acquire() async {
+        guard busy else {
+            busy = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    private func release() {
+        if waiters.isEmpty {
+            busy = false
+        } else {
+            waiters.removeFirst().resume()
+        }
     }
 }
 

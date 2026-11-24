@@ -35,6 +35,11 @@ struct SkyHome: View {
         }
     }
 
+    /// The records header is dark gray under the status bar, so the clock and battery turn light.
+    private var darkHeaderShowing: Bool {
+        tab == .records && recordsPath.isEmpty && !app.workouts.isEmpty
+    }
+
     var body: some View {
         ZStack {
             stack(path: $recordsPath) {
@@ -78,6 +83,7 @@ struct SkyHome: View {
             .accessibilityHidden(tab != .routes)
         }
         .background(SkyTheme.Color.grouped.ignoresSafeArea())
+        .preferredColorScheme(darkHeaderShowing ? .dark : .light)
         .environment(\.skyTabBarAnchor, showsTabBar ? tabBarAnchor : .hidden)
         .safeAreaInset(edge: .bottom, spacing: showsTabBar ? 8 : 0) {
             if showsTabBar {

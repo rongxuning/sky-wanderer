@@ -37,6 +37,7 @@ struct RecordFeedView: View {
             }
             .sheet(isPresented: $showsMetricHelp) {
                 RecordMetricHelpSheet()
+                    .preferredColorScheme(.light)
             }
             .onChange(of: app.workouts.map(\.sport)) { _, sports in
                 // Stays mounted when the list is replaced by the empty state, so a
@@ -85,7 +86,7 @@ struct RecordFeedView: View {
         }
     }
 
-    /// Pale header from the top of the screen through the month and 全部. The list starts under it.
+    /// Header from the top of the screen through the month and 全部, in the tab bar's color. The list starts under it.
     private var monthTitleBar: some View {
         HStack(alignment: .center, spacing: CGFloat(RecordListCardLayout.headerGap)) {
             RecordMonthTitle(title: displayedMonthTitle)
@@ -93,7 +94,7 @@ struct RecordFeedView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .background(SkyTheme.Color.recordCard, ignoresSafeAreaEdges: .top)
+        .background(SkyTheme.Color.starryGray, ignoresSafeAreaEdges: .top)
         .zIndex(1)
     }
 
@@ -187,7 +188,6 @@ struct RecordFeedView: View {
                             onRequestDelete: { pendingDeleteID = workout.id },
                             onExplainMetrics: { showsMetricHelp = true }
                         )
-                        .padding(.horizontal, CGFloat(RecordListCardLayout.screenMargin))
                         .padding(.bottom, SkyTheme.Spacing.related)
                         .background {
                             RecordMonthProbe(title: monthByIndex[index])
@@ -320,7 +320,7 @@ private struct RecordMonthTitle: View {
     private func line(_ text: String, opacity: Double) -> some View {
         Text(text)
             .font(.system(size: monthSize, weight: .bold))
-            .foregroundStyle(SkyTheme.Color.ink)
+            .foregroundStyle(SkyTheme.Color.onPrimary)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .opacity(text.isEmpty ? 0 : opacity)
@@ -518,10 +518,7 @@ private struct RecordSwipeCard: View {
             .foregroundStyle(SkyTheme.Color.onPrimary)
             .frame(width: RecordSwipeMetrics.buttonWidth)
             .frame(height: rowHeight > 0 ? rowHeight : nil)
-            .background(
-                SkyTheme.Color.danger,
-                in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
-            )
+            .background(SkyTheme.Color.danger)
             .opacity(offset < -4 ? 1 : 0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
