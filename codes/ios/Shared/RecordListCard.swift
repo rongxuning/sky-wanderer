@@ -22,10 +22,10 @@ enum RecordListFilter {
 ///
 /// At the default text size the text block and the map block are both 90.
 /// The 213pt information track is the width that keeps four 48.75pt columns
-/// with 6pt gaps on a 393pt phone. Narrower cards shrink that track so the
-/// 82pt map still fits; wider cards do not stretch the columns.
+/// with 6pt gaps on a 393pt phone. Cards run edge to edge and are square.
+/// Narrower cards shrink that track so the 82pt map still fits; wider cards
+/// do not stretch the columns.
 enum RecordListCardLayout {
-    static let screenMargin = 8.0
     static let standardHeight = 90.0
     static let contentInsetVertical = 6.0
     static let titleLine = 16.0
@@ -44,8 +44,6 @@ enum RecordListCardLayout {
     static let headerGap = 8.0
     static let firstCardGap = 10.0
     static let minimumMapGap = 8.0
-    /// Card corner. The approved list keeps the previous 20pt card, not the 16pt token.
-    static let corner = 20.0
     /// Thumbnail corner. Matches `SkyTheme.Radius.chip`.
     static let mapCorner = 12.0
 
@@ -59,10 +57,6 @@ enum RecordListCardLayout {
 
     static var columnWidth: Double {
         (informationWidth - columnGap * (columnCount - 1)) / columnCount
-    }
-
-    static func cardWidth(screen: Double) -> Double {
-        screen - screenMargin * 2
     }
 
     /// Width of the left data region inside the card.

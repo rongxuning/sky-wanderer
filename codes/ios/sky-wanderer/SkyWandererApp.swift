@@ -44,6 +44,5 @@ enum MapRoute: Hashable {
 struct RootView: View {
     var body: some View {
         SkyHome()
-            .preferredColorScheme(.light)
     }
 }

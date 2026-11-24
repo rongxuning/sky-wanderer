@@ -3,15 +3,17 @@ import UIKit
 
 /// Share image from the same basemap and the same `TrackOverlay` as the screen.
 /// This is an offscreen `MKMapView`, not an `MKMapSnapshotter` of the system map.
+/// `thumbnail` drops the credit capsule, the empty-route caption, and the endpoint
+/// markers, which would cover a small image. Record cards use it.
 enum TrackMapImage {
     @MainActor
-    static func render(route: [GeoPoint], size: CGSize, overlap: CGFloat) async -> UIImage? {
+    static func render(route: [GeoPoint], size: CGSize, overlap: CGFloat, thumbnail: Bool = false) async -> UIImage? {
         guard size.width > 1, size.height > 1 else { return nil }
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
             return nil
         }
-        let host = TrackMapSnapshotHost(scene: scene, size: size, overlap: overlap)
+        let host = TrackMapSnapshotHost(scene: scene, size: size, overlap: overlap, thumbnail: thumbnail)
         host.start(route: route)
         defer { host.teardown() }
         return await host.waitForImage()
@@ -23,6 +25,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
     private let scene: UIWindowScene
     private let size: CGSize
     private let overlap: CGFloat
+    private let thumbnail: Bool
     private var window: UIWindow?
     private var map: MKMapView?
     private var tiles: [MKTileOverlay] = []
@@ -33,10 +36,11 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
     private var earlyImage: UIImage?
     private var route: [GeoPoint] = []
 
-    init(scene: UIWindowScene, size: CGSize, overlap: CGFloat) {
+    init(scene: UIWindowScene, size: CGSize, overlap: CGFloat, thumbnail: Bool) {
         self.scene = scene
         self.size = size
         self.overlap = overlap
+        self.thumbnail = thumbnail
         mode = SkyBasemapCenter.shared.mode
     }
 
@@ -58,14 +62,16 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         map.pointOfInterestFilter = mode == .tianditu ? .excludingAll : nil
         map.backgroundColor = SkyBasemapInstaller.backdrop
         window.addSubview(map)
-        let credit = BasemapCreditLabel()
-        credit.setText(SkyBasemapCenter.shared.caption)
-        let creditSize = credit.sizeThatFits(.zero)
-        let creditY = size.height - max(0, overlap) - creditSize.height - 10
-        credit.frame = CGRect(x: 12, y: max(8, creditY), width: creditSize.width, height: creditSize.height)
-        credit.tag = 41
-        window.addSubview(credit)
-        if route.count < 2 {
+        if !thumbnail {
+            let credit = BasemapCreditLabel()
+            credit.setText(SkyBasemapCenter.shared.caption)
+            let creditSize = credit.sizeThatFits(.zero)
+            let creditY = size.height - max(0, overlap) - creditSize.height - 10
+            credit.frame = CGRect(x: 12, y: max(8, creditY), width: creditSize.width, height: creditSize.height)
+            credit.tag = 41
+            window.addSubview(credit)
+        }
+        if route.count < 2, !thumbnail {
             let caption = Self.emptyCaption()
             caption.center = CGPoint(x: size.width / 2, y: size.height - max(0, overlap) - 12 - caption.bounds.height / 2)
             window.addSubview(caption)
@@ -121,10 +127,10 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         let shown = TrackDatum.displayed(route, mode: mode)
         if shown.count >= 2 {
             map.addOverlay(TrackOverlay(points: shown, style: .solid(TrackPaint.primary)))
-            if let first = shown.first?.coordinate {
+            if !thumbnail, let first = shown.first?.coordinate {
                 map.addAnnotation(EndpointAnnotation(coordinate: first, square: false))
             }
-            if shown.count >= 2, let last = shown.last?.coordinate {
+            if !thumbnail, shown.count >= 2, let last = shown.last?.coordinate {
                 map.addAnnotation(EndpointAnnotation(coordinate: last, square: true))
             }
         }

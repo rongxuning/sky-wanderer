@@ -277,16 +277,14 @@ check(
     "text block matches the standard card height"
 )
 check(abs(RecordListCardLayout.columnWidth - 48.75) < 0.001, "213pt track splits into 48.75pt columns")
-check(RecordListCardLayout.cardWidth(screen: 393) == 377, "393pt phone card is 377pt wide")
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 377) == 213,
+    RecordListCardLayout.informationWidth(cardWidth: 393) == 213,
     "a 393pt phone keeps the 213pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 304) == 182,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 198,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
-check(RecordListCardLayout.screenMargin == 8, "screen margin is 8pt")
 check(RecordListCardLayout.headerGap == 8, "month and 全部 keep an 8pt gap")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
 check(RecordListCardLayout.mapSide == 82, "thumbnail is 82pt")

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// White record card. Sport and date on top, distance and training time
+/// White, square, full-width record card. Sport and date on top, distance and training time
 /// across the middle, pace / heart rate / load / score along the bottom.
 /// The motivation line and cadence are not drawn.
 struct RecordSummaryCard: View {
@@ -15,10 +15,6 @@ struct RecordSummaryCard: View {
     @ScaledMetric(relativeTo: .headline) private var durationSize: CGFloat = 18
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
 
-    private var cardShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.corner), style: .continuous)
-    }
-
     /// Default content size keeps the 90pt line boxes. Larger sizes grow.
     private var usesStandardMetrics: Bool { dynamicTypeSize == .large }
 
@@ -32,17 +28,13 @@ struct RecordSummaryCard: View {
                     alignment: .leading
                 )
             Spacer(minLength: CGFloat(RecordListCardLayout.minimumMapGap))
-            RecordRouteThumbnail(route: workout.route)
+            RecordRouteThumbnail(workoutID: workout.id, route: workout.route)
                 .padding(.trailing, CGFloat(RecordListCardLayout.mapTrailing))
                 .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .center)
         .frame(height: usesStandardMetrics ? CGFloat(RecordListCardLayout.standardHeight) : nil)
-        .background(SkyTheme.Color.card, in: cardShape)
-        .clipShape(cardShape)
-        .background(alignment: .bottom) {
-            RecordCardShadow()
-        }
+        .background(SkyTheme.Color.card)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityAddTraits(.isButton)
@@ -169,32 +161,6 @@ struct RecordSummaryCard: View {
             "训练评分 \(RecordListCardText.score)",
             map
         ].joined(separator: "，")
-    }
-}
-
-/// Downward shadow approximating
-/// `0 5pt 8pt -3pt rgba(0,0,0,0.18), 0 2pt 3pt -1pt rgba(0,0,0,0.10)`.
-/// The source is only the bottom band, inset by the negative spread, so the
-/// card does not pick up a dark halo on the top and sides.
-private struct RecordCardShadow: View {
-    var body: some View {
-        let shape = RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.corner), style: .continuous)
-        ZStack(alignment: .bottom) {
-            shape
-                .fill(Color.black.opacity(0.18))
-                .padding(.horizontal, 3)
-                .frame(height: 22)
-                .blur(radius: 4)
-                .offset(y: 6)
-            shape
-                .fill(Color.black.opacity(0.10))
-                .padding(.horizontal, 1)
-                .frame(height: 10)
-                .blur(radius: 1.5)
-                .offset(y: 3)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 
