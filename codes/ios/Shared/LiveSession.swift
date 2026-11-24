@@ -124,6 +124,7 @@ final class LiveSession: ObservableObject {
 
     init(sport: SportKind, plannedRoute: [GeoPoint], teammates: [TeammateProfile]) {
         self.sport = sport
+        recorder.tagsTrailRun = sport == .trailRunning
         self.plannedRoute = plannedRoute
         self.memberProfiles = teammates
         simPoint = MapOrigin.fallback
