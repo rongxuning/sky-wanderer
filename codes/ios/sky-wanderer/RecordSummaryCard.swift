@@ -9,7 +9,7 @@ struct RecordSummaryCard: View {
     var onExplainMetrics: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .caption) private var sportSize: CGFloat = 12
+    @ScaledMetric(relativeTo: .subheadline) private var sportSize: CGFloat = 15
     @ScaledMetric(relativeTo: .caption2) private var dateSize: CGFloat = 11
     @ScaledMetric(relativeTo: .title3) private var distanceSize: CGFloat = 20
     @ScaledMetric(relativeTo: .headline) private var durationSize: CGFloat = 18
@@ -67,8 +67,14 @@ struct RecordSummaryCard: View {
         HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
             Text(workout.sport.title)
                 .font(sportFont)
-                .foregroundStyle(SkyTheme.Color.ink)
+                .foregroundStyle(Color.black)
                 .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(
+                    workout.sport.badgeColor,
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
                 .layoutPriority(1)
             Text(RecordListCardText.started(workout.start))
                 .font(dateFont)
@@ -240,5 +246,14 @@ struct RecordMetricHelpSheet: View {
         }
         .padding(.top, 18)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private extension SportKind {
+    var badgeColor: Color {
+        switch self {
+        case .hiking: return SkyTheme.Color.Sport.hiking
+        case .running: return SkyTheme.Color.Sport.running
+        }
     }
 }

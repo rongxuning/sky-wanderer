@@ -291,7 +291,8 @@ check(RecordListCardLayout.mapSide == 82, "thumbnail is 82pt")
 check(RecordListCardLayout.mapTrailing == 16, "thumbnail inset is 16pt")
 check(RecordListCardLayout.contentInsetVertical == 6, "text inset is 6pt")
 check(RecordListCardLayout.mapInsetVertical == 4, "map inset is 4pt")
-check(RecordListCardLayout.topToMiddle == 14, "title to metrics is 14pt")
+check(RecordListCardLayout.titleLine == 24, "sport label row is 24pt")
+check(RecordListCardLayout.topToMiddle == 6, "title to metrics is 6pt")
 check(RecordListCardLayout.middleToBottom == 4, "middle to bottom row is 4pt")
 
 let help = [

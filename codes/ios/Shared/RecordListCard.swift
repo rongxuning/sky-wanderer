@@ -28,8 +28,8 @@ enum RecordListFilter {
 enum RecordListCardLayout {
     static let standardHeight = 90.0
     static let contentInsetVertical = 6.0
-    static let titleLine = 16.0
-    static let topToMiddle = 14.0
+    static let titleLine = 24.0
+    static let topToMiddle = 6.0
     static let upperLine = 24.0
     static let middleToBottom = 4.0
     static let lowerLine = 20.0

@@ -53,6 +53,12 @@ enum SkyTheme {
             static let score = SkyTheme.Color.primary
         }
 
+        /// Light fill behind the sport name on a record card. Black text sits on it.
+        enum Sport {
+            static let hiking = SkyHex.color(0xB7E4C7)
+            static let running = SkyHex.color(0xFFD59E)
+        }
+
         /// Heart-rate and pace zone marks, easy to hard.
         /// Cutoffs stay in `ZoneScale`. These colors are the chart stroke and the share-bar fill.
         enum Zone {
