@@ -20,22 +20,22 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// At the default text size the text block and the map block are both 112.
+/// At the default text size the text block is 112 and the map block is 124.
 /// The sport chip needs a 30pt line, and the distance line is 32pt so the
 /// larger kilometer figure is not clipped. The 213pt information track is the
 /// width that keeps four 48.75pt columns with 6pt gaps on a 393pt phone.
 /// Cards run edge to edge. Narrower cards shrink that track so the map still
 /// fits; wider cards do not stretch the columns.
 enum RecordListCardLayout {
-    static let standardHeight = 112.0
+    static let standardHeight = 124.0
     static let contentInsetVertical = 6.0
     static let titleLine = 30.0
     static let topToMiddle = 14.0
     static let upperLine = 32.0
     static let middleToBottom = 4.0
     static let lowerLine = 20.0
-    static let mapSide = 104.0
-    static let mapInsetVertical = 4.0
+    static let mapSide = 120.0
+    static let mapInsetVertical = 2.0
     static let mapTrailing = 16.0
     static let contentLeading = 16.0
     static let informationWidth = 213.0
@@ -47,9 +47,9 @@ enum RecordListCardLayout {
     static let minimumMapGap = 8.0
     /// Thumbnail corner. Matches `SkyTheme.Radius.chip`.
     static let mapCorner = 12.0
-    /// Share of the thumbnail side left clear on every edge, so the track
-    /// sits in the center instead of touching the frame.
-    static let mapTrackInsetFraction = 0.14
+    /// Share of the thumbnail side left clear on every edge. Kept tight so the
+    /// track fills the map while the stroke stays fully inside the frame.
+    static let mapTrackInsetFraction = 0.04
 
     static var standardTextBlock: Double {
         contentInsetVertical * 2 + titleLine + topToMiddle + upperLine + middleToBottom + lowerLine
@@ -74,7 +74,8 @@ enum RecordListCardLayout {
 ///
 /// The longer ground axis fills the inner box. The shorter axis stays centered,
 /// so every edge keeps `RecordListCardLayout.mapTrackInsetFraction` of the side
-/// or more. The full-screen 1.6× map fit is not used here.
+/// or more. Inset is tight so the track is as large as possible without clipping.
+/// The full-screen 1.6× map fit is not used here.
 enum RecordThumbnailFit {
     struct Frame {
         var x: Double
@@ -102,11 +103,11 @@ enum RecordThumbnailFit {
     }
 }
 
-/// Lower row, left to right. Pace, heart rate, load, score.
+/// Lower row, left to right. Heart rate, pace, load, score.
 /// Cadence and the motivation line are not list-card columns.
 enum RecordListMetricColumn: String, CaseIterable {
-    case pace
     case heartRate
+    case pace
     case load
     case score
 }
