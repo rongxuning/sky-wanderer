@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// White, full-width record card. Sport chip and date on top, distance and training time
-/// across the middle, pace / heart rate / load / score along the bottom.
+/// across the middle, heart rate / pace / load / score along the bottom.
 /// The motivation line and cadence are not drawn.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
@@ -63,12 +63,12 @@ struct RecordSummaryCard: View {
                 }
                 .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
                 HStack(spacing: CGFloat(RecordListCardLayout.columnGap)) {
+                    metric(RecordListCardText.heartRate(workout.resolvedAverageHeartRate), lowerFont, SkyTheme.Color.Metric.heartRate)
                     if showsRouteMetrics {
                         metric(RecordListCardText.pace(workout.averagePaceSecPerKm), lowerFont, SkyTheme.Color.Metric.pace)
                     } else {
                         Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
                     }
-                    metric(RecordListCardText.heartRate(workout.resolvedAverageHeartRate), lowerFont, SkyTheme.Color.Metric.heartRate)
                     explainable(RecordListCardText.load(workout.sessionLoad), SkyTheme.Color.Metric.load)
                     explainable(RecordListCardText.score, SkyTheme.Color.Metric.score)
                 }
@@ -183,11 +183,11 @@ struct RecordSummaryCard: View {
             parts.append("消耗 \(energyText)")
         }
         parts.append("训练时间 \(RecordListCardText.clock(workout.trainingDuration))")
+        parts.append("平均心率 \(spokenHeart)")
         if showsRouteMetrics {
             parts.append("平均配速 \(RecordListCardText.pace(workout.averagePaceSecPerKm))")
         }
         parts.append(contentsOf: [
-            "平均心率 \(spokenHeart)",
             "训练负荷 \(RecordListCardText.load(workout.sessionLoad))",
             "训练评分 \(RecordListCardText.score)"
         ])

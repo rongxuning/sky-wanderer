@@ -56,24 +56,19 @@ struct RecordRouteThumbnail: View {
     }
 }
 
-/// Square sport icon in the thumbnail slot, for sports that have no map or distance.
+/// Sport icon in the thumbnail slot, for sports that have no map or distance.
+/// Drawn without a gray plate so the blue symbol sits on the card itself.
 struct RecordSportIcon: View {
     var sport: SportKind
 
     private var side: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
 
     var body: some View {
-        ZStack {
-            Color(uiColor: SkyBasemapInstaller.backdrop)
-            Image(systemName: sport.symbol)
-                .font(.system(size: side * 0.5, weight: .semibold))
-                .foregroundStyle(SkyTheme.Color.primary)
-        }
-        .frame(width: side, height: side)
-        .clipShape(
-            RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
-        )
-        .accessibilityHidden(true)
+        Image(systemName: sport.symbol)
+            .font(.system(size: side * 0.5, weight: .semibold))
+            .foregroundStyle(SkyTheme.Color.primary)
+            .frame(width: side, height: side)
+            .accessibilityHidden(true)
     }
 }
 
