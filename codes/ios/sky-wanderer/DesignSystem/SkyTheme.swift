@@ -65,7 +65,7 @@ enum SkyTheme {
             static let score = SkyTheme.Color.primary
         }
 
-        /// Sport chip fill and empty-map plate on the record list.
+        /// Sport chip fill and empty-route glass wash on the record list.
         static func sport(_ kind: SportKind) -> SwiftUI.Color {
             SkyHex.color(kind.listAccentHex)
         }

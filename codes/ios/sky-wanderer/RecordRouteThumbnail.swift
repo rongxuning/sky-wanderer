@@ -60,18 +60,42 @@ struct RecordRouteThumbnail: View {
     }
 }
 
-/// Solid sport-color plate when the card has no route to draw.
-/// Icons stay off until dedicated assets land.
+/// Frosted glass plate when the card has no route to draw.
+/// Strength and mixed training use their catalog icons; other sports fall
+/// back to the SF Symbol. The tint stays a light wash of the sport accent.
 struct RecordSportSwatch: View {
     var sport: SportKind
 
+    private var plate: RoundedRectangle {
+        RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
+    }
+
     var body: some View {
-        SkyTheme.Color.sport(sport)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(
-                RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
-            )
-            .accessibilityHidden(true)
+        ZStack {
+            plate.fill(.ultraThinMaterial)
+            plate.fill(SkyTheme.Color.sport(sport).opacity(0.12))
+            plate.strokeBorder(SkyTheme.Color.sport(sport).opacity(0.18), lineWidth: 1)
+            glyph
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(plate)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        if let asset = sport.listThumbnailAsset {
+            Image(asset)
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
+                .padding(CGFloat(RecordListCardLayout.mapSide) * 0.2)
+        } else {
+            Image(systemName: sport.symbol)
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
+        }
     }
 }
 

@@ -15,7 +15,7 @@ struct RecordSummaryCard: View {
     @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 24
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
     @ScaledMetric(relativeTo: .caption2) private var unitSize: CGFloat = 11
-    @State private var metricsHeight: CGFloat = CGFloat(RecordListCardLayout.mapSide)
+    @State private var metricsHeight: CGFloat = CGFloat(RecordListCardLayout.standardMapBlock)
 
     /// Default content size keeps the measured line boxes. Larger sizes grow.
     private var usesStandardMetrics: Bool { dynamicTypeSize == .large }
@@ -24,8 +24,11 @@ struct RecordSummaryCard: View {
         RecordListSecondaryMetric.visible(in: workout)
     }
 
+    /// Matches the metrics block so the thumbnail’s bottom edge stays level
+    /// with the third data row. Falls back to the standard map side before
+    /// the first layout pass.
     private var mapHeight: CGFloat {
-        max(metricsHeight, CGFloat(RecordListCardLayout.mapSide))
+        metricsHeight > 0.5 ? metricsHeight : CGFloat(RecordListCardLayout.mapSide)
     }
 
     var body: some View {

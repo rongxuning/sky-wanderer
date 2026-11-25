@@ -37,7 +37,9 @@ enum RecordListCardLayout {
     static let lowerValueLine = 14.0
     static let lowerUnitGap = 3.0
     static let lowerUnitLine = 11.0
-    static let mapSide = 128.0
+    /// Thumbnail side matches `standardTextBlock` so the plate’s bottom edge
+    /// lines up with the metrics block at the default text size.
+    static let mapSide = 110.0
     static let mapLeading = 10.0
     static let mapToContent = 14.0
     static let contentTrailing = 14.0

@@ -292,7 +292,7 @@ check(
     "a 393pt phone keeps the 220pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 154,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 172,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
@@ -301,7 +301,11 @@ check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
-check(RecordListCardLayout.mapSide == 128, "thumbnail width is 128pt")
+check(RecordListCardLayout.mapSide == 110, "thumbnail side matches the 110pt text block")
+check(
+    RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock,
+    "thumbnail side equals the standard text block so bottoms align"
+)
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 18, "distance sits 18pt under the title row")
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
@@ -346,6 +350,16 @@ check(
 check(SportKind.outdoorRunning.listAccentHex == 0x22C55E, "outdoor running accent")
 check(SportKind.functionalStrength.listAccentHex == 0x7C3AED, "strength accent")
 check(SportKind.hiit.listAccentHex == 0xEF4444, "mixed training accent")
+check(
+    SportKind.functionalStrength.listThumbnailAsset == "RecordSportStrength",
+    "strength uses the dumbbell list thumbnail"
+)
+check(
+    SportKind.hiit.listThumbnailAsset == "RecordSportHIIT",
+    "mixed training uses the checklist list thumbnail"
+)
+check(SportKind.outdoorRunning.listThumbnailAsset == nil, "running has no glass-plate asset")
+check(SportKind.other.listThumbnailAsset == nil, "other falls back to the SF Symbol")
 check(SportKind.outdoorWalking.listShowsRouteMetrics, "outdoor walking shows route metrics")
 check(SportKind.outdoorWalking.usesOutdoorLocation, "outdoor walking records GPS")
 check(SportKind.outdoorWalking.symbol == "figure.walk", "outdoor walking uses the walk symbol")
