@@ -280,6 +280,25 @@ check(
     RecordListMetricColumn.allCases.map(\.unit) == ["次/分", "分/公里", "负荷", "评分"],
     "each secondary metric has a unit caption"
 )
+check(
+    RecordListSecondaryColumnAlign.resolve(index: 0, count: 1) == .leading,
+    "a single secondary cell stays leading"
+)
+check(
+    [
+        RecordListSecondaryColumnAlign.resolve(index: 0, count: 3),
+        RecordListSecondaryColumnAlign.resolve(index: 1, count: 3),
+        RecordListSecondaryColumnAlign.resolve(index: 2, count: 3)
+    ] == [.leading, .center, .trailing],
+    "three secondary cells are leading, centered, trailing"
+)
+check(
+    [
+        RecordListSecondaryColumnAlign.resolve(index: 0, count: 2),
+        RecordListSecondaryColumnAlign.resolve(index: 1, count: 2)
+    ] == [.leading, .trailing],
+    "two secondary cells are leading and trailing"
+)
 
 check(RecordListCardLayout.standardTextBlock == 110, "standard text block is 110pt")
 check(RecordListCardLayout.standardMapBlock == 110, "map block matches the text block")
