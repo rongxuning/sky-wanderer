@@ -36,6 +36,16 @@ enum SkyTheme {
         static let chartTrack = SkyHex.color(0x1E88FE)
         static let chartNeutral = SkyHex.color(0x8E8E93)
         static let chartNeutralMuted = SkyHex.color(0xC6C6C8)
+        /// Record-list map track. Lighter than navy, darker than brand primary.
+        static let recordTrack = SkyHex.color(0x2F6FBF)
+        /// Record-list distance figure. Brighter cyan than detail `Metric.distance`.
+        static let recordDistance = SkyHex.color(0x00B7EB)
+        /// Pace lightning on the record list. Deep yellow.
+        static let recordPaceIcon = SkyHex.color(0xC9A227)
+        /// Load debuff triangle on the record list.
+        static let recordLoadIcon = SkyHex.color(0x7C3AED)
+        /// Score ring on the record list.
+        static let recordScoreIcon = SkyHex.color(0xF59E0B)
 
         /// Per-metric colors for the workout list and workout detail.
         /// Number and unit share the color. Missing values stay `secondary`.
@@ -53,6 +63,11 @@ enum SkyTheme {
             static let load = SkyHex.color(0x6D28D9)
             /// Training score stays brand primary.
             static let score = SkyTheme.Color.primary
+        }
+
+        /// Sport chip fill and empty-map plate on the record list.
+        static func sport(_ kind: SportKind) -> SwiftUI.Color {
+            SkyHex.color(kind.listAccentHex)
         }
 
         /// Heart-rate and pace zone marks, easy to hard.

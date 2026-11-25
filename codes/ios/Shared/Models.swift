@@ -28,9 +28,24 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         case .trailRunning: return "越野跑"
         case .outdoorWalking: return "户外步行"
         case .hiking: return "徒步"
-        case .functionalStrength: return "功能性力量训练"
-        case .hiit: return "HIIT训练"
+        case .functionalStrength: return "力量训练"
+        case .hiit: return "综合训练"
         case .other: return "其他"
+        }
+    }
+
+    /// List-card accent for the sport chip and the empty-map color block.
+    /// Icons are not drawn on the list card until assets land.
+    var listAccentHex: UInt32 {
+        switch self {
+        case .outdoorRunning: return 0x22C55E
+        case .indoorRunning: return 0x0EA5E9
+        case .trailRunning: return 0xD97706
+        case .outdoorWalking: return 0x38BDF8
+        case .hiking: return 0x15803D
+        case .functionalStrength: return 0x7C3AED
+        case .hiit: return 0xEF4444
+        case .other: return 0x8E8E93
         }
     }
 

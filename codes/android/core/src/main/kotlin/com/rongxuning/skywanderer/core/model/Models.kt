@@ -19,8 +19,8 @@ enum class SportKind {
             TrailRunning -> "越野跑"
             OutdoorWalking -> "户外步行"
             Hiking -> "徒步"
-            FunctionalStrength -> "功能性力量训练"
-            Hiit -> "HIIT训练"
+            FunctionalStrength -> "力量训练"
+            Hiit -> "综合训练"
             Other -> "其他"
         }
 

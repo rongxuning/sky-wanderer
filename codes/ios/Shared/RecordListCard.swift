@@ -20,31 +20,28 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// At the default text size the text block is 120 and the map block is 140.
-/// The sport chip needs a 30pt line; the start date sits under it on a 14pt
-/// line. The distance line is 32pt so the larger kilometer figure is not
-/// clipped. The 213pt information track is the width that keeps four 48.75pt
-/// columns with 6pt gaps on a 393pt phone. Cards run edge to edge. Narrower
-/// cards shrink that track so the map still fits; wider cards do not stretch
-/// the columns.
+/// Map sits on the left and stretches to the metrics block height. The first
+/// metrics row shares a top edge with the map; the unit captions share a bottom
+/// edge. Distance / duration and the visible secondary metrics split the
+/// remaining width evenly.
 enum RecordListCardLayout {
-    static let standardHeight = 140.0
-    static let contentInsetVertical = 6.0
-    static let titleLine = 30.0
-    /// Gap between the sport chip and the start date under it.
-    static let titleToDate = 2.0
-    static let dateLine = 14.0
-    static let topToMiddle = 8.0
+    /// Card height at the default text size: vertical insets plus the text block.
+    static let standardHeight = 130.0
+    static let contentInsetVertical = 10.0
+    static let titleLine = 22.0
+    /// Gap between the title row and the distance / duration row.
+    static let titleToMiddle = 18.0
     static let upperLine = 32.0
-    static let middleToBottom = 2.0
-    static let lowerLine = 20.0
-    static let mapSide = 136.0
-    static let mapInsetVertical = 2.0
-    static let mapTrailing = 20.0
-    static let contentLeading = 16.0
-    static let informationWidth = 213.0
-    static let columnGap = 6.0
-    static let columnCount = 4.0
+    /// Gap between the distance row and the secondary metrics.
+    static let middleToBottom = 10.0
+    static let lowerValueLine = 14.0
+    static let lowerUnitGap = 3.0
+    static let lowerUnitLine = 11.0
+    static let mapSide = 128.0
+    static let mapLeading = 10.0
+    static let mapToContent = 14.0
+    static let contentTrailing = 14.0
+    static let informationWidth = 220.0
     /// Horizontal gap between the sticky month title and the sport chips.
     /// Same value as `SkyTheme.Spacing.related`.
     static let headerGap = 8.0
@@ -55,35 +52,33 @@ enum RecordListCardLayout {
     static let filterChipPaddingH = 12.0
     static let filterChipPaddingV = 7.0
     static let firstCardGap = 10.0
-    static let minimumMapGap = 8.0
-    /// Thumbnail corner. Matches `SkyTheme.Radius.chip`.
-    static let mapCorner = 12.0
+    /// Thumbnail corner. Slightly tighter than `SkyTheme.Radius.chip`.
+    static let mapCorner = 4.0
     /// Share of the thumbnail side left clear on every edge. Kept tight so the
     /// track fills the map while the stroke stays fully inside the frame.
     static let mapTrackInsetFraction = 0.04
+    /// Fallback / pending stroke width inside the square before the basemap lands.
+    static let mapTrackLineWidth = 5.5
+
+    static var lowerBlock: Double {
+        lowerValueLine + lowerUnitGap + lowerUnitLine
+    }
 
     static var standardTextBlock: Double {
-        contentInsetVertical * 2
-            + titleLine
-            + titleToDate
-            + dateLine
-            + topToMiddle
+        titleLine
+            + titleToMiddle
             + upperLine
             + middleToBottom
-            + lowerLine
+            + lowerBlock
     }
 
     static var standardMapBlock: Double {
-        mapSide + mapInsetVertical * 2
+        standardTextBlock
     }
 
-    static var columnWidth: Double {
-        (informationWidth - columnGap * (columnCount - 1)) / columnCount
-    }
-
-    /// Width of the left data region inside the card.
+    /// Width of the right data region inside the card.
     static func informationWidth(cardWidth: Double) -> Double {
-        let room = cardWidth - contentLeading - mapTrailing - mapSide - minimumMapGap
+        let room = cardWidth - mapLeading - mapSide - mapToContent - contentTrailing
         return min(informationWidth, max(0, room))
     }
 }
@@ -128,9 +123,51 @@ enum RecordListMetricColumn: String, CaseIterable {
     case pace
     case load
     case score
+
+    var unit: String {
+        switch self {
+        case .heartRate: return "次/分"
+        case .pace: return "分/公里"
+        case .load: return "负荷"
+        case .score: return "评分"
+        }
+    }
 }
 
-/// Strings drawn on a record card. Missing numbers stay 「—」.
+/// One secondary metric that has a value to draw on the list card.
+struct RecordListSecondaryMetric: Equatable, Identifiable {
+    var column: RecordListMetricColumn
+    var value: String
+
+    var id: String { column.rawValue }
+    var unit: String { column.unit }
+
+    /// Heart rate, pace, load, score — skip missing cells, keep order.
+    static func visible(in workout: WorkoutRecord) -> [RecordListSecondaryMetric] {
+        var items: [RecordListSecondaryMetric] = []
+        let heart = RecordListCardText.heartRate(workout.resolvedAverageHeartRate)
+        if heart != "—" {
+            items.append(RecordListSecondaryMetric(column: .heartRate, value: heart))
+        }
+        if workout.sport.listShowsRouteMetrics {
+            let pace = RecordListCardText.pace(workout.averagePaceSecPerKm)
+            if pace != "—" {
+                items.append(RecordListSecondaryMetric(column: .pace, value: pace))
+            }
+        }
+        let load = RecordListCardText.load(workout.sessionLoad)
+        if load != "—" {
+            items.append(RecordListSecondaryMetric(column: .load, value: load))
+        }
+        if RecordListCardText.score != "—" {
+            items.append(RecordListSecondaryMetric(column: .score, value: RecordListCardText.score))
+        }
+        return items
+    }
+}
+
+/// Strings drawn on a record card. Missing numbers stay 「—」 for formatters;
+/// the list hides those cells instead of drawing the dash.
 /// Distance keeps 公里. Pace keeps the minute and second marks.
 /// Heart rate, load, and score are the number only.
 enum RecordListCardText {
@@ -201,8 +238,8 @@ enum RecordListCardText {
 enum RecordMetricHelp {
     static let title = "指标说明"
     static let loadTitle = "训练负荷"
-    static let loadBody = "单次负荷是 Edwards TRIMP 的整数。各心率区间的训练分钟分别乘 1、2、3、4、5，相加后四舍五入。区间与详情页心率区间相同，参考最大心率 190：低于 114、114–132、133–151、152–170、171 及以上。有心率序列时按各区时间计算，暂停空档不计入。没有序列、但平均心率大于 0 时，整段训练时间记入该心率所在的区间。没有可用心率时显示 —。"
+    static let loadBody = "单次负荷是 Edwards TRIMP 的整数。各心率区间的训练分钟分别乘 1、2、3、4、5，相加后四舍五入。区间与详情页心率区间相同，参考最大心率 190：低于 114、114–132、133–151、152–170、171 及以上。有心率序列时按各区时间计算，暂停空档不计入。没有序列、但平均心率大于 0 时，整段训练时间记入该心率所在的区间。没有可用心率时，列表不展示负荷。"
     static let scoreTitle = "训练评分"
-    static let scoreBody = "单次记录没有评分字段，所以这里显示 —。分析页的训练评分是另一项汇总：只计入有心率的记录，强度为平均心率除以 180、上限 100，再按经过时间加权。列表不把这项汇总写进每一行。"
-    static let missing = "— 表示没有数值，不是 0。"
+    static let scoreBody = "单次记录没有评分字段，所以列表不展示评分。分析页的训练评分是另一项汇总：只计入有心率的记录，强度为平均心率除以 180、上限 100，再按经过时间加权。列表不把这项汇总写进每一行。"
+    static let missing = "没有数值的指标不出现在列表卡片上，不是 0。"
 }

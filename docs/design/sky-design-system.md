@@ -40,17 +40,34 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 | `chartTrack` | `#1E88FE` | 轨迹、配速主线，等于 `primary` |
 | `chartNeutral` | `#8E8E93` | 图表中性灰 |
 | `chartNeutralMuted` | `#C6C6C8` | 图表第二条中性灰 |
+| `recordTrack` | `#2F6FBF` | 记录列表缩略图上的轨迹线 |
+| `recordDistance` | `#00B7EB` | 记录列表距离数字。详情仍用 `metric.distance` |
 
 图表的中性系列仍只用 `primary` 再加一到两条中性灰。记录列表和记录详情的指标另用下面的指标色，不另起一套页面色板。
 
+### 运动类型色
+
+记录列表的类型标签底色，以及无轨迹时左侧色块。白字。与 Apple Health 的映射不变；展示名：力量训练、综合训练。
+
+| 类型 | Hex |
+| --- | --- |
+| 户外跑步 | `#22C55E` |
+| 室内跑步 | `#0EA5E9` |
+| 越野跑 | `#D97706` |
+| 户外步行 | `#38BDF8` |
+| 徒步 | `#15803D` |
+| 力量训练 | `#7C3AED` |
+| 综合训练 | `#EF4444` |
+| 其他 | `#8E8E93` |
+
 ### 运动指标色
 
-记录列表和记录详情共用。数字和单位同一字重（Bold）、同一颜色。标签用 Caption，颜色 `secondary`。没有数值时用「—」，颜色 `secondary`，不用彩色的 0。
+记录列表和记录详情共用。数字和单位同一字重（Bold）、同一颜色。标签用 Caption，颜色 `secondary`。记录列表没有数值的次级指标直接不画，不画「—」。
 
 | Token | Hex | 用途 |
 | --- | --- | --- |
-| `metric.duration` | `#A16207` | 训练时间、经过时间、列表里的时长 |
-| `metric.distance` | `#0277BD` | 距离。必须和 `primary` `#1E88FE` 分开 |
+| `metric.duration` | `#A16207` | 训练时间、经过时间。列表时长改用对应运动类型色 |
+| `metric.distance` | `#0277BD` | 详情距离。列表距离用 `recordDistance` |
 | `metric.pace` | `#0B7F7A` | 配速、步频、步幅 |
 | `metric.heartRate` | `#D13924` | 心率。分段里变慢的箭头也用它 |
 | `metric.elevation` | `#15803D` | 爬升、海拔。分段里变快的箭头也用它 |

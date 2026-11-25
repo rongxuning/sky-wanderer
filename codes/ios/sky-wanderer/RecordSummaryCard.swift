@@ -1,46 +1,59 @@
 import SwiftUI
 
-/// White, full-width record card. Sport chip with the start date under it, distance and
-/// training time across the middle, heart rate / pace / load / score along the bottom.
-/// The motivation line and cadence are not drawn.
+/// Full-width record card. Map or sport-color plate on the left; sport chip with
+/// start time, distance / duration, and secondary metrics with units on the right.
+/// Missing secondary values are omitted. Cadence and the motivation line stay off.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
     var explainSpace: String
     var onExplainMetrics: () -> Void
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 16
-    @ScaledMetric(relativeTo: .caption2) private var dateSize: CGFloat = 11
-    @ScaledMetric(relativeTo: .title2) private var distanceSize: CGFloat = 24
-    @ScaledMetric(relativeTo: .headline) private var durationSize: CGFloat = 18
+    @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
+    @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
+    @ScaledMetric(relativeTo: .title2) private var distanceSize: CGFloat = 28
+    @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 24
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .caption2) private var unitSize: CGFloat = 11
+    @State private var metricsHeight: CGFloat = CGFloat(RecordListCardLayout.mapSide)
 
     /// Default content size keeps the measured line boxes. Larger sizes grow.
     private var usesStandardMetrics: Bool { dynamicTypeSize == .large }
 
+    private var secondaryMetrics: [RecordListSecondaryMetric] {
+        RecordListSecondaryMetric.visible(in: workout)
+    }
+
+    private var mapHeight: CGFloat {
+        max(metricsHeight, CGFloat(RecordListCardLayout.mapSide))
+    }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 0) {
+        HStack(alignment: .top, spacing: CGFloat(RecordListCardLayout.mapToContent)) {
+            visual
+                .frame(width: CGFloat(RecordListCardLayout.mapSide), height: mapHeight)
             metrics
-                .padding(.leading, CGFloat(RecordListCardLayout.contentLeading))
-                .padding(.vertical, CGFloat(RecordListCardLayout.contentInsetVertical))
-                .frame(
-                    maxWidth: CGFloat(RecordListCardLayout.informationWidth + RecordListCardLayout.contentLeading),
-                    alignment: .leading
-                )
-            Spacer(minLength: CGFloat(RecordListCardLayout.minimumMapGap))
-            Group {
-                if workout.sport.listShowsRouteMetrics {
-                    RecordRouteThumbnail(workoutID: workout.id, route: workout.route)
-                } else {
-                    RecordSportIcon(sport: workout.sport)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: RecordMetricsHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
                 }
-            }
-            .padding(.trailing, CGFloat(RecordListCardLayout.mapTrailing))
-            .layoutPriority(1)
         }
-        .frame(maxWidth: .infinity, minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .center)
-        .frame(height: usesStandardMetrics ? CGFloat(RecordListCardLayout.standardHeight) : nil)
+        .padding(.leading, CGFloat(RecordListCardLayout.mapLeading))
+        .padding(.trailing, CGFloat(RecordListCardLayout.contentTrailing))
+        .padding(.vertical, CGFloat(RecordListCardLayout.contentInsetVertical))
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .top)
         .background(SkyTheme.Color.card)
+        .onPreferenceChange(RecordMetricsHeightKey.self) { height in
+            if abs(height - metricsHeight) > 0.5 {
+                metricsHeight = height
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityAddTraits(.isButton)
@@ -49,58 +62,75 @@ struct RecordSummaryCard: View {
         }
     }
 
+    @ViewBuilder
+    private var visual: some View {
+        if workout.route.count >= 2 {
+            RecordRouteThumbnail(
+                workoutID: workout.id,
+                route: workout.route,
+                width: CGFloat(RecordListCardLayout.mapSide),
+                height: mapHeight
+            )
+        } else {
+            RecordSportSwatch(sport: workout.sport)
+        }
+    }
+
     private var metrics: some View {
-        VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.topToMiddle)) {
+        VStack(alignment: .leading, spacing: 0) {
             titleRow
-            VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.middleToBottom)) {
-                HStack(spacing: CGFloat(RecordListCardLayout.columnGap)) {
-                    if showsRouteMetrics {
-                        metric(distanceText, distanceFont, SkyTheme.Color.Metric.distance)
-                    } else {
-                        metric(energyText, distanceFont, SkyTheme.Color.Metric.energy)
-                    }
-                    metric(RecordListCardText.clock(workout.trainingDuration), durationFont, SkyTheme.Color.Metric.duration)
+            Spacer()
+                .frame(height: CGFloat(RecordListCardLayout.titleToMiddle))
+            HStack(spacing: 0) {
+                if showsRouteMetrics {
+                    primaryMetric(distanceText, distanceFont, SkyTheme.Color.recordDistance)
+                } else {
+                    primaryMetric(energyText, distanceFont, SkyTheme.Color.Metric.energy)
                 }
-                .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
-                HStack(spacing: CGFloat(RecordListCardLayout.columnGap)) {
-                    metric(RecordListCardText.heartRate(workout.resolvedAverageHeartRate), lowerFont, SkyTheme.Color.Metric.heartRate)
-                    if showsRouteMetrics {
-                        metric(RecordListCardText.pace(workout.averagePaceSecPerKm), lowerFont, SkyTheme.Color.Metric.pace)
-                    } else {
-                        Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
+                primaryMetric(
+                    RecordListCardText.clock(workout.trainingDuration),
+                    durationFont,
+                    SkyTheme.Color.sport(workout.sport)
+                )
+            }
+            .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
+            Spacer()
+                .frame(height: CGFloat(RecordListCardLayout.middleToBottom))
+            if !secondaryMetrics.isEmpty {
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(secondaryMetrics) { item in
+                        secondaryCell(item)
                     }
-                    explainable(RecordListCardText.load(workout.sessionLoad), SkyTheme.Color.Metric.load)
-                    explainable(RecordListCardText.score, SkyTheme.Color.Metric.score)
                 }
-                .modifier(RecordRowBox(height: RecordListCardLayout.lowerLine, enabled: usesStandardMetrics))
             }
         }
     }
 
     private var titleRow: some View {
-        VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.titleToDate)) {
+        HStack(alignment: .center, spacing: 10) {
             Text(workout.sport.title)
                 .font(sportFont)
                 .foregroundStyle(SkyTheme.Color.onPrimary)
                 .lineLimit(1)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
-                .background(SkyTheme.Color.primary, in: Capsule())
+                .background(
+                    SkyTheme.Color.sport(workout.sport),
+                    in: RoundedRectangle(cornerRadius: 3, style: .continuous)
+                )
                 .fixedSize(horizontal: true, vertical: true)
-                .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
             Text(RecordListCardText.started(workout.start))
                 .font(dateFont)
-                .foregroundStyle(SkyTheme.Color.secondary)
-                .lineLimit(usesStandardMetrics ? 1 : 3)
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(1)
                 .minimumScaleFactor(0.85)
-                .allowsTightening(true)
-                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .modifier(RecordRowBox(height: RecordListCardLayout.dateLine, enabled: usesStandardMetrics))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
     }
 
-    private func metric(_ text: String, _ font: Font, _ color: Color) -> some View {
+    private func primaryMetric(_ text: String, _ font: Font, _ color: Color) -> some View {
         Text(text)
             .font(font)
             .foregroundStyle(figureColor(text, color))
@@ -110,30 +140,44 @@ struct RecordSummaryCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Load and score open the explanation. The clear control above this cell,
-    /// outside the row's navigation link, takes the tap.
-    private func explainable(_ text: String, _ color: Color) -> some View {
-        Button(action: onExplainMetrics) {
-            Text(text)
-                .font(lowerFont)
-                .foregroundStyle(figureColor(text, color))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.borderless)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: RecordExplainFramesKey.self,
-                    value: [proxy.frame(in: .named(explainSpace))]
-                )
+    @ViewBuilder
+    private func secondaryCell(_ item: RecordListSecondaryMetric) -> some View {
+        let content = VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.lowerUnitGap)) {
+            HStack(spacing: 4) {
+                RecordListMetricIcon(column: item.column)
+                Text(item.value)
+                    .font(lowerFont)
+                    .foregroundStyle(SkyTheme.Color.ink)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
             }
+            Text(item.unit)
+                .font(unitFont)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .padding(.leading, 18)
+                .lineLimit(1)
         }
-        .accessibilityHidden(true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        if item.column == .load || item.column == .score {
+            Button(action: onExplainMetrics) {
+                content
+            }
+            .buttonStyle(.borderless)
+            .contentShape(Rectangle())
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: RecordExplainFramesKey.self,
+                        value: [proxy.frame(in: .named(explainSpace))]
+                    )
+                }
+            }
+            .accessibilityHidden(true)
+        } else {
+            content
+        }
     }
 
     private var sportFont: Font {
@@ -153,7 +197,11 @@ struct RecordSummaryCard: View {
     }
 
     private var lowerFont: Font {
-        .system(size: lowerSize, weight: .bold)
+        .system(size: lowerSize, weight: .medium)
+    }
+
+    private var unitFont: Font {
+        .system(size: unitSize, weight: .regular)
     }
 
     private var distanceText: String {
@@ -183,16 +231,20 @@ struct RecordSummaryCard: View {
             parts.append("消耗 \(energyText)")
         }
         parts.append("训练时间 \(RecordListCardText.clock(workout.trainingDuration))")
-        parts.append("平均心率 \(spokenHeart)")
-        if showsRouteMetrics {
-            parts.append("平均配速 \(RecordListCardText.pace(workout.averagePaceSecPerKm))")
+        for item in secondaryMetrics {
+            switch item.column {
+            case .heartRate:
+                parts.append("平均心率 \(spokenHeart)")
+            case .pace:
+                parts.append("平均配速 \(item.value)")
+            case .load:
+                parts.append("训练负荷 \(item.value)")
+            case .score:
+                parts.append("训练评分 \(item.value)")
+            }
         }
-        parts.append(contentsOf: [
-            "训练负荷 \(RecordListCardText.load(workout.sessionLoad))",
-            "训练评分 \(RecordListCardText.score)"
-        ])
-        if showsRouteMetrics {
-            parts.append(workout.route.count >= 2 ? "有轨迹" : "这次没有轨迹")
+        if workout.route.count >= 2 {
+            parts.append("有轨迹")
         }
         return parts.joined(separator: "，")
     }
@@ -212,11 +264,66 @@ private struct RecordRowBox: ViewModifier {
     }
 }
 
+private struct RecordMetricsHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct RecordExplainFramesKey: PreferenceKey {
     static var defaultValue: [CGRect] = []
 
     static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) {
         value.append(contentsOf: nextValue())
+    }
+}
+
+/// Leading glyph for a secondary list metric.
+struct RecordListMetricIcon: View {
+    var column: RecordListMetricColumn
+
+    var body: some View {
+        Group {
+            switch column {
+            case .heartRate:
+                Image(systemName: "heart.fill")
+                    .foregroundStyle(SkyTheme.Color.Metric.heartRate)
+            case .pace:
+                Image(systemName: "bolt.fill")
+                    .foregroundStyle(SkyTheme.Color.recordPaceIcon)
+            case .load:
+                ZStack {
+                    Image(systemName: "triangle.fill")
+                        .foregroundStyle(SkyTheme.Color.recordLoadIcon)
+                    VStack(spacing: 1) {
+                        Capsule()
+                            .fill(SkyTheme.Color.onPrimary)
+                            .frame(width: 1.6, height: 4.2)
+                        Circle()
+                            .fill(SkyTheme.Color.onPrimary)
+                            .frame(width: 1.9, height: 1.9)
+                    }
+                    .offset(y: 0.6)
+                }
+            case .score:
+                ZStack {
+                    Circle()
+                        .stroke(SkyTheme.Color.recordScoreIcon.opacity(0.22), lineWidth: 2.2)
+                    Circle()
+                        .trim(from: 0.08, to: 0.78)
+                        .stroke(
+                            SkyTheme.Color.recordScoreIcon,
+                            style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                }
+            }
+        }
+        .font(.system(size: 12, weight: .semibold))
+        .frame(width: 14, height: 14)
+        .accessibilityHidden(true)
     }
 }
 
