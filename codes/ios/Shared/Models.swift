@@ -94,6 +94,19 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         case .indoorRunning, .functionalStrength, .hiit, .other: return false
         }
     }
+
+    /// Flags written onto the HealthKit workout when the live builder finishes.
+    /// Fitness picks outdoor vs indoor activity icons from `indoor`; trail run is
+    /// tagged separately because HealthKit has no trail-run activity type.
+    var healthKitFinishFlags: HealthKitFinishFlags {
+        HealthKitFinishFlags(indoor: !usesOutdoorLocation, trailRun: self == .trailRunning)
+    }
+}
+
+/// Pure flags for the HealthKit finish metadata. Kept free of HealthKit so checks can compile it.
+struct HealthKitFinishFlags: Equatable {
+    var indoor: Bool
+    var trailRun: Bool
 }
 
 struct GeoPoint: Codable, Hashable {

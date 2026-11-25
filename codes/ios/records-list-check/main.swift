@@ -391,6 +391,30 @@ check(SportKind.outdoorWalking.usesOutdoorLocation, "outdoor walking records GPS
 check(SportKind.outdoorWalking.symbol == "figure.walk", "outdoor walking uses the walk symbol")
 check(SportKind(rawValue: "running") == .outdoorRunning, "legacy running raw value is outdoor running")
 check(SportKind.outdoorRunning.rawValue == "running", "outdoor running keeps the legacy storage key")
+check(
+    SportKind.outdoorRunning.healthKitFinishFlags == HealthKitFinishFlags(indoor: false, trailRun: false),
+    "outdoor running finishes as outdoor for Fitness icons"
+)
+check(
+    SportKind.indoorRunning.healthKitFinishFlags == HealthKitFinishFlags(indoor: true, trailRun: false),
+    "indoor running finishes as indoor"
+)
+check(
+    SportKind.trailRunning.healthKitFinishFlags == HealthKitFinishFlags(indoor: false, trailRun: true),
+    "trail running finishes outdoor and tagged"
+)
+check(
+    SportKind.outdoorWalking.healthKitFinishFlags == HealthKitFinishFlags(indoor: false, trailRun: false),
+    "outdoor walking finishes as outdoor"
+)
+check(
+    SportKind.functionalStrength.healthKitFinishFlags == HealthKitFinishFlags(indoor: true, trailRun: false),
+    "strength finishes as indoor"
+)
+check(
+    SportKind.hiit.healthKitFinishFlags == HealthKitFinishFlags(indoor: true, trailRun: false),
+    "hiit finishes as indoor"
+)
 
 let withHeart = listedWorkout(sport: .outdoorRunning, start: saturday)
 check(

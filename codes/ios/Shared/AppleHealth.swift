@@ -605,6 +605,19 @@ extension SportKind {
     /// and tagged with this key so the app can tell it from an outdoor run.
     static let trailRunMetadataKey = "SkyWandererTrailRun"
 
+    /// Metadata the live builder must carry so Fitness can resolve the outdoor /
+    /// indoor activity glyph (e.g. outdoor run) instead of leaving the icon blank.
+    var healthKitFinishMetadata: [String: Any] {
+        let flags = healthKitFinishFlags
+        var metadata: [String: Any] = [
+            HKMetadataKeyIndoorWorkout: flags.indoor
+        ]
+        if flags.trailRun {
+            metadata[Self.trailRunMetadataKey] = true
+        }
+        return metadata
+    }
+
     private static func isTrailRun(_ workout: HKWorkout) -> Bool {
         flag(workout.metadata?[trailRunMetadataKey])
     }
@@ -640,8 +653,12 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var collecting = false
+    /// Sport recorded for this session. Finish metadata (indoor / trail) is built from it.
+    private var recordedSport: SportKind = .other
 
     func start(sport: SportKind) async throws {
+        recordedSport = sport
+        tagsTrailRun = sport == .trailRunning
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = sport.hkActivity
         configuration.locationType = sport.hkLocationType
@@ -653,6 +670,10 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
     /// Mirrored session the watch already started. Do not start the activity again or move its start date.
     func adoptMirrored(_ session: HKWorkoutSession) async throws {
         let configuration = session.workoutConfiguration
+        recordedSport = SportKind.from(configuration)
+        if recordedSport == .trailRunning {
+            tagsTrailRun = true
+        }
         let builder = session.associatedWorkoutBuilder()
         let start = session.startDate ?? Date()
         builder.dataSource = Self.makeDataSource(configuration)
@@ -744,6 +765,8 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         collecting = false
         self.session = nil
         self.builder = nil
+        recordedSport = .other
+        tagsTrailRun = false
         if wasCollecting {
             builder.discardWorkout()
         }
@@ -756,19 +779,26 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
     }
 
     /// Set for a trail run so the saved running workout carries `SportKind.trailRunMetadataKey`.
+    /// Prefer `recordedSport`; this flag stays for callers that set it before `start`.
     var tagsTrailRun = false
 
     func finish(route: [GeoPoint]) async -> FinishOutcome {
         guard let session, let builder else { return FinishOutcome(healthID: nil, routeError: nil) }
         collecting = false
-        session.end()
+        // Always stamp indoor/outdoor (and trail) before closing the builder. Fitness
+        // resolves the outdoor-run glyph from HKMetadataKeyIndoorWorkout; without it
+        // third-party outdoor runs can show the correct title with a blank icon.
+        var sport = recordedSport
         if tagsTrailRun {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                builder.addMetadata([SportKind.trailRunMetadataKey: true]) { _, _ in
-                    continuation.resume()
-                }
+            sport = .trailRunning
+        }
+        let metadata = sport.healthKitFinishMetadata
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            builder.addMetadata(metadata) { _, _ in
+                continuation.resume()
             }
         }
+        session.end()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             builder.endCollection(withEnd: Date()) { _, _ in
                 continuation.resume()
@@ -781,6 +811,8 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         }
         self.session = nil
         self.builder = nil
+        recordedSport = .other
+        tagsTrailRun = false
         var routeError: String?
         if let workout, route.count >= 2 {
             do {
