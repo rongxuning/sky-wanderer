@@ -276,8 +276,8 @@ check(
     "the lower row is heart rate, pace, load, score"
 )
 
-check(RecordListCardLayout.standardTextBlock == 112, "standard text block is 112pt")
-check(RecordListCardLayout.standardMapBlock == 124, "map block is 124pt")
+check(RecordListCardLayout.standardTextBlock == 120, "standard text block is 120pt")
+check(RecordListCardLayout.standardMapBlock == 140, "map block is 140pt")
 check(
     RecordListCardLayout.standardMapBlock == RecordListCardLayout.standardHeight,
     "map block matches the standard card height"
@@ -288,17 +288,19 @@ check(
     "a 393pt phone keeps the 213pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 160,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 140,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
-check(RecordListCardLayout.headerGap == 8, "month and the chip row keep an 8pt gap")
-check(RecordListCardLayout.filterBarBottom == 10, "chip row has 10pt under it")
+check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
+check(RecordListCardLayout.filterBarBottom == 10, "header row has 10pt under it")
 check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
-check(RecordListCardLayout.mapSide == 120, "thumbnail is 120pt")
+check(RecordListCardLayout.mapSide == 136, "thumbnail is 136pt")
 check(RecordListCardLayout.titleLine == 30, "the sport chip has a 30pt line")
+check(RecordListCardLayout.titleToDate == 2, "date sits 2pt under the sport chip")
+check(RecordListCardLayout.dateLine == 14, "the date line is 14pt")
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
 check(RecordListCardLayout.mapTrackInsetFraction == 0.04, "the track keeps a 4% inset on every edge")
 let squareTrack = RecordThumbnailFit.normalizedFrame(width: 100, height: 100)
@@ -312,11 +314,11 @@ check(wideTrack.height < wideTrack.width, "a wide track is not stretched into a 
 let tallTrack = RecordThumbnailFit.normalizedFrame(width: 10, height: 80)
 check(abs(tallTrack.y - 0.04) < 0.001, "a tall track meets the top and bottom inset")
 check(abs(tallTrack.x + tallTrack.width / 2 - 0.5) < 0.001, "a tall track stays horizontally centered")
-check(RecordListCardLayout.mapTrailing == 16, "thumbnail inset is 16pt")
+check(RecordListCardLayout.mapTrailing == 20, "thumbnail inset is 20pt")
 check(RecordListCardLayout.contentInsetVertical == 6, "text inset is 6pt")
 check(RecordListCardLayout.mapInsetVertical == 2, "map inset is 2pt")
-check(RecordListCardLayout.topToMiddle == 14, "title to metrics is 14pt")
-check(RecordListCardLayout.middleToBottom == 4, "middle to bottom row is 4pt")
+check(RecordListCardLayout.topToMiddle == 8, "title to metrics is 8pt")
+check(RecordListCardLayout.middleToBottom == 2, "middle to bottom row is 2pt")
 
 let help = [
     RecordMetricHelp.loadBody,
