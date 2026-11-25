@@ -2,7 +2,7 @@ import Foundation
 
 /// Records-list sport menu.
 ///
-/// The log has no stored filter. The menu is 全部 plus each `SportKind` that
+/// The log has no stored filter. The chip bar is 全部 plus each `SportKind` that
 /// actually appears in the loaded workouts, in `SportKind.allCases` order.
 /// `apply` returns a new array for the rows on screen. It does not insert,
 /// delete, or rewrite workout data, and it does not change distance, pace, or load.
@@ -41,8 +41,15 @@ enum RecordListCardLayout {
     static let informationWidth = 213.0
     static let columnGap = 6.0
     static let columnCount = 4.0
-    /// Visible gap between the month title and 全部. Same value as `SkyTheme.Spacing.related`.
+    /// Visible gap between the month title and the sport chip row.
+    /// Same value as `SkyTheme.Spacing.related`.
     static let headerGap = 8.0
+    /// Space under the chip row before the list starts.
+    static let filterBarBottom = 10.0
+    /// Horizontal gap between sport filter capsules.
+    static let filterChipGap = 8.0
+    static let filterChipPaddingH = 12.0
+    static let filterChipPaddingV = 7.0
     static let firstCardGap = 10.0
     static let minimumMapGap = 8.0
     /// Thumbnail corner. Matches `SkyTheme.Radius.chip`.

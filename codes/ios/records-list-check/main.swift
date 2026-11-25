@@ -291,7 +291,11 @@ check(
     RecordListCardLayout.informationWidth(cardWidth: 320) == 160,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
-check(RecordListCardLayout.headerGap == 8, "month and 全部 keep an 8pt gap")
+check(RecordListCardLayout.headerGap == 8, "month and the chip row keep an 8pt gap")
+check(RecordListCardLayout.filterBarBottom == 10, "chip row has 10pt under it")
+check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
+check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
+check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
 check(RecordListCardLayout.mapSide == 120, "thumbnail is 120pt")
 check(RecordListCardLayout.titleLine == 30, "the sport chip has a 30pt line")
