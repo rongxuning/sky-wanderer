@@ -86,24 +86,43 @@ struct RecordSummaryCard: View {
                 .frame(height: CGFloat(RecordListCardLayout.titleToMiddle))
             HStack(spacing: 0) {
                 if showsRouteMetrics {
-                    primaryMetric(distanceText, distanceFont, SkyTheme.Color.recordDistance)
+                    primaryMetric(
+                        distanceText,
+                        distanceFont,
+                        SkyTheme.Color.recordDistance,
+                        alignment: .leading
+                    )
                 } else {
-                    primaryMetric(energyText, distanceFont, SkyTheme.Color.Metric.energy)
+                    primaryMetric(
+                        energyText,
+                        distanceFont,
+                        SkyTheme.Color.Metric.energy,
+                        alignment: .leading
+                    )
                 }
                 primaryMetric(
                     RecordListCardText.clock(workout.trainingDuration),
                     durationFont,
-                    SkyTheme.Color.sport(workout.sport)
+                    SkyTheme.Color.sport(workout.sport),
+                    alignment: .trailing
                 )
             }
             .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
             Spacer()
                 .frame(height: CGFloat(RecordListCardLayout.middleToBottom))
-            // Keeps the lower row's height when a card has no secondary values,
-            // so the block stays at the standard height the square plate matches.
+            // Equal-width columns. First leading, middle centered, last trailing
+            // so gaps read evenly and the last cell shares duration’s right edge.
             HStack(alignment: .top, spacing: 0) {
-                ForEach(secondaryMetrics) { item in
-                    secondaryCell(item)
+                ForEach(Array(secondaryMetrics.enumerated()), id: \.element.id) { index, item in
+                    secondaryCell(
+                        item,
+                        alignment: Self.frameAlignment(
+                            RecordListSecondaryColumnAlign.resolve(
+                                index: index,
+                                count: secondaryMetrics.count
+                            )
+                        )
+                    )
                 }
             }
             .frame(
@@ -137,18 +156,31 @@ struct RecordSummaryCard: View {
         .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
     }
 
-    private func primaryMetric(_ text: String, _ font: Font, _ color: Color) -> some View {
+    private func primaryMetric(
+        _ text: String,
+        _ font: Font,
+        _ color: Color,
+        alignment: Alignment
+    ) -> some View {
         Text(text)
             .font(font)
             .foregroundStyle(figureColor(text, color))
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: alignment)
+    }
+
+    private static func frameAlignment(_ align: RecordListSecondaryColumnAlign) -> Alignment {
+        switch align {
+        case .leading: return .leading
+        case .center: return .center
+        case .trailing: return .trailing
+        }
     }
 
     @ViewBuilder
-    private func secondaryCell(_ item: RecordListSecondaryMetric) -> some View {
+    private func secondaryCell(_ item: RecordListSecondaryMetric, alignment: Alignment) -> some View {
         let content = VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.lowerUnitGap)) {
             HStack(spacing: 4) {
                 RecordListMetricIcon(column: item.column)
@@ -165,7 +197,7 @@ struct RecordSummaryCard: View {
                 .padding(.leading, 18)
                 .lineLimit(1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: alignment)
 
         if item.column == .load || item.column == .score {
             Button(action: onExplainMetrics) {

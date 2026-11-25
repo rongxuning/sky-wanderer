@@ -22,8 +22,9 @@ enum RecordListFilter {
 ///
 /// Map sits on the left and stretches to the metrics block height. The first
 /// metrics row shares a top edge with the map; the unit captions share a bottom
-/// edge. Distance / duration and the visible secondary metrics split the
-/// remaining width evenly.
+/// edge. Distance is leading and duration is trailing in equal halves.
+/// Secondary metrics split the width evenly: first leading, middle centered,
+/// last trailing so the last cell shares duration’s right edge.
 enum RecordListCardLayout {
     /// Card height at the default text size: vertical insets plus the text block.
     static let standardHeight = 130.0
@@ -170,6 +171,22 @@ struct RecordListSecondaryMetric: Equatable, Identifiable {
             items.append(RecordListSecondaryMetric(column: .score, value: RecordListCardText.score))
         }
         return items
+    }
+}
+
+/// Horizontal alignment inside an equal-width secondary column.
+/// First leading, middle centered, last trailing — so three cells read evenly
+/// and the last cell shares the duration’s right edge.
+enum RecordListSecondaryColumnAlign: Equatable {
+    case leading
+    case center
+    case trailing
+
+    static func resolve(index: Int, count: Int) -> RecordListSecondaryColumnAlign {
+        guard count > 1 else { return .leading }
+        if index == 0 { return .leading }
+        if index == count - 1 { return .trailing }
+        return .center
     }
 }
 
