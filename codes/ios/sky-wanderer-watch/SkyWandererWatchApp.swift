@@ -356,7 +356,11 @@ final class WatchMirroredWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWork
     private func begin(_ configuration: HKWorkoutConfiguration) async {
         guard session == nil else { return }
         do {
-            try await AppleHealth.authorize()
+            // Skip the permission sheet when share is already allowed so the
+            // watch can enter workout mode as soon as startWatchApp lands.
+            if AppleHealth.workoutShareAuthorization() != .authorized {
+                try await AppleHealth.authorize()
+            }
             let session = try HKWorkoutSession(healthStore: AppleHealth.store, configuration: configuration)
             let builder = session.associatedWorkoutBuilder()
             builder.dataSource = AppleWorkoutRecorder.makeDataSource(configuration)
@@ -364,6 +368,15 @@ final class WatchMirroredWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWork
             builder.delegate = self
             self.session = session
             self.builder = builder
+            // Warm sensors, then mirror before beginCollection so the phone
+            // adopts this session without waiting on the collection handshake.
+            session.prepare()
+            session.startMirroringToCompanionDevice { [weak self] success, _ in
+                guard !success else { return }
+                Task { @MainActor in
+                    self?.discard()
+                }
+            }
             let start = Date()
             session.startActivity(with: start)
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -378,12 +391,6 @@ final class WatchMirroredWorkout: NSObject, HKWorkoutSessionDelegate, HKLiveWork
                 }
             }
             collecting = true
-            session.startMirroringToCompanionDevice { [weak self] success, _ in
-                guard !success else { return }
-                Task { @MainActor in
-                    self?.discard()
-                }
-            }
         } catch {
             discard()
         }

@@ -2,6 +2,7 @@ import Combine
 import CoreLocation
 import CoreMotion
 import Foundation
+import HealthKit
 
 /// Where the current heart-rate number can come from. The phone has no sensor of its own.
 enum LiveHeartSource: Equatable {
@@ -117,6 +118,9 @@ final class LiveSession: ObservableObject {
     private var usedApple = false
     /// Mirrored watch session is producing this workout. Phone pedometer is only the fallback.
     private var preferWatchMetrics = false
+    /// Phone recorder start or a watch takeover is in flight. A late mirror waits in `pendingMirror`.
+    private var recorderBusy = false
+    private var pendingMirror: HKWorkoutSession?
     private var leavingApple = false
     private var teammatesStarted = false
     /// Every accepted point. Display uses a downsample of this.
@@ -168,19 +172,35 @@ final class LiveSession: ObservableObject {
             do {
                 try await AppleHealth.authorize()
                 guard phase == .running else { return }
-                // GPS starts before the watch answers, so the first seconds of the track are not dropped.
+                // GPS and the heart probe start before the watch answers, so the
+                // first seconds of the track and any early HealthKit samples are kept.
                 startPedometer()
                 startLocation()
+                startHeartProbe()
+                installLateMirrorHandler()
                 if await adoptMirroredWatch() {
-                    startHeartProbe()
                     scheduleTeammates()
                     return
                 }
                 guard phase == .running else { return }
-                try await recorder.start(sport: sport)
+                recorderBusy = true
+                do {
+                    try await recorder.start(sport: sport)
+                } catch {
+                    recorderBusy = false
+                    guard phase == .running else { return }
+                    if await adoptPendingMirror() {
+                        scheduleTeammates()
+                        return
+                    }
+                    beginSimulation("健康数据没有启动，已改用本地模拟")
+                    return
+                }
+                recorderBusy = false
                 guard phase == .running else {
                     // stop() already kept a record with no HealthKit id. Do not save this session.
                     recorder.discard()
+                    dropPendingMirror()
                     return
                 }
                 usedApple = true
@@ -189,7 +209,14 @@ final class LiveSession: ObservableObject {
                 heartSource = .unknown
                 simulating = false
                 statusText = ""
-                startHeartProbe()
+                if await adoptPendingMirror() {
+                    scheduleTeammates()
+                    return
+                }
+                if !recorder.isSessionOpen, !preferWatchMetrics {
+                    beginSimulation("健康数据没有启动，已改用本地模拟")
+                    return
+                }
             } catch {
                 guard phase == .running else { return }
                 beginSimulation("健康数据没有启动，已改用本地模拟")
@@ -226,9 +253,76 @@ final class LiveSession: ObservableObject {
     private func adoptMirroredWatch() async -> Bool {
         #if os(iOS)
         guard let mirrored = await WatchWorkoutBridge.mirroredSession(for: sport) else { return false }
-        guard phase == .running else {
+        return await takeOverMirrored(mirrored)
+        #else
+        return false
+        #endif
+    }
+
+    /// After the mirror wait times out, the watch may still enter workout mode.
+    /// Keep that session instead of ending it, and switch off the phone-only builder.
+    private func installLateMirrorHandler() {
+        #if os(iOS)
+        WatchMirrorGate.shared.onLateMirror = { [weak self] session in
+            Task { @MainActor in
+                guard let self else {
+                    session.end()
+                    return
+                }
+                guard self.phase == .running, !self.leavingApple else {
+                    session.end()
+                    return
+                }
+                if self.recorderBusy {
+                    if self.pendingMirror == nil {
+                        self.pendingMirror = session
+                    } else {
+                        session.end()
+                    }
+                    return
+                }
+                _ = await self.takeOverMirrored(session)
+            }
+        }
+        #endif
+    }
+
+    private func clearLateMirrorHandler() {
+        #if os(iOS)
+        WatchMirrorGate.shared.onLateMirror = nil
+        #endif
+        dropPendingMirror()
+    }
+
+    private func dropPendingMirror() {
+        pendingMirror?.end()
+        pendingMirror = nil
+    }
+
+    /// Takes the mirror that arrived while the phone recorder was starting, if any.
+    private func adoptPendingMirror() async -> Bool {
+        guard let late = pendingMirror else { return false }
+        pendingMirror = nil
+        return await takeOverMirrored(late)
+    }
+
+    /// Adopts a mirrored watch session, discarding any phone-only builder first.
+    /// On false the session has already been ended, so callers never own it afterward.
+    private func takeOverMirrored(_ mirrored: HKWorkoutSession) async -> Bool {
+        #if os(iOS)
+        recorderBusy = true
+        defer { recorderBusy = false }
+        guard phase == .running, !leavingApple, !simulating else {
             mirrored.end()
             return false
+        }
+        if preferWatchMetrics {
+            // A watch session already drives this workout. Reject the extra one.
+            mirrored.end()
+            return false
+        }
+        if recorder.isSessionOpen {
+            recorder.discard()
         }
         do {
             try await recorder.adoptMirrored(mirrored)
@@ -245,8 +339,10 @@ final class LiveSession: ObservableObject {
         heartSource = .watch
         simulating = false
         statusText = ""
+        clearLateMirrorHandler()
         return true
         #else
+        mirrored.end()
         return false
         #endif
     }
@@ -333,6 +429,7 @@ final class LiveSession: ObservableObject {
             closeSplit(distance: leftover, partial: true)
         }
         leavingApple = true
+        clearLateMirrorHandler()
         var healthID: String?
         if usedApple {
             let outcome = await recorder.finish(route: recordedRoute)
@@ -376,6 +473,7 @@ final class LiveSession: ObservableObject {
     private func beginSimulation(_ reason: String) {
         guard phase == .running, !simulating, !leavingApple else { return }
         leavingApple = true
+        clearLateMirrorHandler()
         usedApple = false
         stopLocationUpdates()
         pedometer.stopUpdates()
@@ -514,6 +612,10 @@ final class LiveSession: ObservableObject {
         refreshDistance()
         noteSplitProgress()
         sampleTick += 1
+        // Heart rate every second once a sensor is live; other series every 5s.
+        if heartRate > 0 {
+            heartSeries.append(SeriesPoint(second: elapsed, value: heartRate))
+        }
         if sampleTick % 5 == 0 {
             captureSample()
         }
@@ -808,7 +910,7 @@ final class LiveSession: ObservableObject {
 
     private func captureSample() {
         let second = elapsed
-        if heartRate > 0 { heartSeries.append(SeriesPoint(second: second, value: heartRate)) }
+        // Heart rate is appended every tick above so the detail chart stays dense.
         if cadence > 0 { cadenceSeries.append(SeriesPoint(second: second, value: cadence)) }
         if paceSecPerKm > 0 { paceSeries.append(SeriesPoint(second: second, value: paceSecPerKm)) }
         elevationSeries.append(SeriesPoint(second: second, value: lastAltitude ?? route.last?.altitude ?? 0))

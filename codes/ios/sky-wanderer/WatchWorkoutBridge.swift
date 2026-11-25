@@ -123,12 +123,16 @@ final class WatchMirrorGate {
     private var held: HKWorkoutSession?
     /// Already returned to the phone. A second callback for this object must not end it.
     private var delivered: HKWorkoutSession?
-    /// False after delivery, launch failure, or timeout. A different session is ended.
+    /// False after delivery, launch failure, or timeout. A different session is ended
+    /// unless `onLateMirror` takes it (phone-only fallback switching to the watch).
     private var accept = false
     /// Bumped on every request so a previous wait cannot clear the next one.
     private var generation = 0
     /// Watch unlock / Health prompt often needs more than a few seconds.
     private static let mirrorWaitNanoseconds: UInt64 = 20_000_000_000
+    /// After the initial wait gives up, LiveSession can still adopt a late mirror
+    /// instead of ending the watch workout that just arrived.
+    var onLateMirror: ((HKWorkoutSession) -> Void)?
 
     func request(_ sport: SportKind) async -> HKWorkoutSession? {
         generation += 1
@@ -174,14 +178,25 @@ final class WatchMirrorGate {
 
     private func receive(_ session: HKWorkoutSession) {
         if session === delivered || session === held { return }
-        guard accept else {
-            session.end()
+        if accept {
+            if waiter != nil {
+                deliver(session)
+            } else {
+                held = session
+            }
             return
         }
-        if waiter != nil {
-            deliver(session)
+        handOffLate(session)
+    }
+
+    /// Marks the session delivered before the handler runs, so a repeat callback for the
+    /// same object is ignored instead of ending the workout the phone just took over.
+    private func handOffLate(_ session: HKWorkoutSession) {
+        delivered = session
+        if let onLateMirror {
+            onLateMirror(session)
         } else {
-            held = session
+            session.end()
         }
     }
 
@@ -193,12 +208,15 @@ final class WatchMirrorGate {
         continuation?.resume(returning: session)
     }
 
-    /// Launch failed or the wait expired. Ends a session that was never handed to the phone.
+    /// Launch failed or the wait expired. A held session is offered to `onLateMirror`
+    /// when the phone already fell back; otherwise it is ended.
     private func giveUp(resumeNil: Bool) {
         accept = false
         let extra = held
         held = nil
-        extra?.end()
+        if let extra {
+            handOffLate(extra)
+        }
         guard resumeNil, let continuation = waiter else { return }
         waiter = nil
         continuation.resume(returning: nil)
