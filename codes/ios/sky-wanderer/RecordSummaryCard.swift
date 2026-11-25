@@ -99,13 +99,17 @@ struct RecordSummaryCard: View {
             .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
             Spacer()
                 .frame(height: CGFloat(RecordListCardLayout.middleToBottom))
-            if !secondaryMetrics.isEmpty {
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(secondaryMetrics) { item in
-                        secondaryCell(item)
-                    }
+            // Keeps the lower row's height when a card has no secondary values,
+            // so the block stays at the standard height the square plate matches.
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(secondaryMetrics) { item in
+                    secondaryCell(item)
                 }
             }
+            .frame(
+                minHeight: usesStandardMetrics ? CGFloat(RecordListCardLayout.lowerBlock) : 0,
+                alignment: .top
+            )
         }
     }
 
