@@ -222,7 +222,8 @@ struct RecordTrackLine: View {
         }
         let spanX = max(maxX - minX, 1)
         let spanY = max(maxY - minY, 1)
-        let pad = min(size.width, size.height) * CGFloat(RecordListCardLayout.mapTrackInsetFraction)
+        // Half the stroke: long axis meets the frame, short axis stays centered.
+        let pad = RecordTrackInk.lineWidth * 0.5
         let width = max(size.width - pad * 2, 1)
         let height = max(size.height - pad * 2, 1)
         let scale = min(width / spanX, height / spanY)

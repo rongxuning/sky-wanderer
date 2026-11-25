@@ -56,11 +56,11 @@ enum RecordListCardLayout {
     static let firstCardGap = 10.0
     /// Thumbnail corner. Slightly tighter than `SkyTheme.Radius.chip`.
     static let mapCorner = 4.0
-    /// Share of the thumbnail side left clear on every edge. Kept tight so the
-    /// track fills the map while the stroke stays fully inside the frame.
-    static let mapTrackInsetFraction = 0.04
     /// Fallback / pending stroke width inside the square before the basemap lands.
     static let mapTrackLineWidth = 5.5
+    /// Half the stroke as a fraction of `mapSide`. The long axis meets the
+    /// frame; the short axis stays centered with more margin. Ink stays inside.
+    static let mapTrackInsetFraction = mapTrackLineWidth / (2 * mapSide)
 
     static var lowerBlock: Double {
         lowerValueLine + lowerUnitGap + lowerUnitLine
@@ -87,10 +87,10 @@ enum RecordListCardLayout {
 
 /// How a route sits inside the square record thumbnail.
 ///
-/// The longer ground axis fills the inner box. The shorter axis stays centered,
-/// so every edge keeps `RecordListCardLayout.mapTrackInsetFraction` of the side
-/// or more. Inset is tight so the track is as large as possible without clipping.
-/// The full-screen 1.6× map fit is not used here.
+/// The longer ground axis meets the half-stroke inset on both sides. The shorter
+/// axis stays centered with more margin. Horizontally and vertically the track
+/// is centered; at least one axis is flush to the inset. The full-screen 1.6×
+/// map fit is not used here.
 enum RecordThumbnailFit {
     struct Frame {
         var x: Double

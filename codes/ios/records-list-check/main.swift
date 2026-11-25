@@ -311,18 +311,22 @@ check(RecordListCardLayout.titleToMiddle == 18, "distance sits 18pt under the ti
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
 check(RecordListCardLayout.middleToBottom == 10, "middle to bottom row is 10pt")
 check(RecordListCardLayout.lowerBlock == 28, "secondary metrics with units are 28pt")
-check(RecordListCardLayout.mapTrackInsetFraction == 0.04, "the track keeps a 4% inset on every edge")
+check(
+    abs(RecordListCardLayout.mapTrackInsetFraction - RecordListCardLayout.mapTrackLineWidth / (2 * RecordListCardLayout.mapSide)) < 0.0001,
+    "inset is half the stroke over the thumbnail side"
+)
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
+let inset = RecordListCardLayout.mapTrackInsetFraction
 let squareTrack = RecordThumbnailFit.normalizedFrame(width: 100, height: 100)
-check(abs(squareTrack.x - 0.04) < 0.001 && abs(squareTrack.y - 0.04) < 0.001, "a square track meets the inset")
+check(abs(squareTrack.x - inset) < 0.001 && abs(squareTrack.y - inset) < 0.001, "a square track meets the stroke inset")
 check(abs(squareTrack.x + squareTrack.width / 2 - 0.5) < 0.001, "a square track stays centered")
-check(abs(squareTrack.width - 0.92) < 0.001, "a square track fills the inner box")
+check(abs(squareTrack.width - (1 - inset * 2)) < 0.001, "a square track fills the inner box")
 let wideTrack = RecordThumbnailFit.normalizedFrame(width: 200, height: 40)
-check(abs(wideTrack.x - 0.04) < 0.001, "the long axis meets the side inset")
+check(abs(wideTrack.x - inset) < 0.001, "the long axis meets the side inset")
 check(abs(wideTrack.y + wideTrack.height / 2 - 0.5) < 0.001, "the short axis stays centered")
 check(wideTrack.height < wideTrack.width, "a wide track is not stretched into a square")
 let tallTrack = RecordThumbnailFit.normalizedFrame(width: 10, height: 80)
-check(abs(tallTrack.y - 0.04) < 0.001, "a tall track meets the top and bottom inset")
+check(abs(tallTrack.y - inset) < 0.001, "a tall track meets the top and bottom inset")
 check(abs(tallTrack.x + tallTrack.width / 2 - 0.5) < 0.001, "a tall track stays horizontally centered")
 check(RecordListCardLayout.mapLeading == 10, "map leading inset is 10pt")
 check(RecordListCardLayout.mapToContent == 14, "map to metrics gap is 14pt")
