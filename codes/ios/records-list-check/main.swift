@@ -312,11 +312,20 @@ check(RecordListCardLayout.titleToMiddle == 18, "distance sits 18pt under the ti
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
 check(RecordListCardLayout.middleToBottom == 10, "middle to bottom row is 10pt")
 check(RecordListCardLayout.lowerBlock == 28, "secondary metrics with units are 28pt")
-check(
-    abs(RecordListCardLayout.mapTrackInsetFraction - RecordListCardLayout.mapTrackLineWidth / (2 * RecordListCardLayout.mapSide)) < 0.0001,
-    "inset is half the stroke over the thumbnail side"
-)
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
+check(RecordListCardLayout.mapTrackBasemapLineWidth == 7.0, "basemap list stroke is 7pt")
+check(
+    abs(RecordListCardLayout.mapTrackEdgePad - 3.5) < 0.0001,
+    "edge pad is half the thicker basemap stroke"
+)
+check(
+    RecordListCardLayout.mapTrackEdgePad >= RecordListCardLayout.mapTrackLineWidth * 0.55,
+    "edge pad covers the canvas end dot"
+)
+check(
+    abs(RecordListCardLayout.mapTrackInsetFraction - RecordListCardLayout.mapTrackEdgePad / RecordListCardLayout.mapSide) < 0.0001,
+    "inset fraction is edge pad over the thumbnail side"
+)
 let inset = RecordListCardLayout.mapTrackInsetFraction
 let squareTrack = RecordThumbnailFit.normalizedFrame(width: 100, height: 100)
 check(abs(squareTrack.x - inset) < 0.001 && abs(squareTrack.y - inset) < 0.001, "a square track meets the stroke inset")

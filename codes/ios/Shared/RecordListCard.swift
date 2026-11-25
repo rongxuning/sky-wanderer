@@ -58,9 +58,14 @@ enum RecordListCardLayout {
     static let mapCorner = 4.0
     /// Fallback / pending stroke width inside the square before the basemap lands.
     static let mapTrackLineWidth = 5.5
-    /// Half the stroke as a fraction of `mapSide`. The long axis meets the
-    /// frame; the short axis stays centered with more margin. Ink stays inside.
-    static let mapTrackInsetFraction = mapTrackLineWidth / (2 * mapSide)
+    /// Matches `TrackPaint.recordListInnerPoints` on the baked basemap plate.
+    static let mapTrackBasemapLineWidth = 7.0
+    /// Clearance past the centerline so the thicker of the canvas end dot
+    /// (`0.55 × mapTrackLineWidth`) and the basemap stroke stay inside the frame.
+    static let mapTrackEdgePad = max(mapTrackLineWidth * 0.55, mapTrackBasemapLineWidth / 2)
+    /// `mapTrackEdgePad` as a fraction of `mapSide`. Long axis meets this inset;
+    /// short axis stays centered with more margin.
+    static let mapTrackInsetFraction = mapTrackEdgePad / mapSide
 
     static var lowerBlock: Double {
         lowerValueLine + lowerUnitGap + lowerUnitLine

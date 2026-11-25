@@ -222,7 +222,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         if thumbnail, let rect = Self.trackRect(route, mode: mode) {
             map.layoutIfNeeded()
             let fitted = Self.aspectFilledMapRect(rect, viewSize: size)
-            let pad = CGFloat(RecordListCardLayout.mapTrackLineWidth) * 0.5
+            let pad = CGFloat(RecordListCardLayout.mapTrackEdgePad)
             let insets = UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad)
             map.setVisibleMapRect(fitted, edgePadding: insets, animated: false)
             return
