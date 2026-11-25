@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Records tab. The month and the sport filter chips stay fixed. Cards scroll only below that bar.
+/// Records tab. The month and the sport filter chips share one fixed row. Cards scroll only below that bar.
 struct RecordFeedView: View {
     @EnvironmentObject private var app: PhoneAppState
     @State private var revealedWorkoutID: UUID?
@@ -87,13 +87,14 @@ struct RecordFeedView: View {
     }
 
     /// Header from the top of the screen through the month and sport chips, in the tab bar's color.
-    /// Month on the first row; Apple-style horizontal pills on the second. The list starts under it.
+    /// Month on the leading edge; Apple-style horizontal pills to its right on the same row.
     private var monthTitleBar: some View {
-        VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.headerGap)) {
+        HStack(alignment: .center, spacing: CGFloat(RecordListCardLayout.headerGap)) {
             RecordMonthTitle(title: displayedMonthTitle)
-                .padding(.horizontal, SkyTheme.Spacing.screenInset)
+                .layoutPriority(1)
             sportFilterBar
         }
+        .padding(.leading, SkyTheme.Spacing.screenInset)
         .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
         .background(SkyTheme.Color.starryGray, ignoresSafeAreaEdges: .top)
         .zIndex(1)
@@ -114,7 +115,7 @@ struct RecordFeedView: View {
                     }
                 }
             }
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.trailing, SkyTheme.Spacing.screenInset)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("运动类型")

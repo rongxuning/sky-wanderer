@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// White, full-width record card. Sport chip and date on top, distance and training time
-/// across the middle, heart rate / pace / load / score along the bottom.
+/// White, full-width record card. Sport chip with the start date under it, distance and
+/// training time across the middle, heart rate / pace / load / score along the bottom.
 /// The motivation line and cadence are not drawn.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
@@ -78,7 +78,7 @@ struct RecordSummaryCard: View {
     }
 
     private var titleRow: some View {
-        HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
+        VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.titleToDate)) {
             Text(workout.sport.title)
                 .font(sportFont)
                 .foregroundStyle(SkyTheme.Color.onPrimary)
@@ -87,17 +87,17 @@ struct RecordSummaryCard: View {
                 .padding(.vertical, 2)
                 .background(SkyTheme.Color.primary, in: Capsule())
                 .fixedSize(horizontal: true, vertical: true)
-                .layoutPriority(1)
+                .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
             Text(RecordListCardText.started(workout.start))
                 .font(dateFont)
                 .foregroundStyle(SkyTheme.Color.secondary)
                 .lineLimit(usesStandardMetrics ? 1 : 3)
-                .minimumScaleFactor(usesStandardMetrics ? 0.65 : 0.85)
+                .minimumScaleFactor(0.85)
                 .allowsTightening(true)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(RecordRowBox(height: RecordListCardLayout.dateLine, enabled: usesStandardMetrics))
         }
-        .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
     }
 
     private func metric(_ text: String, _ font: Font, _ color: Color) -> some View {

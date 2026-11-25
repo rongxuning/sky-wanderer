@@ -20,31 +20,35 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// At the default text size the text block is 112 and the map block is 124.
-/// The sport chip needs a 30pt line, and the distance line is 32pt so the
-/// larger kilometer figure is not clipped. The 213pt information track is the
-/// width that keeps four 48.75pt columns with 6pt gaps on a 393pt phone.
-/// Cards run edge to edge. Narrower cards shrink that track so the map still
-/// fits; wider cards do not stretch the columns.
+/// At the default text size the text block is 120 and the map block is 140.
+/// The sport chip needs a 30pt line; the start date sits under it on a 14pt
+/// line. The distance line is 32pt so the larger kilometer figure is not
+/// clipped. The 213pt information track is the width that keeps four 48.75pt
+/// columns with 6pt gaps on a 393pt phone. Cards run edge to edge. Narrower
+/// cards shrink that track so the map still fits; wider cards do not stretch
+/// the columns.
 enum RecordListCardLayout {
-    static let standardHeight = 124.0
+    static let standardHeight = 140.0
     static let contentInsetVertical = 6.0
     static let titleLine = 30.0
-    static let topToMiddle = 14.0
+    /// Gap between the sport chip and the start date under it.
+    static let titleToDate = 2.0
+    static let dateLine = 14.0
+    static let topToMiddle = 8.0
     static let upperLine = 32.0
-    static let middleToBottom = 4.0
+    static let middleToBottom = 2.0
     static let lowerLine = 20.0
-    static let mapSide = 120.0
+    static let mapSide = 136.0
     static let mapInsetVertical = 2.0
-    static let mapTrailing = 16.0
+    static let mapTrailing = 20.0
     static let contentLeading = 16.0
     static let informationWidth = 213.0
     static let columnGap = 6.0
     static let columnCount = 4.0
-    /// Visible gap between the month title and the sport chip row.
+    /// Horizontal gap between the sticky month title and the sport chips.
     /// Same value as `SkyTheme.Spacing.related`.
     static let headerGap = 8.0
-    /// Space under the chip row before the list starts.
+    /// Space under the header row before the list starts.
     static let filterBarBottom = 10.0
     /// Horizontal gap between sport filter capsules.
     static let filterChipGap = 8.0
@@ -59,7 +63,14 @@ enum RecordListCardLayout {
     static let mapTrackInsetFraction = 0.04
 
     static var standardTextBlock: Double {
-        contentInsetVertical * 2 + titleLine + topToMiddle + upperLine + middleToBottom + lowerLine
+        contentInsetVertical * 2
+            + titleLine
+            + titleToDate
+            + dateLine
+            + topToMiddle
+            + upperLine
+            + middleToBottom
+            + lowerLine
     }
 
     static var standardMapBlock: Double {
