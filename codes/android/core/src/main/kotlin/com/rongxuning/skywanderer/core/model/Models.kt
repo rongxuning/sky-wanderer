@@ -5,6 +5,7 @@ enum class SportKind {
     OutdoorRunning,
     IndoorRunning,
     TrailRunning,
+    OutdoorWalking,
     Hiking,
     FunctionalStrength,
     Hiit,
@@ -16,6 +17,7 @@ enum class SportKind {
             OutdoorRunning -> "户外跑步"
             IndoorRunning -> "室内跑步"
             TrailRunning -> "越野跑"
+            OutdoorWalking -> "户外步行"
             Hiking -> "徒步"
             FunctionalStrength -> "功能性力量训练"
             Hiit -> "HIIT训练"
@@ -28,6 +30,7 @@ enum class SportKind {
                 "running", "outdoorrunning" -> OutdoorRunning
                 "indoorrunning" -> IndoorRunning
                 "trailrunning" -> TrailRunning
+                "outdoorwalking" -> OutdoorWalking
                 "hiking" -> Hiking
                 "functionalstrength" -> FunctionalStrength
                 "hiit" -> Hiit

@@ -13,6 +13,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     case outdoorRunning = "running"
     case indoorRunning
     case trailRunning
+    case outdoorWalking
     case hiking
     case functionalStrength
     case hiit
@@ -25,6 +26,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         case .outdoorRunning: return "户外跑步"
         case .indoorRunning: return "室内跑步"
         case .trailRunning: return "越野跑"
+        case .outdoorWalking: return "户外步行"
         case .hiking: return "徒步"
         case .functionalStrength: return "功能性力量训练"
         case .hiit: return "HIIT训练"
@@ -35,6 +37,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .outdoorRunning, .indoorRunning, .trailRunning: return "figure.run"
+        case .outdoorWalking: return "figure.walk"
         case .hiking: return "figure.hiking"
         case .functionalStrength: return "figure.strengthtraining.functional"
         case .hiit: return "figure.highintensity.intervaltraining"
@@ -46,7 +49,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     var isRunFamily: Bool {
         switch self {
         case .outdoorRunning, .indoorRunning, .trailRunning: return true
-        case .hiking, .functionalStrength, .hiit, .other: return false
+        case .outdoorWalking, .hiking, .functionalStrength, .hiit, .other: return false
         }
     }
 
@@ -54,7 +57,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     /// show a sport icon, energy, and heart rate in the same card layout.
     var listShowsRouteMetrics: Bool {
         switch self {
-        case .outdoorRunning, .indoorRunning, .trailRunning, .hiking: return true
+        case .outdoorRunning, .indoorRunning, .trailRunning, .outdoorWalking, .hiking: return true
         case .functionalStrength, .hiit, .other: return false
         }
     }
@@ -62,7 +65,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     /// Types that record a GPS route outdoors when HealthKit is available.
     var usesOutdoorLocation: Bool {
         switch self {
-        case .outdoorRunning, .trailRunning, .hiking: return true
+        case .outdoorRunning, .trailRunning, .outdoorWalking, .hiking: return true
         case .indoorRunning, .functionalStrength, .hiit, .other: return false
         }
     }

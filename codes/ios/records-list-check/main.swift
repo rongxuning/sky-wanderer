@@ -328,10 +328,13 @@ check(RecordMetricHelp.missing.contains("不是 0"), "a dash is not zero")
 
 check(
     SportKind.allCases.map(\.title) == [
-        "户外跑步", "室内跑步", "越野跑", "徒步", "功能性力量训练", "HIIT训练", "其他"
+        "户外跑步", "室内跑步", "越野跑", "户外步行", "徒步", "功能性力量训练", "HIIT训练", "其他"
     ],
     "the app sport list is fixed and ordered"
 )
+check(SportKind.outdoorWalking.listShowsRouteMetrics, "outdoor walking shows route metrics")
+check(SportKind.outdoorWalking.usesOutdoorLocation, "outdoor walking records GPS")
+check(SportKind.outdoorWalking.symbol == "figure.walk", "outdoor walking uses the walk symbol")
 check(SportKind(rawValue: "running") == .outdoorRunning, "legacy running raw value is outdoor running")
 check(SportKind.outdoorRunning.rawValue == "running", "outdoor running keeps the legacy storage key")
 
