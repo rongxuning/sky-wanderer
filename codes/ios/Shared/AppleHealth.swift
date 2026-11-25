@@ -647,6 +647,8 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         configuration.locationType = sport.hkLocationType
         let session = try HKWorkoutSession(healthStore: AppleHealth.store, configuration: configuration)
         let builder = session.associatedWorkoutBuilder()
+        // Warm sensors before collection so the first seconds are not empty.
+        session.prepare()
         try await begin(session: session, builder: builder, configuration: configuration, start: Date())
     }
 
