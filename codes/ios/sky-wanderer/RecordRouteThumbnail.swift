@@ -17,30 +17,24 @@ struct RecordRouteThumbnail: View {
     @ObservedObject private var thumbs = RecordMapThumbnails.shared
     @State private var mapImage: UIImage?
 
-    private var loadKey: String {
-        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(Int(renderSide))-\(thumbs.revision)"
+    /// Plates are always written at the fixed list side, so the lookup uses it too.
+    /// A taller card (larger Dynamic Type) keeps the square top-aligned and leaves the rest as backdrop.
+    private var plateSide: CGFloat {
+        CGFloat(RecordListCardLayout.mapSide)
     }
 
-    private var renderSide: CGFloat {
-        max(width, height, CGFloat(RecordListCardLayout.mapSide))
+    private var loadKey: String {
+        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(thumbs.revision)"
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             Color(uiColor: SkyBasemapInstaller.backdrop)
-            if route.count >= 2 {
-                RecordTrackLine(points: route)
-                if let mapImage {
-                    Image(uiImage: mapImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: width, height: height)
-                        .clipped()
-                        .transition(.opacity)
-                }
-            }
+            plate
+                .frame(width: plateSide, height: plateSide)
+                .clipped()
         }
-        .frame(width: width, height: height)
+        .frame(width: width, height: height, alignment: .top)
         .clipShape(
             RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
         )
@@ -48,7 +42,7 @@ struct RecordRouteThumbnail: View {
             guard route.count >= 2 else { return }
             let image = await RecordMapThumbnails.shared.cachedImage(
                 for: workoutID,
-                side: renderSide
+                side: plateSide
             )
             guard !Task.isCancelled else { return }
             if mapImage !== image {
@@ -63,6 +57,21 @@ struct RecordRouteThumbnail: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("轨迹")
+    }
+
+    @ViewBuilder
+    private var plate: some View {
+        if route.count >= 2 {
+            ZStack {
+                RecordTrackLine(points: route)
+                if let mapImage {
+                    Image(uiImage: mapImage)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                }
+            }
+        }
     }
 }
 
@@ -159,19 +168,16 @@ final class RecordMapThumbnails: ObservableObject {
     @discardableResult
     func warm(for id: UUID, route: [GeoPoint], side: CGFloat) async -> UIImage? {
         guard route.count >= 2 else { return nil }
+        if let hit = await cachedImage(for: id, side: side) { return hit }
+        await acquire()
+        defer { release() }
+        guard !Task.isCancelled else { return nil }
+        // Read after waiting: the mode may have changed while this render was queued.
         let sideKey = Int(side.rounded())
         let token = Self.basemapToken
         let key = Self.key(id: id, basemapToken: token, side: sideKey)
         if let hit = cache.object(forKey: key) { return hit }
-        if let disk = RecordListThumbnailStore.load(id: id, basemapToken: token, side: sideKey) {
-            cache.setObject(disk, forKey: key)
-            return disk
-        }
-        await acquire()
-        defer { release() }
-        guard !Task.isCancelled else { return nil }
-        if let hit = cache.object(forKey: key) { return hit }
-        if let disk = RecordListThumbnailStore.load(id: id, basemapToken: token, side: sideKey) {
+        if let disk = await RecordListThumbnailStore.loadAsync(id: id, basemapToken: token, side: sideKey) {
             cache.setObject(disk, forKey: key)
             return disk
         }
@@ -181,24 +187,24 @@ final class RecordMapThumbnails: ObservableObject {
             overlap: 0,
             thumbnail: true
         )
-        guard let image else { return nil }
+        // The render follows the live basemap. Drop it if the mode moved, so a
+        // system-map image is never saved under the Tianditu name.
+        guard let image, Self.basemapToken == token else { return nil }
         cache.setObject(image, forKey: key)
         RecordListThumbnailStore.save(image, id: id, basemapToken: token, side: sideKey)
         revision &+= 1
         return image
     }
 
-    /// Fills missing plates slowly after launch. Cancelled when the caller’s
-    /// task ends. Sleeps between renders so MapKit is not back-to-back.
+    /// Fills missing plates slowly. The caller restarts this when the workout ids
+    /// or the basemap mode change, so each pass uses one token. Sleeps between renders.
     func backfill(workouts: [WorkoutRecord], side: CGFloat) async {
         let sideKey = Int(side.rounded())
         let token = Self.basemapToken
         for workout in workouts {
             guard !Task.isCancelled else { return }
             guard workout.route.count >= 2 else { continue }
-            let key = Self.key(id: workout.id, basemapToken: token, side: sideKey)
-            if cache.object(forKey: key) != nil { continue }
-            if RecordListThumbnailStore.load(id: workout.id, basemapToken: token, side: sideKey) != nil {
+            if await RecordListThumbnailStore.existsAsync(id: workout.id, basemapToken: token, side: sideKey) {
                 continue
             }
             _ = await warm(for: workout.id, route: workout.route, side: side)

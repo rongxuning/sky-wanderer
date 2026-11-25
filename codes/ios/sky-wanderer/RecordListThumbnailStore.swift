@@ -5,6 +5,11 @@ import UIKit
 /// Write once when a workout is saved or when a gentle backfill runs. The list
 /// only reads these (plus an in-memory cache). It does not open MapKit per card.
 enum RecordListThumbnailStore {
+    static func exists(id: UUID, basemapToken: String, side: Int) -> Bool {
+        guard let url = try? url(id: id, basemapToken: basemapToken, side: side) else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
+
     static func load(id: UUID, basemapToken: String, side: Int) -> UIImage? {
         guard let url = try? url(id: id, basemapToken: basemapToken, side: side),
               let data = try? Data(contentsOf: url),
@@ -12,6 +17,18 @@ enum RecordListThumbnailStore {
             return nil
         }
         return image
+    }
+
+    static func loadAsync(id: UUID, basemapToken: String, side: Int) async -> UIImage? {
+        await Task.detached(priority: .utility) {
+            load(id: id, basemapToken: basemapToken, side: side)
+        }.value
+    }
+
+    static func existsAsync(id: UUID, basemapToken: String, side: Int) async -> Bool {
+        await Task.detached(priority: .utility) {
+            exists(id: id, basemapToken: basemapToken, side: side)
+        }.value
     }
 
     @discardableResult
