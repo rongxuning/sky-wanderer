@@ -118,6 +118,9 @@ final class LiveSession: ObservableObject {
     private var usedApple = false
     /// Mirrored watch session is producing this workout. Phone pedometer is only the fallback.
     private var preferWatchMetrics = false
+    /// Phone recorder start or a watch takeover is in flight. A late mirror waits in `pendingMirror`.
+    private var recorderBusy = false
+    private var pendingMirror: HKWorkoutSession?
     private var leavingApple = false
     private var teammatesStarted = false
     /// Every accepted point. Display uses a downsample of this.
@@ -180,19 +183,40 @@ final class LiveSession: ObservableObject {
                     return
                 }
                 guard phase == .running else { return }
-                try await recorder.start(sport: sport)
+                recorderBusy = true
+                do {
+                    try await recorder.start(sport: sport)
+                } catch {
+                    recorderBusy = false
+                    guard phase == .running else { return }
+                    if await adoptPendingMirror() {
+                        scheduleTeammates()
+                        return
+                    }
+                    beginSimulation("健康数据没有启动，已改用本地模拟")
+                    return
+                }
+                recorderBusy = false
                 guard phase == .running else {
                     // stop() already kept a record with no HealthKit id. Do not save this session.
                     recorder.discard()
+                    dropPendingMirror()
                     return
                 }
                 usedApple = true
                 // Stay `.unknown` until a sample arrives or the sheet times out to 「无来源」.
                 // A lingering watch workout or Bluetooth strap can still feed HealthKit.
-                // A late mirror can still replace this phone-only session.
                 heartSource = .unknown
                 simulating = false
                 statusText = ""
+                if await adoptPendingMirror() {
+                    scheduleTeammates()
+                    return
+                }
+                if !recorder.isSessionOpen, !preferWatchMetrics {
+                    beginSimulation("健康数据没有启动，已改用本地模拟")
+                    return
+                }
             } catch {
                 guard phase == .running else { return }
                 beginSimulation("健康数据没有启动，已改用本地模拟")
@@ -245,10 +269,19 @@ final class LiveSession: ObservableObject {
                     session.end()
                     return
                 }
-                let adopted = await self.takeOverMirrored(session)
-                if !adopted {
+                guard self.phase == .running, !self.leavingApple else {
                     session.end()
+                    return
                 }
+                if self.recorderBusy {
+                    if self.pendingMirror == nil {
+                        self.pendingMirror = session
+                    } else {
+                        session.end()
+                    }
+                    return
+                }
+                _ = await self.takeOverMirrored(session)
             }
         }
         #endif
@@ -258,14 +291,34 @@ final class LiveSession: ObservableObject {
         #if os(iOS)
         WatchMirrorGate.shared.onLateMirror = nil
         #endif
+        dropPendingMirror()
+    }
+
+    private func dropPendingMirror() {
+        pendingMirror?.end()
+        pendingMirror = nil
+    }
+
+    /// Takes the mirror that arrived while the phone recorder was starting, if any.
+    private func adoptPendingMirror() async -> Bool {
+        guard let late = pendingMirror else { return false }
+        pendingMirror = nil
+        return await takeOverMirrored(late)
     }
 
     /// Adopts a mirrored watch session, discarding any phone-only builder first.
+    /// On false the session has already been ended, so callers never own it afterward.
     private func takeOverMirrored(_ mirrored: HKWorkoutSession) async -> Bool {
         #if os(iOS)
-        guard phase == .running, !leavingApple, !simulating else { return false }
-        if preferWatchMetrics, recorder.isSessionOpen {
-            // Already on the watch session — reject a duplicate late mirror.
+        recorderBusy = true
+        defer { recorderBusy = false }
+        guard phase == .running, !leavingApple, !simulating else {
+            mirrored.end()
+            return false
+        }
+        if preferWatchMetrics {
+            // A watch session already drives this workout. Reject the extra one.
+            mirrored.end()
             return false
         }
         if recorder.isSessionOpen {
@@ -289,6 +342,7 @@ final class LiveSession: ObservableObject {
         clearLateMirrorHandler()
         return true
         #else
+        mirrored.end()
         return false
         #endif
     }

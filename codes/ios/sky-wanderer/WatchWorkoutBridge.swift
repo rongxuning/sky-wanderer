@@ -186,11 +186,18 @@ final class WatchMirrorGate {
             }
             return
         }
+        handOffLate(session)
+    }
+
+    /// Marks the session delivered before the handler runs, so a repeat callback for the
+    /// same object is ignored instead of ending the workout the phone just took over.
+    private func handOffLate(_ session: HKWorkoutSession) {
+        delivered = session
         if let onLateMirror {
             onLateMirror(session)
-            return
+        } else {
+            session.end()
         }
-        session.end()
     }
 
     private func deliver(_ session: HKWorkoutSession) {
@@ -208,11 +215,7 @@ final class WatchMirrorGate {
         let extra = held
         held = nil
         if let extra {
-            if let onLateMirror {
-                onLateMirror(extra)
-            } else {
-                extra.end()
-            }
+            handOffLate(extra)
         }
         guard resumeNil, let continuation = waiter else { return }
         waiter = nil
