@@ -6,6 +6,7 @@ import Foundation
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Formatting.swift \
 //   codes/ios/Shared/RecordFeedList.swift \
 //   codes/ios/Shared/RecordListCard.swift \
+//   codes/ios/Shared/RecordListThumbnailFile.swift \
 //   codes/ios/records-list-check/main.swift \
 //   -o /tmp/records-list-check && /tmp/records-list-check
 
@@ -332,6 +333,18 @@ check(RecordListCardLayout.mapLeading == 10, "map leading inset is 10pt")
 check(RecordListCardLayout.mapToContent == 14, "map to metrics gap is 14pt")
 check(RecordListCardLayout.contentTrailing == 14, "content trailing inset is 14pt")
 check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
+
+let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+check(
+    RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 110)
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-110.jpg",
+    "list thumbnails live under record-thumbs with id, basemap, and side"
+)
+check(
+    RecordListThumbnailFile.idPrefix(thumbID) == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-",
+    "delete uses the workout id prefix"
+)
+check(RecordListThumbnailFile.folder == "record-thumbs", "thumbnail folder name is fixed")
 
 let help = [
     RecordMetricHelp.loadBody,

@@ -573,6 +573,13 @@ final class PhoneAppState: ObservableObject {
         mutate { database in
             _ = database.insertWorkout(record)
         }
+        if record.route.count >= 2 {
+            RecordMapThumbnails.shared.enqueueWarm(
+                for: record.id,
+                route: record.route,
+                side: CGFloat(RecordListCardLayout.mapSide)
+            )
+        }
     }
 
     /// Removes the workout from this phone and remembers it so Health import cannot restore it.
@@ -581,6 +588,7 @@ final class PhoneAppState: ObservableObject {
         mutate { database in
             database.deleteWorkout(id: id)
         }
+        RecordMapThumbnails.shared.forget(id: id)
     }
 
     /// Writes cached weather or a start-place name onto one record. Other fields stay.

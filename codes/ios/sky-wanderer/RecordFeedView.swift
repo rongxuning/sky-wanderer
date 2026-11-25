@@ -20,6 +20,15 @@ struct RecordFeedView: View {
             .task {
                 await app.importFromApple()
             }
+            .task(id: app.workouts.map(\.id)) {
+                // List cells only read disk/memory plates. Missing ones fill in
+                // slowly here so cold launch never opens an MKMapView per card.
+                let routed = app.workouts.filter { $0.route.count >= 2 }
+                await RecordMapThumbnails.shared.backfill(
+                    workouts: routed,
+                    side: CGFloat(RecordListCardLayout.mapSide)
+                )
+            }
             .alert(
                 "删除这条训练记录？",
                 isPresented: deleteAlertPresented,
