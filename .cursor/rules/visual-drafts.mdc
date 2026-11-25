@@ -1,0 +1,13 @@
+---
+description: 已确认的视觉稿只放在 docs/design/visuals
+alwaysApply: true
+---
+
+# 视觉稿存放
+
+已确认的视觉稿放在 `docs/design/visuals/`。
+
+- 确认件是定稿后的界面原型和视觉导出，例如 PNG、PDF。
+- 未确认的探索稿和临时导出不要放进这个目录。
+- 不要把确认件放到 `docs/` 的其他目录、仓库根目录或代码目录。
+- Figma 源文件留在 Figma。确认之后，把对应导出放进 `docs/design/visuals/`，文件名用页面或流程名。
