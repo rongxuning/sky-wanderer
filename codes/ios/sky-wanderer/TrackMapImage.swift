@@ -4,8 +4,8 @@ import UIKit
 /// Share image from the same basemap and the same `TrackOverlay` as the screen.
 /// This is an offscreen `MKMapView`, not an `MKMapSnapshotter` of the system map.
 /// `thumbnail` drops the credit capsule, the legal line, the provider logo,
-/// the empty-route caption, and the endpoint markers. The track is fitted to
-/// the center with an equal inset on every edge. Record cards use it.
+/// the empty-route caption, and the endpoint markers. The track is centered;
+/// its longer axis meets a half-stroke inset. Record cards use it.
 enum TrackMapImage {
     @MainActor
     static func render(route: [GeoPoint], size: CGSize, overlap: CGFloat, thumbnail: Bool = false) async -> UIImage? {
@@ -62,6 +62,9 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         map.showsCompass = false
         map.showsScale = false
         map.showsUserLocation = false
+        map.layoutMargins = .zero
+        map.preservesSuperviewLayoutMargins = false
+        map.directionalLayoutMargins = .zero
         map.pointOfInterestFilter = thumbnail || mode == .tianditu ? .excludingAll : nil
         map.backgroundColor = SkyBasemapInstaller.backdrop
         window.addSubview(map)
@@ -121,6 +124,9 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         fullRenders += 1
         if thumbnail {
             MapLegalChrome.hideThumbnailChrome(on: mapView)
+            // MapKit can nudge the camera during the first paint; lock the
+            // centered edge-fit again before the snapshot.
+            show(route, on: mapView, mode: mode)
         } else {
             MapLegalChrome.setAppleAttributionHidden(SkyBasemapCenter.shared.mode == .tianditu, on: mapView)
         }
@@ -208,14 +214,17 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         }
     }
 
-    /// Centers the track in the thumbnail. Equal point insets keep a gap on every edge.
-    /// A straight north-south or east-west trace has a zero side; that side is opened
-    /// just enough for MapKit to keep the line in the middle.
+    /// Centers the track in the thumbnail. The longer ground axis meets the
+    /// half-stroke inset; the shorter axis stays centered. A straight
+    /// north-south or east-west trace opens its zero side just enough for
+    /// MapKit to keep the line in the middle.
     private func show(_ route: [GeoPoint], on map: MKMapView, mode: SkyBasemapMode) {
         if thumbnail, let rect = Self.trackRect(route, mode: mode) {
-            let pad = min(size.width, size.height) * CGFloat(RecordListCardLayout.mapTrackInsetFraction)
+            map.layoutIfNeeded()
+            let fitted = Self.aspectFilledMapRect(rect, viewSize: size)
+            let pad = CGFloat(RecordListCardLayout.mapTrackEdgePad)
             let insets = UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad)
-            map.setVisibleMapRect(rect, edgePadding: insets, animated: false)
+            map.setVisibleMapRect(fitted, edgePadding: insets, animated: false)
             return
         }
         if let region = region(for: route, mode: mode) {
@@ -242,6 +251,30 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             rect = rect.insetBy(dx: 0, dy: -0.5)
         }
         return rect
+    }
+
+    /// Grows the shorter map-rect axis until the rect aspect matches the view.
+    /// After equal edge padding, the long track axis meets the inset and the
+    /// short axis stays centered — same rule as `RecordThumbnailFit`.
+    static func aspectFilledMapRect(_ rect: MKMapRect, viewSize: CGSize) -> MKMapRect {
+        guard viewSize.width > 1, viewSize.height > 1, !rect.isNull else { return rect }
+        var result = rect
+        let viewAspect = Double(viewSize.width) / Double(viewSize.height)
+        let mapWidth = max(result.size.width, 1)
+        let mapHeight = max(result.size.height, 1)
+        let mapAspect = mapWidth / mapHeight
+        if mapAspect > viewAspect {
+            let targetHeight = mapWidth / viewAspect
+            let delta = (targetHeight - mapHeight) / 2
+            result.origin.y -= delta
+            result.size.height = targetHeight
+        } else if mapAspect < viewAspect {
+            let targetWidth = mapHeight * viewAspect
+            let delta = (targetWidth - mapWidth) / 2
+            result.origin.x -= delta
+            result.size.width = targetWidth
+        }
+        return result
     }
 
     private func region(for route: [GeoPoint], mode: SkyBasemapMode) -> MKCoordinateRegion? {

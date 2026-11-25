@@ -1,114 +1,235 @@
 import SwiftUI
 import UIKit
 
-/// Map plate for one record card: the basemap with the stored track on it.
+/// Map plate for one record card: a disk/memory basemap plate when one exists,
+/// otherwise the bare track stroke on the backdrop.
 ///
-/// The image comes from the same offscreen map as the share image, so the
-/// datum and tiles match the detail screen. Until it arrives the cell shows
-/// the bare stroke on the backdrop. Empty routes are not drawn here — the
-/// card swaps in `RecordSportSwatch` instead. The stroke is the stored track,
-/// never a stand-in city or drawing.
+/// The list never opens a live `MKMapView` per card. That stampeded on cold
+/// launch and jetsam-killed the app. Plates are written when a workout is saved
+/// or by a gentle backfill. Empty routes are not drawn here — the card swaps in
+/// `RecordSportSwatch` instead.
 struct RecordRouteThumbnail: View {
     var workoutID: UUID
     var route: [GeoPoint]
     var width: CGFloat
     var height: CGFloat
     @ObservedObject private var basemap = SkyBasemapCenter.shared
+    @ObservedObject private var thumbs = RecordMapThumbnails.shared
     @State private var mapImage: UIImage?
 
-    private var loadKey: String {
-        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(Int(width))x\(Int(height))"
+    /// Plates are always written at the fixed list side, so the lookup uses it too.
+    /// A taller card (larger Dynamic Type) keeps the square top-aligned and leaves the rest as backdrop.
+    private var plateSide: CGFloat {
+        CGFloat(RecordListCardLayout.mapSide)
     }
 
-    private var renderSide: CGFloat {
-        max(width, height, CGFloat(RecordListCardLayout.mapSide))
+    private var loadKey: String {
+        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(thumbs.revision)"
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             Color(uiColor: SkyBasemapInstaller.backdrop)
-            if route.count >= 2 {
-                RecordTrackLine(points: route)
-                if let mapImage {
-                    Image(uiImage: mapImage)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: width, height: height)
-                        .clipped()
-                        .transition(.opacity)
-                }
-            }
+            plate
+                .frame(width: plateSide, height: plateSide)
+                .clipped()
         }
-        .frame(width: width, height: height)
+        .frame(width: width, height: height, alignment: .top)
         .clipShape(
             RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
         )
         .task(id: loadKey) {
             guard route.count >= 2 else { return }
-            let image = await RecordMapThumbnails.shared.image(
+            let image = await RecordMapThumbnails.shared.cachedImage(
                 for: workoutID,
-                route: route,
-                side: renderSide
+                side: plateSide
             )
-            guard let image, !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.2)) {
-                mapImage = image
+            guard !Task.isCancelled else { return }
+            if mapImage !== image {
+                if image != nil {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        mapImage = image
+                    }
+                } else {
+                    mapImage = nil
+                }
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("轨迹")
     }
-}
 
-/// Solid sport-color plate when the card has no route to draw.
-/// Icons stay off until dedicated assets land.
-struct RecordSportSwatch: View {
-    var sport: SportKind
-
-    var body: some View {
-        SkyTheme.Color.sport(sport)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(
-                RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
-            )
-            .accessibilityHidden(true)
+    @ViewBuilder
+    private var plate: some View {
+        if route.count >= 2 {
+            ZStack {
+                RecordTrackLine(points: route)
+                if let mapImage {
+                    Image(uiImage: mapImage)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                }
+            }
+        }
     }
 }
 
-/// Renders card maps one at a time. Each render opens a short-lived offscreen
-/// window, so a long list must not start them all at once. Finished images are
-/// kept for the session, which makes scrolling back instant.
+/// Frosted glass plate when the card has no route to draw.
+/// Strength and mixed training use their catalog icons; other sports fall
+/// back to the SF Symbol. The tint stays a light wash of the sport accent.
+struct RecordSportSwatch: View {
+    var sport: SportKind
+
+    private var plate: RoundedRectangle {
+        RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
+    }
+
+    var body: some View {
+        ZStack {
+            plate.fill(.ultraThinMaterial)
+            plate.fill(SkyTheme.Color.sport(sport).opacity(0.12))
+            plate.strokeBorder(SkyTheme.Color.sport(sport).opacity(0.18), lineWidth: 1)
+            glyph
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipShape(plate)
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
+        if let asset = sport.listThumbnailAsset {
+            Image(asset)
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
+                .padding(CGFloat(RecordListCardLayout.mapSide) * 0.2)
+        } else {
+            Image(systemName: sport.symbol)
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
+        }
+    }
+}
+
+/// Record-list map plates: memory → disk → optional one-at-a-time MapKit warm.
+///
+/// The list path only calls `cachedImage`. `warm` / `backfill` open the offscreen
+/// map away from scroll, write JPEG under `record-thumbs/`, and bump `revision`
+/// so visible cards pick up the plate.
 @MainActor
-final class RecordMapThumbnails {
+final class RecordMapThumbnails: ObservableObject {
     static let shared = RecordMapThumbnails()
+
+    /// Bumped after a plate is written so list cells re-read cache/disk.
+    @Published private(set) var revision: Int = 0
 
     private let cache = NSCache<NSString, UIImage>()
     private var busy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var warming = Set<String>()
 
-    func image(for id: UUID, route: [GeoPoint], side: CGFloat) async -> UIImage? {
-        let key = Self.key(id: id, route: route, side: side)
+    init() {
+        cache.countLimit = 40
+    }
+
+    /// Memory or disk only. Never opens MapKit.
+    func cachedImage(for id: UUID, side: CGFloat) async -> UIImage? {
+        let token = Self.basemapToken
+        let sideKey = Int(side.rounded())
+        let key = Self.key(id: id, basemapToken: token, side: sideKey)
         if let hit = cache.object(forKey: key) { return hit }
+        let disk = await Task.detached(priority: .utility) {
+            RecordListThumbnailStore.load(id: id, basemapToken: token, side: sideKey)
+        }.value
+        if let disk {
+            cache.setObject(disk, forKey: key)
+        }
+        return disk
+    }
+
+    /// Fire-and-forget warm after a workout is saved. Skips if already queued.
+    func enqueueWarm(for id: UUID, route: [GeoPoint], side: CGFloat) {
+        guard route.count >= 2 else { return }
+        let sideKey = Int(side.rounded())
+        let token = Self.basemapToken
+        let stamp = Self.warmStamp(id: id, basemapToken: token, side: sideKey)
+        guard !warming.contains(stamp) else { return }
+        warming.insert(stamp)
+        Task { @MainActor in
+            defer { self.warming.remove(stamp) }
+            _ = await self.warm(for: id, route: route, side: side)
+        }
+    }
+
+    /// One MapKit render, then disk + memory. Serialized across the process.
+    @discardableResult
+    func warm(for id: UUID, route: [GeoPoint], side: CGFloat) async -> UIImage? {
+        guard route.count >= 2 else { return nil }
+        if let hit = await cachedImage(for: id, side: side) { return hit }
         await acquire()
         defer { release() }
         guard !Task.isCancelled else { return nil }
-        let currentKey = Self.key(id: id, route: route, side: side)
-        if let hit = cache.object(forKey: currentKey) { return hit }
+        // Read after waiting: the mode may have changed while this render was queued.
+        let sideKey = Int(side.rounded())
+        let token = Self.basemapToken
+        let key = Self.key(id: id, basemapToken: token, side: sideKey)
+        if let hit = cache.object(forKey: key) { return hit }
+        if let disk = await RecordListThumbnailStore.loadAsync(id: id, basemapToken: token, side: sideKey) {
+            cache.setObject(disk, forKey: key)
+            return disk
+        }
         let image = await TrackMapImage.render(
             route: route,
             size: CGSize(width: side, height: side),
             overlap: 0,
             thumbnail: true
         )
-        if let image {
-            cache.setObject(image, forKey: currentKey)
-        }
+        // The render follows the live basemap. Drop it if the mode moved, so a
+        // system-map image is never saved under the Tianditu name.
+        guard let image, Self.basemapToken == token else { return nil }
+        cache.setObject(image, forKey: key)
+        RecordListThumbnailStore.save(image, id: id, basemapToken: token, side: sideKey)
+        revision &+= 1
         return image
     }
 
-    private static func key(id: UUID, route: [GeoPoint], side: CGFloat) -> NSString {
-        let mode = SkyBasemapCenter.shared.mode == .tianditu ? "t" : "s"
-        return "\(id.uuidString)-\(route.count)-\(mode)-\(Int(side))-list" as NSString
+    /// Fills missing plates slowly. The caller restarts this when the workout ids
+    /// or the basemap mode change, so each pass uses one token. Sleeps between renders.
+    func backfill(workouts: [WorkoutRecord], side: CGFloat) async {
+        let sideKey = Int(side.rounded())
+        let token = Self.basemapToken
+        for workout in workouts {
+            guard !Task.isCancelled else { return }
+            guard workout.route.count >= 2 else { continue }
+            if await RecordListThumbnailStore.existsAsync(id: workout.id, basemapToken: token, side: sideKey) {
+                continue
+            }
+            _ = await warm(for: workout.id, route: workout.route, side: side)
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
+    }
+
+    func forget(id: UUID) {
+        RecordListThumbnailStore.deleteAll(for: id)
+        // NSCache has no prefix purge; drop the session plates for this id.
+        cache.removeAllObjects()
+        revision &+= 1
+    }
+
+    private static var basemapToken: String {
+        SkyBasemapCenter.shared.mode == .tianditu ? "t" : "s"
+    }
+
+    private static func key(id: UUID, basemapToken: String, side: Int) -> NSString {
+        RecordListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, side: side) as NSString
+    }
+
+    private static func warmStamp(id: UUID, basemapToken: String, side: Int) -> String {
+        "\(id.uuidString)-\(basemapToken)-\(side)"
     }
 
     private func acquire() async {
@@ -198,7 +319,8 @@ struct RecordTrackLine: View {
         }
         let spanX = max(maxX - minX, 1)
         let spanY = max(maxY - minY, 1)
-        let pad = min(size.width, size.height) * CGFloat(RecordListCardLayout.mapTrackInsetFraction)
+        // Edge pad covers the canvas end dot and the thicker basemap stroke.
+        let pad = CGFloat(RecordListCardLayout.mapTrackEdgePad)
         let width = max(size.width - pad * 2, 1)
         let height = max(size.height - pad * 2, 1)
         let scale = min(width / spanX, height / spanY)

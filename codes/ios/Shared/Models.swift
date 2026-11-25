@@ -34,8 +34,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// List-card accent for the sport chip and the empty-map color block.
-    /// Icons are not drawn on the list card until assets land.
+    /// List-card accent for the sport chip and the empty-route glass plate.
     var listAccentHex: UInt32 {
         switch self {
         case .outdoorRunning: return 0x22C55E
@@ -57,6 +56,17 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         case .functionalStrength: return "figure.strengthtraining.functional"
         case .hiit: return "figure.highintensity.intervaltraining"
         case .other: return "figure.mixed.cardio"
+        }
+    }
+
+    /// Asset catalog name for the empty-route list thumbnail, when one exists.
+    /// Strength uses the dumbbell plate; mixed training uses the checklist plate.
+    var listThumbnailAsset: String? {
+        switch self {
+        case .functionalStrength: return "RecordSportStrength"
+        case .hiit: return "RecordSportHIIT"
+        case .outdoorRunning, .indoorRunning, .trailRunning, .outdoorWalking, .hiking, .other:
+            return nil
         }
     }
 

@@ -37,7 +37,9 @@ enum RecordListCardLayout {
     static let lowerValueLine = 14.0
     static let lowerUnitGap = 3.0
     static let lowerUnitLine = 11.0
-    static let mapSide = 128.0
+    /// Thumbnail side matches `standardTextBlock` so the plate’s bottom edge
+    /// lines up with the metrics block at the default text size.
+    static let mapSide = 110.0
     static let mapLeading = 10.0
     static let mapToContent = 14.0
     static let contentTrailing = 14.0
@@ -54,11 +56,16 @@ enum RecordListCardLayout {
     static let firstCardGap = 10.0
     /// Thumbnail corner. Slightly tighter than `SkyTheme.Radius.chip`.
     static let mapCorner = 4.0
-    /// Share of the thumbnail side left clear on every edge. Kept tight so the
-    /// track fills the map while the stroke stays fully inside the frame.
-    static let mapTrackInsetFraction = 0.04
     /// Fallback / pending stroke width inside the square before the basemap lands.
     static let mapTrackLineWidth = 5.5
+    /// Matches `TrackPaint.recordListInnerPoints` on the baked basemap plate.
+    static let mapTrackBasemapLineWidth = 7.0
+    /// Clearance past the centerline so the thicker of the canvas end dot
+    /// (`0.55 × mapTrackLineWidth`) and the basemap stroke stay inside the frame.
+    static let mapTrackEdgePad = max(mapTrackLineWidth * 0.55, mapTrackBasemapLineWidth / 2)
+    /// `mapTrackEdgePad` as a fraction of `mapSide`. Long axis meets this inset;
+    /// short axis stays centered with more margin.
+    static let mapTrackInsetFraction = mapTrackEdgePad / mapSide
 
     static var lowerBlock: Double {
         lowerValueLine + lowerUnitGap + lowerUnitLine
@@ -85,10 +92,10 @@ enum RecordListCardLayout {
 
 /// How a route sits inside the square record thumbnail.
 ///
-/// The longer ground axis fills the inner box. The shorter axis stays centered,
-/// so every edge keeps `RecordListCardLayout.mapTrackInsetFraction` of the side
-/// or more. Inset is tight so the track is as large as possible without clipping.
-/// The full-screen 1.6× map fit is not used here.
+/// The longer ground axis meets the half-stroke inset on both sides. The shorter
+/// axis stays centered with more margin. Horizontally and vertically the track
+/// is centered; at least one axis is flush to the inset. The full-screen 1.6×
+/// map fit is not used here.
 enum RecordThumbnailFit {
     struct Frame {
         var x: Double

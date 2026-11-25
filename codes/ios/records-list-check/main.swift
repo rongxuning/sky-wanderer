@@ -6,6 +6,7 @@ import Foundation
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Formatting.swift \
 //   codes/ios/Shared/RecordFeedList.swift \
 //   codes/ios/Shared/RecordListCard.swift \
+//   codes/ios/Shared/RecordListThumbnailFile.swift \
 //   codes/ios/records-list-check/main.swift \
 //   -o /tmp/records-list-check && /tmp/records-list-check
 
@@ -292,7 +293,7 @@ check(
     "a 393pt phone keeps the 220pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 154,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 172,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
@@ -301,29 +302,58 @@ check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
-check(RecordListCardLayout.mapSide == 128, "thumbnail width is 128pt")
+check(RecordListCardLayout.mapSide == 110, "thumbnail side matches the 110pt text block")
+check(
+    RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock,
+    "thumbnail side equals the standard text block so bottoms align"
+)
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 18, "distance sits 18pt under the title row")
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
 check(RecordListCardLayout.middleToBottom == 10, "middle to bottom row is 10pt")
 check(RecordListCardLayout.lowerBlock == 28, "secondary metrics with units are 28pt")
-check(RecordListCardLayout.mapTrackInsetFraction == 0.04, "the track keeps a 4% inset on every edge")
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
+check(RecordListCardLayout.mapTrackBasemapLineWidth == 7.0, "basemap list stroke is 7pt")
+check(
+    abs(RecordListCardLayout.mapTrackEdgePad - 3.5) < 0.0001,
+    "edge pad is half the thicker basemap stroke"
+)
+check(
+    RecordListCardLayout.mapTrackEdgePad >= RecordListCardLayout.mapTrackLineWidth * 0.55,
+    "edge pad covers the canvas end dot"
+)
+check(
+    abs(RecordListCardLayout.mapTrackInsetFraction - RecordListCardLayout.mapTrackEdgePad / RecordListCardLayout.mapSide) < 0.0001,
+    "inset fraction is edge pad over the thumbnail side"
+)
+let inset = RecordListCardLayout.mapTrackInsetFraction
 let squareTrack = RecordThumbnailFit.normalizedFrame(width: 100, height: 100)
-check(abs(squareTrack.x - 0.04) < 0.001 && abs(squareTrack.y - 0.04) < 0.001, "a square track meets the inset")
+check(abs(squareTrack.x - inset) < 0.001 && abs(squareTrack.y - inset) < 0.001, "a square track meets the stroke inset")
 check(abs(squareTrack.x + squareTrack.width / 2 - 0.5) < 0.001, "a square track stays centered")
-check(abs(squareTrack.width - 0.92) < 0.001, "a square track fills the inner box")
+check(abs(squareTrack.width - (1 - inset * 2)) < 0.001, "a square track fills the inner box")
 let wideTrack = RecordThumbnailFit.normalizedFrame(width: 200, height: 40)
-check(abs(wideTrack.x - 0.04) < 0.001, "the long axis meets the side inset")
+check(abs(wideTrack.x - inset) < 0.001, "the long axis meets the side inset")
 check(abs(wideTrack.y + wideTrack.height / 2 - 0.5) < 0.001, "the short axis stays centered")
 check(wideTrack.height < wideTrack.width, "a wide track is not stretched into a square")
 let tallTrack = RecordThumbnailFit.normalizedFrame(width: 10, height: 80)
-check(abs(tallTrack.y - 0.04) < 0.001, "a tall track meets the top and bottom inset")
+check(abs(tallTrack.y - inset) < 0.001, "a tall track meets the top and bottom inset")
 check(abs(tallTrack.x + tallTrack.width / 2 - 0.5) < 0.001, "a tall track stays horizontally centered")
 check(RecordListCardLayout.mapLeading == 10, "map leading inset is 10pt")
 check(RecordListCardLayout.mapToContent == 14, "map to metrics gap is 14pt")
 check(RecordListCardLayout.contentTrailing == 14, "content trailing inset is 14pt")
 check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
+
+let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+check(
+    RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 110)
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-110.jpg",
+    "list thumbnails live under record-thumbs with id, basemap, and side"
+)
+check(
+    RecordListThumbnailFile.idPrefix(thumbID) == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-",
+    "delete uses the workout id prefix"
+)
+check(RecordListThumbnailFile.folder == "record-thumbs", "thumbnail folder name is fixed")
 
 let help = [
     RecordMetricHelp.loadBody,
@@ -346,6 +376,16 @@ check(
 check(SportKind.outdoorRunning.listAccentHex == 0x22C55E, "outdoor running accent")
 check(SportKind.functionalStrength.listAccentHex == 0x7C3AED, "strength accent")
 check(SportKind.hiit.listAccentHex == 0xEF4444, "mixed training accent")
+check(
+    SportKind.functionalStrength.listThumbnailAsset == "RecordSportStrength",
+    "strength uses the dumbbell list thumbnail"
+)
+check(
+    SportKind.hiit.listThumbnailAsset == "RecordSportHIIT",
+    "mixed training uses the checklist list thumbnail"
+)
+check(SportKind.outdoorRunning.listThumbnailAsset == nil, "running has no glass-plate asset")
+check(SportKind.other.listThumbnailAsset == nil, "other falls back to the SF Symbol")
 check(SportKind.outdoorWalking.listShowsRouteMetrics, "outdoor walking shows route metrics")
 check(SportKind.outdoorWalking.usesOutdoorLocation, "outdoor walking records GPS")
 check(SportKind.outdoorWalking.symbol == "figure.walk", "outdoor walking uses the walk symbol")

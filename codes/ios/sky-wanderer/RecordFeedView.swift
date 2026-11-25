@@ -12,6 +12,7 @@ struct RecordFeedView: View {
     @State private var sportFilter: SportKind?
     @State private var showsMetricHelp = false
     @ScaledMetric(relativeTo: .subheadline) private var filterSize: CGFloat = 14
+    @ObservedObject private var basemapCenter = SkyBasemapCenter.shared
 
     var body: some View {
         feed
@@ -19,6 +20,15 @@ struct RecordFeedView: View {
             .background(SkyTheme.Color.grouped.ignoresSafeArea())
             .task {
                 await app.importFromApple()
+            }
+            .task(id: PlateBackfillKey(ids: app.workouts.map(\.id), tianditu: basemapCenter.mode == .tianditu)) {
+                // List cells only read disk/memory plates. Missing ones fill in
+                // slowly here so cold launch never opens an MKMapView per card.
+                let routed = app.workouts.filter { $0.route.count >= 2 }
+                await RecordMapThumbnails.shared.backfill(
+                    workouts: routed,
+                    side: CGFloat(RecordListCardLayout.mapSide)
+                )
             }
             .alert(
                 "删除这条训练记录？",
@@ -241,6 +251,11 @@ struct RecordFeedView: View {
         .padding(.horizontal, 32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+private struct PlateBackfillKey: Hashable {
+    var ids: [UUID]
+    var tianditu: Bool
 }
 
 /// Analysis tab. No page title. Opening the tab still imports from Apple Health once.
