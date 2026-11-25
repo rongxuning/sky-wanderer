@@ -4,16 +4,23 @@ import UIKit
 enum TrackPaint {
     /// Sky primary `#1E88FE`. Start, live, record, library, and share.
     static let primary = UIColor(red: 30.0 / 255, green: 136.0 / 255, blue: 254.0 / 255, alpha: 1)
+    /// Record-list thumbnail track `#2F6FBF`.
+    static let recordList = UIColor(red: 47.0 / 255, green: 111.0 / 255, blue: 191.0 / 255, alpha: 1)
     /// Planned line on the live map, so it stays distinct from the recording.
     static let planned = UIColor(red: 142.0 / 255, green: 142.0 / 255, blue: 147.0 / 255, alpha: 1)
     static let casing = UIColor.white.withAlphaComponent(0.92)
     static let casingPoints: CGFloat = 8
     static let solidInnerPoints: CGFloat = 4.5
+    /// Thicker list stroke; no white casing so the blue reads as one solid line.
+    static let recordListInnerPoints: CGFloat = 7
+    static let recordListCasingPoints: CGFloat = 0
     static let elevationInnerPoints: CGFloat = 4
 }
 
 enum TrackStyle {
     case solid(UIColor)
+    /// Record-list thumbnail: thick `#2F6FBF` stroke without a white casing.
+    case recordList
     /// Route detail. Green (0.18, 0.78, 0.22) → yellow → red on this route's own altitudes.
     case elevation
 }
@@ -106,6 +113,7 @@ final class TrackOverlay: NSObject, MKOverlay {
     let casing: [MKMapPoint]
     let runs: [Run]
     let innerWidth: CGFloat
+    let casingWidth: CGFloat
     let boundingMapRect: MKMapRect
     let coordinate: CLLocationCoordinate2D
 
@@ -115,13 +123,23 @@ final class TrackOverlay: NSObject, MKOverlay {
         switch style {
         case .solid(let color):
             innerWidth = TrackPaint.solidInnerPoints
+            casingWidth = TrackPaint.casingPoints
             if source.count >= 2 {
                 built = [ElevationTrackRun(coordinates: source.map(\.coordinate), color: color)]
             } else {
                 built = []
             }
+        case .recordList:
+            innerWidth = TrackPaint.recordListInnerPoints
+            casingWidth = TrackPaint.recordListCasingPoints
+            if source.count >= 2 {
+                built = [ElevationTrackRun(coordinates: source.map(\.coordinate), color: TrackPaint.recordList)]
+            } else {
+                built = []
+            }
         case .elevation:
             innerWidth = TrackPaint.elevationInnerPoints
+            casingWidth = TrackPaint.casingPoints
             built = ElevationTrack.make(points: source)
             if built.isEmpty, source.count >= 2 {
                 let rgb = ElevationRGB.mid
@@ -194,14 +212,16 @@ final class TrackOverlayRenderer: MKOverlayRenderer {
         context.setLineCap(.round)
         context.setLineJoin(.round)
         guard let first = track.casing.first else { return }
-        context.beginPath()
-        context.setStrokeColor(TrackPaint.casing.cgColor)
-        context.setLineWidth(TrackPaint.casingPoints / scale)
-        context.move(to: point(for: first))
-        for mapPoint in track.casing.dropFirst() {
-            context.addLine(to: point(for: mapPoint))
+        if track.casingWidth > 0 {
+            context.beginPath()
+            context.setStrokeColor(TrackPaint.casing.cgColor)
+            context.setLineWidth(track.casingWidth / scale)
+            context.move(to: point(for: first))
+            for mapPoint in track.casing.dropFirst() {
+                context.addLine(to: point(for: mapPoint))
+            }
+            context.strokePath()
         }
-        context.strokePath()
 
         let pad = 64 / Double(scale)
         let visible = MKMapRect(

@@ -1,73 +1,76 @@
 import SwiftUI
 import UIKit
 
-/// Square map for one record card: the basemap with the stored track on it.
+/// Map plate for one record card: the basemap with the stored track on it.
 ///
 /// The image comes from the same offscreen map as the share image, so the
-/// datum, tiles, and track stroke match the detail screen. Until it arrives
-/// the cell shows the bare stroke on the backdrop. No route stays the detail
-/// empty line. The stroke is the stored track, never a stand-in city or drawing.
+/// datum and tiles match the detail screen. Until it arrives the cell shows
+/// the bare stroke on the backdrop. Empty routes are not drawn here — the
+/// card swaps in `RecordSportSwatch` instead. The stroke is the stored track,
+/// never a stand-in city or drawing.
 struct RecordRouteThumbnail: View {
     var workoutID: UUID
     var route: [GeoPoint]
+    var width: CGFloat
+    var height: CGFloat
     @ObservedObject private var basemap = SkyBasemapCenter.shared
-    @ScaledMetric(relativeTo: .caption2) private var emptySize: CGFloat = 11
     @State private var mapImage: UIImage?
 
-    private var side: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
-
     private var loadKey: String {
-        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")"
+        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(Int(width))x\(Int(height))"
+    }
+
+    private var renderSide: CGFloat {
+        max(width, height, CGFloat(RecordListCardLayout.mapSide))
     }
 
     var body: some View {
         ZStack {
             Color(uiColor: SkyBasemapInstaller.backdrop)
-            if route.count < 2 {
-                Text("这次没有轨迹")
-                    .font(.system(size: emptySize, weight: .semibold))
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    .multilineTextAlignment(.center)
-                    .padding(4)
-            } else {
+            if route.count >= 2 {
                 RecordTrackLine(points: route)
                 if let mapImage {
                     Image(uiImage: mapImage)
                         .resizable()
-                        .frame(width: side, height: side)
+                        .scaledToFill()
+                        .frame(width: width, height: height)
+                        .clipped()
                         .transition(.opacity)
                 }
             }
         }
-        .frame(width: side, height: side)
+        .frame(width: width, height: height)
         .clipShape(
-            RoundedRectangle(cornerRadius: SkyTheme.Radius.chip, style: .continuous)
+            RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
         )
         .task(id: loadKey) {
             guard route.count >= 2 else { return }
-            let image = await RecordMapThumbnails.shared.image(for: workoutID, route: route, side: side)
+            let image = await RecordMapThumbnails.shared.image(
+                for: workoutID,
+                route: route,
+                side: renderSide
+            )
             guard let image, !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) {
                 mapImage = image
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(route.count >= 2 ? "轨迹" : "这次没有轨迹")
+        .accessibilityLabel("轨迹")
     }
 }
 
-/// Sport icon in the thumbnail slot, for sports that have no map or distance.
-/// Drawn without a gray plate so the blue symbol sits on the card itself.
-struct RecordSportIcon: View {
+/// Solid sport-color plate when the card has no route to draw.
+/// Icons stay off until dedicated assets land.
+struct RecordSportSwatch: View {
     var sport: SportKind
 
-    private var side: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
-
     var body: some View {
-        Image(systemName: sport.symbol)
-            .font(.system(size: side * 0.5, weight: .semibold))
-            .foregroundStyle(SkyTheme.Color.primary)
-            .frame(width: side, height: side)
+        SkyTheme.Color.sport(sport)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(
+                RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
+            )
             .accessibilityHidden(true)
     }
 }
@@ -105,7 +108,7 @@ final class RecordMapThumbnails {
 
     private static func key(id: UUID, route: [GeoPoint], side: CGFloat) -> NSString {
         let mode = SkyBasemapCenter.shared.mode == .tianditu ? "t" : "s"
-        return "\(id.uuidString)-\(route.count)-\(mode)-\(Int(side))" as NSString
+        return "\(id.uuidString)-\(route.count)-\(mode)-\(Int(side))-list" as NSString
     }
 
     private func acquire() async {
@@ -125,11 +128,10 @@ final class RecordMapThumbnails {
     }
 }
 
-/// Brand blue kept light enough that numbers drawn on top stay readable.
-/// Route cards still use this stroke.
+/// Record-list track ink. Matches the basemap thumbnail stroke.
 private enum RecordTrackInk {
-    /// About 38% of `#1E88FE`, inside the 0.35–0.40 band for the background track.
-    static let color = SkyTheme.Color.primary.opacity(0.38)
+    static let color = SkyTheme.Color.recordTrack
+    static var lineWidth: CGFloat { CGFloat(RecordListCardLayout.mapTrackLineWidth) }
 }
 
 /// Route stroke. Long traces are sampled down before they are projected.
@@ -149,10 +151,20 @@ struct RecordTrackLine: View {
             context.stroke(
                 path,
                 with: .color(RecordTrackInk.color),
-                style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round)
+                style: StrokeStyle(
+                    lineWidth: RecordTrackInk.lineWidth,
+                    lineCap: .round,
+                    lineJoin: .round
+                )
             )
             if let last = spots.last {
-                let dot = CGRect(x: last.x - 2.5, y: last.y - 2.5, width: 5, height: 5)
+                let radius = RecordTrackInk.lineWidth * 0.55
+                let dot = CGRect(
+                    x: last.x - radius,
+                    y: last.y - radius,
+                    width: radius * 2,
+                    height: radius * 2
+                )
                 context.fill(Path(ellipseIn: dot), with: .color(RecordTrackInk.color))
             }
         }

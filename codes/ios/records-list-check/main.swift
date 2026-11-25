@@ -267,7 +267,7 @@ check(RecordListCardText.energy(312.4) == "312千卡", "energy is whole kilocalo
 check(RecordListCardText.energy(0) == "—", "missing energy stays —")
 check(
     SportKind.allCases.filter { !$0.listShowsRouteMetrics } == [.functionalStrength, .hiit, .other],
-    "strength, HIIT, and other use the icon and energy card"
+    "strength, mixed training, and other use the energy card"
 )
 check(RecordListCardText.score == "—", "the list has no per-record score")
 
@@ -275,20 +275,24 @@ check(
     RecordListMetricColumn.allCases.map(\.rawValue) == ["heartRate", "pace", "load", "score"],
     "the lower row is heart rate, pace, load, score"
 )
+check(
+    RecordListMetricColumn.allCases.map(\.unit) == ["次/分", "分/公里", "负荷", "评分"],
+    "each secondary metric has a unit caption"
+)
 
-check(RecordListCardLayout.standardTextBlock == 120, "standard text block is 120pt")
-check(RecordListCardLayout.standardMapBlock == 140, "map block is 140pt")
+check(RecordListCardLayout.standardTextBlock == 110, "standard text block is 110pt")
+check(RecordListCardLayout.standardMapBlock == 110, "map block matches the text block")
 check(
-    RecordListCardLayout.standardMapBlock == RecordListCardLayout.standardHeight,
-    "map block matches the standard card height"
-)
-check(abs(RecordListCardLayout.columnWidth - 48.75) < 0.001, "213pt track splits into 48.75pt columns")
-check(
-    RecordListCardLayout.informationWidth(cardWidth: 393) == 213,
-    "a 393pt phone keeps the 213pt information track"
+    RecordListCardLayout.standardHeight
+        == RecordListCardLayout.contentInsetVertical * 2 + RecordListCardLayout.standardTextBlock,
+    "card height is vertical insets plus the text block"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 140,
+    RecordListCardLayout.informationWidth(cardWidth: 393) == 220,
+    "a 393pt phone keeps the 220pt information track"
+)
+check(
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 154,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
@@ -297,12 +301,14 @@ check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
-check(RecordListCardLayout.mapSide == 136, "thumbnail is 136pt")
-check(RecordListCardLayout.titleLine == 30, "the sport chip has a 30pt line")
-check(RecordListCardLayout.titleToDate == 2, "date sits 2pt under the sport chip")
-check(RecordListCardLayout.dateLine == 14, "the date line is 14pt")
+check(RecordListCardLayout.mapSide == 128, "thumbnail width is 128pt")
+check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
+check(RecordListCardLayout.titleToMiddle == 18, "distance sits 18pt under the title row")
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
+check(RecordListCardLayout.middleToBottom == 10, "middle to bottom row is 10pt")
+check(RecordListCardLayout.lowerBlock == 28, "secondary metrics with units are 28pt")
 check(RecordListCardLayout.mapTrackInsetFraction == 0.04, "the track keeps a 4% inset on every edge")
+check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
 let squareTrack = RecordThumbnailFit.normalizedFrame(width: 100, height: 100)
 check(abs(squareTrack.x - 0.04) < 0.001 && abs(squareTrack.y - 0.04) < 0.001, "a square track meets the inset")
 check(abs(squareTrack.x + squareTrack.width / 2 - 0.5) < 0.001, "a square track stays centered")
@@ -314,11 +320,10 @@ check(wideTrack.height < wideTrack.width, "a wide track is not stretched into a 
 let tallTrack = RecordThumbnailFit.normalizedFrame(width: 10, height: 80)
 check(abs(tallTrack.y - 0.04) < 0.001, "a tall track meets the top and bottom inset")
 check(abs(tallTrack.x + tallTrack.width / 2 - 0.5) < 0.001, "a tall track stays horizontally centered")
-check(RecordListCardLayout.mapTrailing == 20, "thumbnail inset is 20pt")
-check(RecordListCardLayout.contentInsetVertical == 6, "text inset is 6pt")
-check(RecordListCardLayout.mapInsetVertical == 2, "map inset is 2pt")
-check(RecordListCardLayout.topToMiddle == 8, "title to metrics is 8pt")
-check(RecordListCardLayout.middleToBottom == 2, "middle to bottom row is 2pt")
+check(RecordListCardLayout.mapLeading == 10, "map leading inset is 10pt")
+check(RecordListCardLayout.mapToContent == 14, "map to metrics gap is 14pt")
+check(RecordListCardLayout.contentTrailing == 14, "content trailing inset is 14pt")
+check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 
 let help = [
     RecordMetricHelp.loadBody,
@@ -329,20 +334,55 @@ check(!help.contains("AU"), "help does not call the load AU")
 check(!help.contains("此稿"), "help does not quote the design draft")
 check(!help.contains("任意单位"), "help does not invent an arbitrary unit")
 check(RecordMetricHelp.loadBody.contains("Edwards TRIMP"), "load help names the existing calculation")
-check(RecordMetricHelp.scoreBody.contains("—"), "score help says the cell is missing")
-check(RecordMetricHelp.missing.contains("不是 0"), "a dash is not zero")
+check(RecordMetricHelp.scoreBody.contains("不展示"), "score help says the list omits the cell")
+check(RecordMetricHelp.missing.contains("不是 0"), "missing values are not zero")
 
 check(
     SportKind.allCases.map(\.title) == [
-        "户外跑步", "室内跑步", "越野跑", "户外步行", "徒步", "功能性力量训练", "HIIT训练", "其他"
+        "户外跑步", "室内跑步", "越野跑", "户外步行", "徒步", "力量训练", "综合训练", "其他"
     ],
     "the app sport list is fixed and ordered"
 )
+check(SportKind.outdoorRunning.listAccentHex == 0x22C55E, "outdoor running accent")
+check(SportKind.functionalStrength.listAccentHex == 0x7C3AED, "strength accent")
+check(SportKind.hiit.listAccentHex == 0xEF4444, "mixed training accent")
 check(SportKind.outdoorWalking.listShowsRouteMetrics, "outdoor walking shows route metrics")
 check(SportKind.outdoorWalking.usesOutdoorLocation, "outdoor walking records GPS")
 check(SportKind.outdoorWalking.symbol == "figure.walk", "outdoor walking uses the walk symbol")
 check(SportKind(rawValue: "running") == .outdoorRunning, "legacy running raw value is outdoor running")
 check(SportKind.outdoorRunning.rawValue == "running", "outdoor running keeps the legacy storage key")
+
+let withHeart = listedWorkout(sport: .outdoorRunning, start: saturday)
+check(
+    RecordListSecondaryMetric.visible(in: withHeart).map(\.column) == [.heartRate, .pace, .load],
+    "running shows heart rate, pace, and load when each has a value"
+)
+check(
+    !RecordListSecondaryMetric.visible(in: withHeart).contains { $0.column == .score },
+    "missing score is omitted from the secondary row"
+)
+var noHeart = withHeart
+noHeart.averageHeartRate = 0
+noHeart.heartRate = []
+check(
+    !RecordListSecondaryMetric.visible(in: noHeart).contains { $0.column == .heartRate },
+    "missing heart rate is omitted from the secondary row"
+)
+check(
+    RecordListSecondaryMetric.visible(in: noHeart).map(\.column).contains(.pace),
+    "pace stays when heart rate is missing"
+)
+var noPace = withHeart
+noPace.distanceMeters = 0
+check(
+    !RecordListSecondaryMetric.visible(in: noPace).contains { $0.column == .pace },
+    "missing pace is omitted from the secondary row"
+)
+let strengthCard = listedWorkout(sport: .functionalStrength, start: saturday)
+check(
+    !RecordListSecondaryMetric.visible(in: strengthCard).contains { $0.column == .pace },
+    "strength cards never show pace"
+)
 
 let mixed = [
     listedWorkout(sport: .outdoorRunning, start: date(shanghai, year: 2026, month: 11, day: 21, hour: 8)),

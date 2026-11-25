@@ -134,7 +134,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         map.removeAnnotations(map.annotations)
         let shown = TrackDatum.displayed(route, mode: mode)
         if shown.count >= 2 {
-            map.addOverlay(TrackOverlay(points: shown, style: .solid(TrackPaint.primary)))
+            let style: TrackStyle = thumbnail ? .recordList : .solid(TrackPaint.primary)
+            map.addOverlay(TrackOverlay(points: shown, style: style))
             if !thumbnail, let first = shown.first?.coordinate {
                 map.addAnnotation(EndpointAnnotation(coordinate: first, square: false))
             }
