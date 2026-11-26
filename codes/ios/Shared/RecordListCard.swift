@@ -27,20 +27,20 @@ enum RecordListFilter {
 /// last trailing so the last cell shares duration’s right edge.
 enum RecordListCardLayout {
     /// Card height at the default text size: vertical insets plus the text block.
-    static let standardHeight = 130.0
+    static let standardHeight = 120.0
     static let contentInsetVertical = 10.0
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
-    static let titleToMiddle = 18.0
+    static let titleToMiddle = 12.0
     static let upperLine = 32.0
     /// Gap between the distance row and the secondary metrics.
-    static let middleToBottom = 10.0
+    static let middleToBottom = 6.0
     static let lowerValueLine = 14.0
     static let lowerUnitGap = 3.0
     static let lowerUnitLine = 11.0
     /// Thumbnail side matches `standardTextBlock` so the plate’s bottom edge
     /// lines up with the metrics block at the default text size.
-    static let mapSide = 110.0
+    static let mapSide = 100.0
     static let mapLeading = 10.0
     static let mapToContent = 14.0
     static let contentTrailing = 14.0

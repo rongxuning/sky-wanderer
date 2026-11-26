@@ -300,8 +300,8 @@ check(
     "two secondary cells are leading and trailing"
 )
 
-check(RecordListCardLayout.standardTextBlock == 110, "standard text block is 110pt")
-check(RecordListCardLayout.standardMapBlock == 110, "map block matches the text block")
+check(RecordListCardLayout.standardTextBlock == 100, "standard text block is 100pt")
+check(RecordListCardLayout.standardMapBlock == 100, "map block matches the text block")
 check(
     RecordListCardLayout.standardHeight
         == RecordListCardLayout.contentInsetVertical * 2 + RecordListCardLayout.standardTextBlock,
@@ -312,7 +312,7 @@ check(
     "a 393pt phone keeps the 220pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 172,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 182,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
@@ -321,15 +321,15 @@ check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
-check(RecordListCardLayout.mapSide == 110, "thumbnail side matches the 110pt text block")
+check(RecordListCardLayout.mapSide == 100, "thumbnail side matches the 100pt text block")
 check(
     RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock,
     "thumbnail side equals the standard text block so bottoms align"
 )
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
-check(RecordListCardLayout.titleToMiddle == 18, "distance sits 18pt under the title row")
+check(RecordListCardLayout.titleToMiddle == 12, "distance sits 12pt under the title row")
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
-check(RecordListCardLayout.middleToBottom == 10, "middle to bottom row is 10pt")
+check(RecordListCardLayout.middleToBottom == 6, "middle to bottom row is 6pt")
 check(RecordListCardLayout.lowerBlock == 28, "secondary metrics with units are 28pt")
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
 check(RecordListCardLayout.mapTrackBasemapLineWidth == 7.0, "basemap list stroke is 7pt")
@@ -364,8 +364,8 @@ check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
 check(
-    RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 110)
-        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-110-v2.jpg",
+    RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 100)
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v2.jpg",
     "list thumbnails live under record-thumbs with id, basemap, side, and plate version"
 )
 check(RecordListThumbnailFile.plateVersion == "2", "plate version invalidates old track framing")
