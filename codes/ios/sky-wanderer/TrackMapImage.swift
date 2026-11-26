@@ -4,8 +4,9 @@ import UIKit
 /// Share image from the same basemap and the same `TrackOverlay` as the screen.
 /// This is an offscreen `MKMapView`, not an `MKMapSnapshotter` of the system map.
 /// `thumbnail` drops the credit capsule, the legal line, the provider logo,
-/// the empty-route caption, and the endpoint markers. The track is centered;
-/// its longer axis meets a half-stroke inset. Record cards use it.
+/// and the empty-route caption. Multi-point routes omit endpoint markers and
+/// center the track so its longer axis meets a half-stroke inset. A single
+/// start coordinate draws a round pin on a neighborhood map. Record cards use it.
 enum TrackMapImage {
     @MainActor
     static func render(route: [GeoPoint], size: CGSize, overlap: CGFloat, thumbnail: Bool = false) async -> UIImage? {
@@ -148,6 +149,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             if !thumbnail, shown.count >= 2, let last = shown.last?.coordinate {
                 map.addAnnotation(EndpointAnnotation(coordinate: last, square: true))
             }
+        } else if thumbnail, shown.count == 1, let only = shown.first?.coordinate {
+            map.addAnnotation(EndpointAnnotation(coordinate: only, square: false))
         }
         if let credit = window?.viewWithTag(41) as? BasemapCreditLabel {
             credit.setText(SkyBasemapCenter.shared.caption)
@@ -217,14 +220,32 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
     /// Centers the track in the thumbnail. The longer ground axis meets the
     /// half-stroke inset; the shorter axis stays centered. A straight
     /// north-south or east-west trace opens its zero side just enough for
-    /// MapKit to keep the line in the middle.
+    /// MapKit to keep the line in the middle. A single start pin uses a
+    /// fixed neighborhood span.
     private func show(_ route: [GeoPoint], on map: MKMapView, mode: SkyBasemapMode) {
+        let shown = TrackDatum.displayed(route, mode: mode)
+        if thumbnail, shown.count == 1, let only = shown.first {
+            map.layoutIfNeeded()
+            let coordinate = only.coordinate
+            guard CLLocationCoordinate2DIsValid(coordinate) else { return }
+            map.setRegion(
+                MKCoordinateRegion(center: coordinate, latitudinalMeters: 420, longitudinalMeters: 420),
+                animated: false
+            )
+            return
+        }
         if thumbnail, let rect = Self.trackRect(route, mode: mode) {
             map.layoutIfNeeded()
+            // Expand the aspect-filled rect instead of using MK edge padding.
+            // Edge padding left extra empty space and often parked the track low
+            // after tiles finished loading.
             let fitted = Self.aspectFilledMapRect(rect, viewSize: size)
-            let pad = CGFloat(RecordListCardLayout.mapTrackEdgePad)
-            let insets = UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad)
-            map.setVisibleMapRect(fitted, edgePadding: insets, animated: false)
+            let visible = Self.paddedVisibleMapRect(
+                fitted,
+                viewSize: size,
+                edgePad: RecordListCardLayout.mapTrackEdgePad
+            )
+            map.setVisibleMapRect(visible, animated: false)
             return
         }
         if let region = region(for: route, mode: mode) {
@@ -254,8 +275,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
     }
 
     /// Grows the shorter map-rect axis until the rect aspect matches the view.
-    /// After equal edge padding, the long track axis meets the inset and the
-    /// short axis stays centered — same rule as `RecordThumbnailFit`.
+    /// The long track axis then meets the stroke inset and the short axis stays
+    /// centered — same rule as `RecordThumbnailFit`.
     static func aspectFilledMapRect(_ rect: MKMapRect, viewSize: CGSize) -> MKMapRect {
         guard viewSize.width > 1, viewSize.height > 1, !rect.isNull else { return rect }
         var result = rect
@@ -275,6 +296,21 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             result.size.width = targetWidth
         }
         return result
+    }
+
+    /// Scales an aspect-filled track rect so the stroke pad fits without MK
+    /// `edgePadding`, which was zooming the track back out after load.
+    static func paddedVisibleMapRect(_ rect: MKMapRect, viewSize: CGSize, edgePad: Double) -> MKMapRect {
+        let side = Double(min(viewSize.width, viewSize.height))
+        let scale = RecordThumbnailFit.visibleMapScale(side: side, edgePad: edgePad)
+        let width = rect.size.width * scale
+        let height = rect.size.height * scale
+        return MKMapRect(
+            x: rect.midX - width / 2,
+            y: rect.midY - height / 2,
+            width: width,
+            height: height
+        )
     }
 
     private func region(for route: [GeoPoint], mode: SkyBasemapMode) -> MKCoordinateRegion? {

@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Full-width record card. Map or sport-color plate on the left; sport chip with
-/// start time, distance / duration, and secondary metrics with units on the right.
-/// Missing secondary values are omitted. Cadence and the motivation line stay off.
+/// Full-width record card. Map (track or start pin) or sport-color plate on the
+/// left; ink sport chip with start time, distance / duration, and secondary
+/// metrics with units on the right. Missing secondary values are omitted.
+/// Cadence and the motivation line stay off.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
     var explainSpace: String
@@ -67,14 +68,15 @@ struct RecordSummaryCard: View {
 
     @ViewBuilder
     private var visual: some View {
-        if workout.route.count >= 2 {
+        switch RecordListThumbnailKind.resolve(routeCount: workout.route.count) {
+        case .track, .startPoint:
             RecordRouteThumbnail(
                 workoutID: workout.id,
                 route: workout.route,
                 width: CGFloat(RecordListCardLayout.mapSide),
                 height: mapHeight
             )
-        } else {
+        case .swatch:
             RecordSportSwatch(sport: workout.sport)
         }
     }
@@ -103,7 +105,7 @@ struct RecordSummaryCard: View {
                 primaryMetric(
                     RecordListCardText.clock(workout.trainingDuration),
                     durationFont,
-                    SkyTheme.Color.sport(workout.sport),
+                    SkyTheme.Color.ink,
                     alignment: .trailing
                 )
             }
@@ -141,7 +143,7 @@ struct RecordSummaryCard: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
                 .background(
-                    SkyTheme.Color.sport(workout.sport),
+                    SkyTheme.Color.ink,
                     in: RoundedRectangle(cornerRadius: 3, style: .continuous)
                 )
                 .fixedSize(horizontal: true, vertical: true)
@@ -282,8 +284,13 @@ struct RecordSummaryCard: View {
                 parts.append("训练评分 \(item.value)")
             }
         }
-        if workout.route.count >= 2 {
+        switch RecordListThumbnailKind.resolve(routeCount: workout.route.count) {
+        case .track:
             parts.append("有轨迹")
+        case .startPoint:
+            parts.append("有训练地点")
+        case .swatch:
+            break
         }
         return parts.joined(separator: "，")
     }
