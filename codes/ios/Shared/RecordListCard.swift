@@ -91,6 +91,28 @@ enum RecordListCardLayout {
     }
 }
 
+/// List-card chrome that stays on the ink token — sport chip fill and duration.
+/// Matches the start-time text. Does not follow `SportKind.listAccentHex`.
+enum RecordListChrome {
+    static let labelHex: UInt32 = 0x1C1C1E
+}
+
+/// What the list card draws on the left plate.
+enum RecordListThumbnailKind: Equatable {
+    /// GPS polyline, two or more points.
+    case track
+    /// One start coordinate — neighborhood map with a round pin.
+    case startPoint
+    /// No usable coordinate; sport-tint glass plate and icon.
+    case swatch
+
+    static func resolve(routeCount: Int) -> RecordListThumbnailKind {
+        if routeCount >= 2 { return .track }
+        if routeCount == 1 { return .startPoint }
+        return .swatch
+    }
+}
+
 /// How a route sits inside the square record thumbnail.
 ///
 /// The longer ground axis meets the half-stroke inset on both sides. The shorter
@@ -121,6 +143,14 @@ enum RecordThumbnailFit {
             width: drawWidth,
             height: drawHeight
         )
+    }
+
+    /// Grow an aspect-filled map rect so a point pad survives without MK edge
+    /// padding. MapKit's edge padding can leave extra empty space and bias the
+    /// track toward the bottom after tiles load.
+    static func visibleMapScale(side: Double, edgePad: Double) -> Double {
+        let usable = max(side - edgePad * 2, 1)
+        return side / usable
     }
 }
 

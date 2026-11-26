@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 
 /// Map plate for one record card: a disk/memory basemap plate when one exists,
-/// otherwise the bare track stroke on the backdrop.
+/// otherwise the bare track stroke or start pin on the backdrop.
 ///
 /// The list never opens a live `MKMapView` per card. That stampeded on cold
 /// launch and jetsam-killed the app. Plates are written when a workout is saved
@@ -23,8 +23,12 @@ struct RecordRouteThumbnail: View {
         CGFloat(RecordListCardLayout.mapSide)
     }
 
+    private var kind: RecordListThumbnailKind {
+        RecordListThumbnailKind.resolve(routeCount: route.count)
+    }
+
     private var loadKey: String {
-        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(thumbs.revision)"
+        "\(workoutID.uuidString)-\(route.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(thumbs.revision)-\(RecordListThumbnailFile.plateVersion)"
     }
 
     var body: some View {
@@ -39,7 +43,7 @@ struct RecordRouteThumbnail: View {
             RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
         )
         .task(id: loadKey) {
-            guard route.count >= 2 else { return }
+            guard kind != .swatch else { return }
             let image = await RecordMapThumbnails.shared.cachedImage(
                 for: workoutID,
                 side: plateSide
@@ -56,12 +60,13 @@ struct RecordRouteThumbnail: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("轨迹")
+        .accessibilityLabel(kind == .startPoint ? "训练地点" : "轨迹")
     }
 
     @ViewBuilder
     private var plate: some View {
-        if route.count >= 2 {
+        switch kind {
+        case .track:
             ZStack {
                 RecordTrackLine(points: route)
                 if let mapImage {
@@ -71,11 +76,24 @@ struct RecordRouteThumbnail: View {
                         .transition(.opacity)
                 }
             }
+        case .startPoint:
+            ZStack {
+                if let mapImage {
+                    Image(uiImage: mapImage)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                } else if let point = route.first {
+                    RecordStartPointMark(point: point)
+                }
+            }
+        case .swatch:
+            EmptyView()
         }
     }
 }
 
-/// Frosted glass plate when the card has no route to draw.
+/// Frosted glass plate when the card has no start coordinate to map.
 /// Strength and mixed training use their catalog icons; other sports fall
 /// back to the SF Symbol. The tint stays a light wash of the sport accent.
 struct RecordSportSwatch: View {
@@ -152,7 +170,7 @@ final class RecordMapThumbnails: ObservableObject {
 
     /// Fire-and-forget warm after a workout is saved. Skips if already queued.
     func enqueueWarm(for id: UUID, route: [GeoPoint], side: CGFloat) {
-        guard route.count >= 2 else { return }
+        guard RecordListThumbnailKind.resolve(routeCount: route.count) != .swatch else { return }
         let sideKey = Int(side.rounded())
         let token = Self.basemapToken
         let stamp = Self.warmStamp(id: id, basemapToken: token, side: sideKey)
@@ -167,7 +185,7 @@ final class RecordMapThumbnails: ObservableObject {
     /// One MapKit render, then disk + memory. Serialized across the process.
     @discardableResult
     func warm(for id: UUID, route: [GeoPoint], side: CGFloat) async -> UIImage? {
-        guard route.count >= 2 else { return nil }
+        guard RecordListThumbnailKind.resolve(routeCount: route.count) != .swatch else { return nil }
         if let hit = await cachedImage(for: id, side: side) { return hit }
         await acquire()
         defer { release() }
@@ -203,7 +221,7 @@ final class RecordMapThumbnails: ObservableObject {
         let token = Self.basemapToken
         for workout in workouts {
             guard !Task.isCancelled else { return }
-            guard workout.route.count >= 2 else { continue }
+            guard RecordListThumbnailKind.resolve(routeCount: workout.route.count) != .swatch else { continue }
             if await RecordListThumbnailStore.existsAsync(id: workout.id, basemapToken: token, side: sideKey) {
                 continue
             }
@@ -253,6 +271,35 @@ final class RecordMapThumbnails: ObservableObject {
 private enum RecordTrackInk {
     static let color = SkyTheme.Color.recordTrack
     static var lineWidth: CGFloat { CGFloat(RecordListCardLayout.mapTrackLineWidth) }
+}
+
+/// Placeholder start pin while the basemap plate is still missing.
+struct RecordStartPointMark: View {
+    var point: GeoPoint
+
+    var body: some View {
+        Canvas { context, size in
+            let radius = max(RecordTrackInk.lineWidth * 0.9, 5)
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let ring = CGRect(
+                x: center.x - radius - 2,
+                y: center.y - radius - 2,
+                width: (radius + 2) * 2,
+                height: (radius + 2) * 2
+            )
+            let disc = CGRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )
+            context.fill(Path(ellipseIn: ring), with: .color(.white))
+            context.fill(Path(ellipseIn: disc), with: .color(RecordTrackInk.color))
+        }
+        .accessibilityHidden(true)
+        // Keep `point` so callers pass the start coordinate explicitly.
+        .opacity(point.latitude.isFinite ? 1 : 0)
+    }
 }
 
 /// Route stroke. Long traces are sampled down before they are projected.

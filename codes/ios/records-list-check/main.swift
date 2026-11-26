@@ -365,14 +365,30 @@ check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
 check(
     RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 110)
-        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-110.jpg",
-    "list thumbnails live under record-thumbs with id, basemap, and side"
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-110-v2.jpg",
+    "list thumbnails live under record-thumbs with id, basemap, side, and plate version"
 )
+check(RecordListThumbnailFile.plateVersion == "2", "plate version invalidates old track framing")
 check(
     RecordListThumbnailFile.idPrefix(thumbID) == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-",
     "delete uses the workout id prefix"
 )
 check(RecordListThumbnailFile.folder == "record-thumbs", "thumbnail folder name is fixed")
+
+check(RecordListChrome.labelHex == 0x1C1C1E, "list sport chip and duration use ink")
+check(RecordListThumbnailKind.resolve(routeCount: 0) == .swatch, "no points keep the glass plate")
+check(RecordListThumbnailKind.resolve(routeCount: 1) == .startPoint, "one point is a start pin map")
+check(RecordListThumbnailKind.resolve(routeCount: 2) == .track, "two points draw the track")
+check(RecordListThumbnailKind.resolve(routeCount: 40) == .track, "longer routes stay on the track plate")
+let cameraScale = RecordThumbnailFit.visibleMapScale(
+    side: RecordListCardLayout.mapSide,
+    edgePad: RecordListCardLayout.mapTrackEdgePad
+)
+check(cameraScale > 1, "visible map scale grows past the stroke pad")
+check(
+    abs(cameraScale - RecordListCardLayout.mapSide / (RecordListCardLayout.mapSide - RecordListCardLayout.mapTrackEdgePad * 2)) < 0.0001,
+    "visible map scale is side over the inner box"
+)
 
 let help = [
     RecordMetricHelp.loadBody,

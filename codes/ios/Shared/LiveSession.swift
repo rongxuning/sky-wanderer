@@ -534,7 +534,12 @@ final class LiveSession: ObservableObject {
         }
         locationProxy.onAuthorization = { [weak self] manager in
             Task { @MainActor in
-                self?.enableBackgroundLocation(manager)
+                guard let self else { return }
+                if self.sport.usesOutdoorLocation {
+                    self.enableBackgroundLocation(manager)
+                } else {
+                    self.requestStartPinIfAuthorized(manager)
+                }
             }
         }
     }
@@ -571,20 +576,27 @@ final class LiveSession: ObservableObject {
     }
 
     private func startLocation() {
-        guard sport.usesOutdoorLocation else { return }
         location.delegate = locationProxy
         location.activityType = .fitness
-        location.desiredAccuracy = kCLLocationAccuracyBest
-        location.distanceFilter = kCLDistanceFilterNone
         #if os(iOS)
         location.pausesLocationUpdatesAutomatically = false
         #endif
         location.requestWhenInUseAuthorization()
-        enableBackgroundLocation(location)
+        if sport.usesOutdoorLocation {
+            location.desiredAccuracy = kCLLocationAccuracyBest
+            location.distanceFilter = kCLDistanceFilterNone
+            enableBackgroundLocation(location)
+        } else {
+            // One fix for the list start-point map (力量 / 综合 / indoor).
+            location.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            location.distanceFilter = kCLDistanceFilterNone
+            requestStartPinIfAuthorized(location)
+        }
     }
 
     /// Background updates stay off until When In Use is granted. The delegate calls this again after the prompt.
     private func enableBackgroundLocation(_ manager: CLLocationManager) {
+        guard sport.usesOutdoorLocation else { return }
         guard phase == .running, !paused, !simulating else { return }
         let status = manager.authorizationStatus
         guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
@@ -593,6 +605,16 @@ final class LiveSession: ObservableObject {
         manager.showsBackgroundLocationIndicator = true
         #endif
         manager.startUpdatingLocation()
+    }
+
+    /// Indoor / strength sessions only need the gym location once.
+    private func requestStartPinIfAuthorized(_ manager: CLLocationManager) {
+        guard !sport.usesOutdoorLocation else { return }
+        guard phase == .running, !paused, !simulating, !leavingApple else { return }
+        guard recordedRoute.isEmpty else { return }
+        let status = manager.authorizationStatus
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
+        manager.requestLocation()
     }
 
     private func stopLocationUpdates() {
@@ -715,6 +737,18 @@ final class LiveSession: ObservableObject {
             altitude: location.altitude,
             timestamp: location.timestamp
         )
+        if !sport.usesOutdoorLocation {
+            // Keep the first usable fix as the list start pin; do not build a track.
+            guard recordedRoute.isEmpty else { return }
+            guard location.horizontalAccuracy < 200 else { return }
+            userFix = fix
+            lastLocation = location
+            appendPoint(fix)
+            if location.altitude.isFinite {
+                altitudeMeters = location.altitude
+            }
+            return
+        }
         // Map follow uses every usable fix. Track and climb wait for real movement.
         userFix = fix
         let firstFix = lastLocation == nil
@@ -1029,6 +1063,12 @@ final class LocationProxy: NSObject, CLLocationManagerDelegate {
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
         onLocation?(location)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // `requestLocation` can fail (denied / timeout). The session keeps going
+        // without a start pin; the list falls back to the sport swatch.
+        _ = error
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {

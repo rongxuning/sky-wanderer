@@ -34,7 +34,8 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// List-card accent for the sport chip and the empty-route glass plate.
+    /// Accent for the empty-route glass plate and other sport-tint UI.
+    /// The list sport chip and duration use `RecordListChrome.labelHex` (ink).
     var listAccentHex: UInt32 {
         switch self {
         case .outdoorRunning: return 0x22C55E
@@ -59,8 +60,8 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// Asset catalog name for the empty-route list thumbnail, when one exists.
-    /// Strength uses the dumbbell plate; mixed training uses the checklist plate.
+    /// Asset catalog name for the list glass plate when there is no start
+    /// coordinate to map. Strength uses the dumbbell; mixed training uses the checklist.
     var listThumbnailAsset: String? {
         switch self {
         case .functionalStrength: return "RecordSportStrength"
@@ -78,8 +79,8 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// Record-list cards show map, distance, and pace for these. Strength, HIIT, and other
-    /// show a sport icon, energy, and heart rate in the same card layout.
+    /// Record-list cards show distance and pace for these. Strength, HIIT, and other
+    /// show energy instead. All sports prefer a map plate when a start coordinate exists.
     var listShowsRouteMetrics: Bool {
         switch self {
         case .outdoorRunning, .indoorRunning, .trailRunning, .outdoorWalking, .hiking: return true

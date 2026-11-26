@@ -24,9 +24,11 @@ struct RecordFeedView: View {
             .task(id: PlateBackfillKey(ids: app.workouts.map(\.id), tianditu: basemapCenter.mode == .tianditu)) {
                 // List cells only read disk/memory plates. Missing ones fill in
                 // slowly here so cold launch never opens an MKMapView per card.
-                let routed = app.workouts.filter { $0.route.count >= 2 }
+                let mapped = app.workouts.filter {
+                    RecordListThumbnailKind.resolve(routeCount: $0.route.count) != .swatch
+                }
                 await RecordMapThumbnails.shared.backfill(
-                    workouts: routed,
+                    workouts: mapped,
                     side: CGFloat(RecordListCardLayout.mapSide)
                 )
             }

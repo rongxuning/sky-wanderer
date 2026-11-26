@@ -573,7 +573,7 @@ final class PhoneAppState: ObservableObject {
         mutate { database in
             _ = database.insertWorkout(record)
         }
-        if record.route.count >= 2 {
+        if RecordListThumbnailKind.resolve(routeCount: record.route.count) != .swatch {
             RecordMapThumbnails.shared.enqueueWarm(
                 for: record.id,
                 route: record.route,
