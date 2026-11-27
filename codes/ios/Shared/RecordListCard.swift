@@ -20,13 +20,14 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// The map is a square on the left whose side matches the metrics block height
-/// (width = height = right-side stack). Distance is leading and duration is
-/// trailing in equal halves. Secondary metrics are the value row only: first
-/// leading, middle centered, last trailing so the last cell shares duration’s
-/// right edge. The map and the metrics together sit 10pt inside every card edge.
+/// The map is a fixed square on the left whose side equals the fixed metrics
+/// stack height (width = height = `standardTextBlock`). Distance is leading and
+/// duration is trailing in equal halves. Secondary metrics are the value row
+/// only: first leading, middle centered, last trailing so the last cell shares
+/// duration’s right edge. The map and the metrics together sit 10pt inside every
+/// card edge.
 enum RecordListCardLayout {
-    /// Card height at the default text size: vertical insets plus the text / map side.
+    /// Card height: vertical insets plus the fixed text / map side.
     static var standardHeight: Double {
         contentInsetVertical * 2 + standardTextBlock
     }
@@ -75,8 +76,8 @@ enum RecordListCardLayout {
             + lowerBlock
     }
 
-    /// Square side equals the metrics stack so the plate’s bottom meets the
-    /// secondary row. Larger Dynamic Type measures the live metrics height.
+    /// Fixed square side. Same as `standardTextBlock` so the plate’s bottom
+    /// meets the secondary row. Not resized from live layout.
     static var mapSide: Double { standardTextBlock }
 
     /// `mapTrackEdgePad` as a fraction of `mapSide`. Long axis meets this inset;

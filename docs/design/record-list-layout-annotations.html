@@ -618,8 +618,8 @@
       ├─ RecordMonthSectionLabel  （跨月才出现）
       └─ RecordSwipeCard
          └─ RecordSummaryCard
-            ├─ map              mapSide×mapSide（= metricsH）, r=4
-            └─ metrics 三行</div>
+            ├─ map              90×90 固定（= standardTextBlock）, r=4
+            └─ metrics 三行（高度固定 90）</div>
       <p class="note">入口：<code>HomeView</code> → 记录 Tab → <code>RecordFeedView</code>。旧版 <code>RecordsView</code> 未挂到首页。</p>
     </div>
 
@@ -654,7 +654,7 @@
           <tr><td>上下内边距</td><td class="num">10</td><td>contentInsetVertical</td></tr>
           <tr><td>左内边距（图前）</td><td class="num">10</td><td>mapLeading</td></tr>
           <tr><td>右内边距</td><td class="num">10</td><td>contentTrailing</td></tr>
-          <tr><td>缩略图边长</td><td class="num">90</td><td>mapSide = standardTextBlock；宽高都等于右侧整体高度</td></tr>
+          <tr><td>缩略图边长</td><td class="num">90</td><td>mapSide = standardTextBlock；固定正方形，等于右侧固定文案块高度</td></tr>
           <tr><td>图 ↔ 文</td><td class="num">14</td><td>mapToContent</td></tr>
           <tr><td>缩略图圆角</td><td class="num">4</td><td>mapCorner</td></tr>
           <tr><td>标题行高</td><td class="num">22</td><td>titleLine</td></tr>
@@ -724,7 +724,7 @@
           <tr><td>主指标两列</td><td>距离/消耗 leading · 时长 trailing · 等分半宽</td></tr>
           <tr><td>次指标列</td><td>等分；首 leading、中 center、末 trailing（与时长右缘齐）</td></tr>
           <tr><td>缺值次指标</td><td>不画该列，不显示「—」</td></tr>
-          <tr><td>缩略图</td><td>正方形，边长等于右侧文案块高度。力量训练、综合训练始终用地图色板（有起点画定位圆点，无起点也保留地图底，不用图标图片）</td></tr>
+          <tr><td>缩略图</td><td>固定 90×90，等于右侧固定文案块高度。力量训练、综合训练始终用地图色板（有起点画定位圆点，无起点也保留地图底，不用图标图片）</td></tr>
           <tr><td>左滑删除</td><td>露出 72+8；仅水平手势开始</td></tr>
           <tr><td>粘性月份</td><td>跟视口顶部卡片月份；同位淡入淡出 0.2s</td></tr>
         </tbody>

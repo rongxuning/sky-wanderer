@@ -1,49 +1,39 @@
 import SwiftUI
 
-/// Full-width record card. Left map side matches the metrics stack height —
-/// track, or the start pin for 力量训练 / 综合训练. Those two sports never use
-/// the catalog icon plate; without a fix they still show the map chrome.
-/// Date sits on the right of the title row. Secondary metrics are the value
-/// only; load appends TL. Missing values are omitted.
+/// Full-width record card. Fixed 90pt map square on the left — track, or the
+/// start pin for 力量训练 / 综合训练. Those two sports never use the catalog
+/// icon plate; without a fix they still show the map chrome. The metrics stack
+/// keeps the same fixed height as the map. Date sits on the right of the title
+/// row. Secondary metrics are the value only; load appends TL. Missing values
+/// are omitted.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
     var explainSpace: String
     var onExplainMetrics: () -> Void
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
     @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
     @ScaledMetric(relativeTo: .title1) private var distanceSize: CGFloat = 32
     @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 24
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
-    @State private var metricsHeight: CGFloat = CGFloat(RecordListCardLayout.standardMapBlock)
-
-    /// Default content size keeps the measured line boxes. Larger sizes grow.
-    private var usesStandardMetrics: Bool { dynamicTypeSize == .large }
 
     private var secondaryMetrics: [RecordListSecondaryMetric] {
         RecordListSecondaryMetric.visible(in: workout)
     }
 
-    /// Square whose side matches the live metrics block height.
-    private var mapSide: CGFloat {
-        metricsHeight > 0.5 ? metricsHeight : CGFloat(RecordListCardLayout.mapSide)
-    }
+    private var mapSide: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
 
     var body: some View {
         HStack(alignment: .top, spacing: CGFloat(RecordListCardLayout.mapToContent)) {
             visual
                 .frame(width: mapSide, height: mapSide)
             metrics
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: RecordMetricsHeightKey.self,
-                            value: proxy.size.height
-                        )
-                    }
-                }
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: mapSide,
+                    maxHeight: mapSide,
+                    alignment: .topLeading
+                )
         }
         .padding(.leading, CGFloat(RecordListCardLayout.mapLeading))
         .padding(.trailing, CGFloat(RecordListCardLayout.contentTrailing))
@@ -51,11 +41,6 @@ struct RecordSummaryCard: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .top)
         .background(SkyTheme.Color.card)
-        .onPreferenceChange(RecordMetricsHeightKey.self) { height in
-            if abs(height - metricsHeight) > 0.5 {
-                metricsHeight = height
-            }
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityAddTraits(.isButton)
@@ -109,7 +94,7 @@ struct RecordSummaryCard: View {
                     alignment: .trailing
                 )
             }
-            .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
+            .modifier(RecordRowBox(height: RecordListCardLayout.upperLine))
             Spacer()
                 .frame(height: CGFloat(RecordListCardLayout.middleToBottom))
             // Equal-width columns. First leading, middle centered, last trailing
@@ -127,10 +112,7 @@ struct RecordSummaryCard: View {
                     )
                 }
             }
-            .frame(
-                minHeight: usesStandardMetrics ? CGFloat(RecordListCardLayout.lowerBlock) : 0,
-                alignment: .top
-            )
+            .frame(height: CGFloat(RecordListCardLayout.lowerBlock), alignment: .top)
         }
     }
 
@@ -155,7 +137,7 @@ struct RecordSummaryCard: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
+        .modifier(RecordRowBox(height: RecordListCardLayout.titleLine))
     }
 
     private func primaryMetric(
@@ -169,7 +151,7 @@ struct RecordSummaryCard: View {
             .foregroundStyle(figureColor(text, color))
             .monospacedDigit()
             .lineLimit(1)
-            .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
+            .minimumScaleFactor(0.6)
             .frame(maxWidth: .infinity, alignment: alignment)
     }
 
@@ -191,7 +173,7 @@ struct RecordSummaryCard: View {
                     .foregroundStyle(SkyTheme.Color.ink)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
+                    .minimumScaleFactor(0.6)
                 if item.column == .load {
                     Text(item.unit)
                         .font(lowerFont)
@@ -295,23 +277,9 @@ struct RecordSummaryCard: View {
 
 private struct RecordRowBox: ViewModifier {
     var height: Double
-    var enabled: Bool
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if enabled {
-            content.frame(height: CGFloat(height), alignment: .center)
-        } else {
-            content
-        }
-    }
-}
-
-private struct RecordMetricsHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
+        content.frame(height: CGFloat(height), alignment: .center)
     }
 }
 

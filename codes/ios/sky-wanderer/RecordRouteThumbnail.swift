@@ -17,8 +17,7 @@ struct RecordRouteThumbnail: View {
     @ObservedObject private var thumbs = RecordMapThumbnails.shared
     @State private var mapImage: UIImage?
 
-    /// Plates are written at the layout side. The card may pass a larger square
-    /// (Dynamic Type); the plate scales to fill that square.
+    /// Plates are written at the fixed list side. Lookup and draw use that size.
     private var plateSide: CGFloat {
         CGFloat(RecordListCardLayout.mapSide)
     }
