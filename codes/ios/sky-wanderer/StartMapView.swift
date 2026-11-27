@@ -126,6 +126,9 @@ struct StartMapView: View {
             cancelCountdown()
             rouletteTransitionTask?.cancel()
             rouletteTransitionTask = nil
+            showSportRoulette = false
+            typeToolFlight = 0
+            companionToolsVisible = true
         }
         .onChange(of: location.coordinate?.latitude) { _, _ in
             if let coordinate = location.coordinate {
@@ -173,6 +176,7 @@ struct StartMapView: View {
                 )
                 .opacity(companionToolsVisible ? 1 : 0)
                 .allowsHitTesting(companionToolsVisible && !showSportRoulette)
+                .accessibilityHidden(!companionToolsVisible || showSportRoulette)
 
             toolButton(draft.sport.symbol, StartMapChrome.typeTool.label) {
                 performTool("类型")
@@ -181,6 +185,7 @@ struct StartMapView: View {
             .scaleEffect(1 + CGFloat(SportRouletteGeometry.centerScale - 1) * typeToolFlight)
             .opacity(showSportRoulette ? 0 : 1)
             .allowsHitTesting(!showSportRoulette)
+            .accessibilityHidden(showSportRoulette)
             .position(x: CGFloat(typePoint.x), y: CGFloat(typePoint.y))
         }
         // Full-bleed so `.position` uses screen coordinates; empty areas pass hits through.
