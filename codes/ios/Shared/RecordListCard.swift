@@ -20,26 +20,26 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// The map is a fixed square on the left, top-aligned with the metrics.
-/// Distance is leading and duration is trailing in equal halves.
-/// Secondary metrics are the value row only: first leading, middle centered,
-/// last trailing so the last cell shares duration’s right edge.
-/// The map and the metrics together sit 10pt inside every card edge.
+/// The map is a fixed square on the left whose side equals the fixed metrics
+/// stack height (width = height = `standardTextBlock`). Distance is leading and
+/// duration is trailing in equal halves. Secondary metrics are the value row
+/// only: first leading, middle centered, last trailing so the last cell shares
+/// duration’s right edge. The map and the metrics together sit 10pt inside every
+/// card edge.
 enum RecordListCardLayout {
-    /// Card height at the default text size: vertical insets plus the taller of the map and the text.
+    /// Card height: vertical insets plus the fixed text / map side.
     static var standardHeight: Double {
-        contentInsetVertical * 2 + max(standardTextBlock, mapSide)
+        contentInsetVertical * 2 + standardTextBlock
     }
     static let contentInsetVertical = 10.0
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
     static let titleToMiddle = 12.0
-    static let upperLine = 32.0
+    /// Fits the 32pt distance / energy figure.
+    static let upperLine = 36.0
     /// Gap between the distance row and the secondary metrics.
     static let middleToBottom = 6.0
     static let lowerValueLine = 14.0
-    /// Fixed square. Does not stretch to the metrics block.
-    static let mapSide = 90.0
     static let mapLeading = 10.0
     static let mapToContent = 14.0
     static let contentTrailing = 10.0
@@ -63,9 +63,6 @@ enum RecordListCardLayout {
     /// Clearance past the centerline so the thicker of the canvas end dot
     /// (`0.55 × mapTrackLineWidth`) and the basemap stroke stay inside the frame.
     static let mapTrackEdgePad = max(mapTrackLineWidth * 0.55, mapTrackBasemapLineWidth / 2)
-    /// `mapTrackEdgePad` as a fraction of `mapSide`. Long axis meets this inset;
-    /// short axis stays centered with more margin.
-    static let mapTrackInsetFraction = mapTrackEdgePad / mapSide
 
     static var lowerBlock: Double {
         lowerValueLine
@@ -79,6 +76,14 @@ enum RecordListCardLayout {
             + lowerBlock
     }
 
+    /// Fixed square side. Same as `standardTextBlock` so the plate’s bottom
+    /// meets the secondary row. Not resized from live layout.
+    static var mapSide: Double { standardTextBlock }
+
+    /// `mapTrackEdgePad` as a fraction of `mapSide`. Long axis meets this inset;
+    /// short axis stays centered with more margin.
+    static var mapTrackInsetFraction: Double { mapTrackEdgePad / mapSide }
+
     static var standardMapBlock: Double {
         mapSide
     }
@@ -90,10 +95,13 @@ enum RecordListCardLayout {
     }
 }
 
-/// List-card chrome that stays on the ink token — sport chip fill and duration.
-/// Matches the start-time text. Does not follow `SportKind.listAccentHex`.
+/// List-card chrome. Duration stays on ink with the start-time text.
+/// The sport-type chip uses a softer dark gray so the badge does not dominate.
+/// Neither follows `SportKind.listAccentHex`.
 enum RecordListChrome {
     static let labelHex: UInt32 = 0x1C1C1E
+    /// Sport chip fill. Same value as `SkyTheme.Color.starryChip`.
+    static let chipFillHex: UInt32 = 0x3A3A3C
 }
 
 /// What the list card draws on the left plate.
@@ -102,7 +110,8 @@ enum RecordListThumbnailKind: Equatable {
     case track
     /// One start coordinate — neighborhood map with a round pin.
     case startPoint
-    /// No usable coordinate; sport-tint glass plate and icon.
+    /// No usable coordinate. Most sports use the glass plate; 力量 / 综合 keep
+    /// the map chrome via `listUsesStartLocationMap` instead of an icon image.
     case swatch
 
     static func resolve(routeCount: Int) -> RecordListThumbnailKind {

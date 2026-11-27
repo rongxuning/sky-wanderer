@@ -1,23 +1,21 @@
 import SwiftUI
 
-/// Full-width record card. A 90pt map on the left — track, or the start pin
-/// for a single fix, including 力量训练 and 综合训练. Sport-color plate only
-/// when there is no start coordinate. Date sits on the right of the title row.
-/// Secondary metrics are the value only; load appends TL. Missing values are omitted.
+/// Full-width record card. Fixed 90pt map square on the left — track, or the
+/// start pin for 力量训练 / 综合训练. Those two sports never use the catalog
+/// icon plate; without a fix they still show the map chrome. The metrics stack
+/// keeps the same fixed height as the map. Date sits on the right of the title
+/// row. Secondary metrics are the value only; load appends TL. Missing values
+/// are omitted.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
     var explainSpace: String
     var onExplainMetrics: () -> Void
 
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
     @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .title2) private var distanceSize: CGFloat = 28
+    @ScaledMetric(relativeTo: .title1) private var distanceSize: CGFloat = 32
     @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 24
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
-
-    /// Default content size keeps the measured line boxes. Larger sizes grow.
-    private var usesStandardMetrics: Bool { dynamicTypeSize == .large }
 
     private var secondaryMetrics: [RecordListSecondaryMetric] {
         RecordListSecondaryMetric.visible(in: workout)
@@ -30,7 +28,12 @@ struct RecordSummaryCard: View {
             visual
                 .frame(width: mapSide, height: mapSide)
             metrics
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: mapSide,
+                    maxHeight: mapSide,
+                    alignment: .topLeading
+                )
         }
         .padding(.leading, CGFloat(RecordListCardLayout.mapLeading))
         .padding(.trailing, CGFloat(RecordListCardLayout.contentTrailing))
@@ -48,8 +51,11 @@ struct RecordSummaryCard: View {
 
     @ViewBuilder
     private var visual: some View {
-        switch RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount) {
-        case .track, .startPoint:
+        let kind = RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount)
+        // 力量 / 综合 always use the map plate — never the dumbbell / checklist PNG.
+        if kind == .swatch && !workout.sport.listUsesStartLocationMap {
+            RecordSportSwatch(sport: workout.sport)
+        } else {
             RecordRouteThumbnail(
                 workoutID: workout.id,
                 route: workout.listThumbnailRoute,
@@ -57,8 +63,6 @@ struct RecordSummaryCard: View {
                 height: mapSide,
                 routePointCount: workout.listThumbnailPointCount
             )
-        case .swatch:
-            RecordSportSwatch(sport: workout.sport)
         }
     }
 
@@ -90,7 +94,7 @@ struct RecordSummaryCard: View {
                     alignment: .trailing
                 )
             }
-            .modifier(RecordRowBox(height: RecordListCardLayout.upperLine, enabled: usesStandardMetrics))
+            .modifier(RecordRowBox(height: RecordListCardLayout.upperLine))
             Spacer()
                 .frame(height: CGFloat(RecordListCardLayout.middleToBottom))
             // Equal-width columns. First leading, middle centered, last trailing
@@ -108,10 +112,7 @@ struct RecordSummaryCard: View {
                     )
                 }
             }
-            .frame(
-                minHeight: usesStandardMetrics ? CGFloat(RecordListCardLayout.lowerBlock) : 0,
-                alignment: .top
-            )
+            .frame(height: CGFloat(RecordListCardLayout.lowerBlock), alignment: .top)
         }
     }
 
@@ -124,7 +125,7 @@ struct RecordSummaryCard: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
                 .background(
-                    SkyTheme.Color.ink,
+                    SkyTheme.Color.starryChip,
                     in: RoundedRectangle(cornerRadius: 3, style: .continuous)
                 )
                 .fixedSize(horizontal: true, vertical: true)
@@ -136,7 +137,7 @@ struct RecordSummaryCard: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
+        .modifier(RecordRowBox(height: RecordListCardLayout.titleLine))
     }
 
     private func primaryMetric(
@@ -150,7 +151,7 @@ struct RecordSummaryCard: View {
             .foregroundStyle(figureColor(text, color))
             .monospacedDigit()
             .lineLimit(1)
-            .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
+            .minimumScaleFactor(0.6)
             .frame(maxWidth: .infinity, alignment: alignment)
     }
 
@@ -172,7 +173,7 @@ struct RecordSummaryCard: View {
                     .foregroundStyle(SkyTheme.Color.ink)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
+                    .minimumScaleFactor(0.6)
                 if item.column == .load {
                     Text(item.unit)
                         .font(lowerFont)
@@ -216,7 +217,7 @@ struct RecordSummaryCard: View {
     }
 
     private var durationFont: Font {
-        .system(size: durationSize, weight: .bold)
+        .system(size: durationSize, weight: .regular)
     }
 
     private var lowerFont: Font {
@@ -276,15 +277,9 @@ struct RecordSummaryCard: View {
 
 private struct RecordRowBox: ViewModifier {
     var height: Double
-    var enabled: Bool
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if enabled {
-            content.frame(height: CGFloat(height), alignment: .center)
-        } else {
-            content
-        }
+        content.frame(height: CGFloat(height), alignment: .center)
     }
 }
 
