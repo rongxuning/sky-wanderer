@@ -3,6 +3,7 @@ import SwiftUI
 struct SportRouletteOverlay: View {
     var sports: [SportKind] = Array(SportKind.allCases)
     @Binding var selection: SportKind
+    var screenWidth: CGFloat
     var screenHeight: CGFloat
     var onDismiss: () -> Void
 
@@ -16,12 +17,12 @@ struct SportRouletteOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black.opacity(0.35)
+            Color.black.opacity(0.55)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onDismiss)
 
-            ForEach(Array(sports.enumerated()), id: \.element.id) { index, sport in
+            ForEach(Array(sports.enumerated()).filter { index, _ in isRendered(index) }, id: \.element.id) { index, sport in
                 item(sport: sport, index: index)
             }
         }
@@ -34,21 +35,27 @@ struct SportRouletteOverlay: View {
         .highPriorityGesture(drag)
     }
 
+    private func isRendered(_ index: Int) -> Bool {
+        let angle = SportRouletteGeometry.angle(forIndex: index, scrollOffset: ChromeLength(scrollOffset))
+        return SportRouletteGeometry.isRendered(angle: angle)
+    }
+
     @ViewBuilder
     private func item(sport: SportKind, index: Int) -> some View {
         let angle = SportRouletteGeometry.angle(forIndex: index, scrollOffset: ChromeLength(scrollOffset))
         let point = SportRouletteGeometry.position(
             index: index,
             scrollOffset: ChromeLength(scrollOffset),
+            screenWidth: ChromeLength(screenWidth),
             screenHeight: ChromeLength(screenHeight)
         )
         let scale = CGFloat(SportRouletteGeometry.scale(forAngle: angle))
         let opacity = CGFloat(SportRouletteGeometry.opacity(forAngle: angle))
         let dot = CGFloat(SportRouletteGeometry.dotDiameter)
-        let onMidline = abs(Double(angle)) < 0.001
+        let onMidline = SportRouletteGeometry.isOnMidline(angle: angle)
 
         Button {
-            tap(index)
+            tap(index, onMidline: onMidline)
         } label: {
             ZStack {
                 Circle()
@@ -105,7 +112,13 @@ struct SportRouletteOverlay: View {
             }
     }
 
-    private func tap(_ index: Int) {
+    private func tap(_ index: Int, onMidline: Bool) {
+        // Selected midline item dismisses, same as tapping the mask.
+        if onMidline {
+            cancelPendingTapCommit()
+            onDismiss()
+            return
+        }
         cancelPendingTapCommit()
         withAnimation(.spring(response: springResponse, dampingFraction: 0.86)) {
             scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: index))

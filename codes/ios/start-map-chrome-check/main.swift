@@ -49,6 +49,27 @@ check(
     ],
     "symbols are run, path, two people, gear"
 )
+check(StartMapChrome.typeTool.label == "类型", "type tool is the first column item")
+check(
+    StartMapChrome.companionTools.map(\.label) == ["路线", "组队", "设置"],
+    "companions are the three tools under 类型"
+)
+
+let home = StartMapChrome.typeToolHomeCenter(screenHeight: 852)
+near(home.x, 16 + 22, "type tool home x is column center")
+near(home.y, 326 + 22, "type tool home y is top button center")
+let screenCenter = StartMapChrome.typeToolScreenCenter(screenWidth: 393, screenHeight: 852)
+near(screenCenter.x, 196.5, "type tool screen center x")
+near(screenCenter.y, 426, "type tool screen center y")
+let midFlight = StartMapChrome.typeToolPosition(progress: 0.5, screenWidth: 393, screenHeight: 852)
+near(midFlight.x, (home.x + screenCenter.x) / 2, "mid-flight x lerps home to center")
+near(midFlight.y, (home.y + screenCenter.y) / 2, "mid-flight y lerps home to center")
+let docked = StartMapChrome.typeToolPosition(progress: 0, screenWidth: 393, screenHeight: 852)
+near(docked.x, home.x, "progress 0 stays at home x")
+near(docked.y, home.y, "progress 0 stays at home y")
+let arrived = StartMapChrome.typeToolPosition(progress: 1, screenWidth: 393, screenHeight: 852)
+near(arrived.x, screenCenter.x, "progress 1 reaches screen center x")
+near(arrived.y, screenCenter.y, "progress 1 reaches screen center y")
 
 // MARK: - Start button 16pt above the measured pill
 

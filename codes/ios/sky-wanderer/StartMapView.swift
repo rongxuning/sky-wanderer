@@ -39,6 +39,10 @@ struct StartMapView: View {
     @ObservedObject private var basemap = SkyBasemapCenter.shared
     @State private var sheet: StartSheet?
     @State private var showSportRoulette = false
+    /// 0 =「类型」docked in the column, 1 = screen center.
+    @State private var typeToolFlight: CGFloat = 0
+    @State private var companionToolsVisible = true
+    @State private var rouletteTransitionTask: Task<Void, Never>?
     @State private var pickingRoute = false
     @State private var counting = false
     @State private var count = 3
@@ -68,8 +72,9 @@ struct StartMapView: View {
                 if showSportRoulette {
                     SportRouletteOverlay(
                         selection: $draft.sport,
+                        screenWidth: geo.size.width,
                         screenHeight: geo.size.height,
-                        onDismiss: { showSportRoulette = false }
+                        onDismiss: { closeSportRoulette(animated: true) }
                     )
                     .transition(.opacity)
                 }
@@ -91,16 +96,9 @@ struct StartMapView: View {
                     .padding(.top, geo.safeAreaInsets.top)
                 }
             }
-            .overlay(alignment: .topLeading) {
-                // Guides move the column without a spacer that could take taps.
-                // Top = (height - 200) / 2. On an 852pt phone that is 326…526.
-                toolColumn
-                    .alignmentGuide(.leading) { dimensions in
-                        dimensions[.leading] - CGFloat(StartMapChrome.toolLeading)
-                    }
-                    .alignmentGuide(.top) { dimensions in
-                        dimensions[.top] - toolColumnOrigin(in: geo)
-                    }
+            .overlay {
+                // Absolute layout so「类型」can fly between the column and screen center.
+                toolChrome(in: geo)
             }
             .overlay(alignment: .bottom) {
                 // Move the bottom guide down by the clearance. The circle's bottom
@@ -124,7 +122,14 @@ struct StartMapView: View {
         .onChange(of: isActive) { _, active in
             if !active { cancelCountdown() }
         }
-        .onDisappear { cancelCountdown() }
+        .onDisappear {
+            cancelCountdown()
+            rouletteTransitionTask?.cancel()
+            rouletteTransitionTask = nil
+            showSportRoulette = false
+            typeToolFlight = 0
+            companionToolsVisible = true
+        }
         .onChange(of: location.coordinate?.latitude) { _, _ in
             if let coordinate = location.coordinate {
                 draft.origin = GeoPoint(
@@ -157,18 +162,51 @@ struct StartMapView: View {
             .accessibilityLabel("倒计时 \(count)")
     }
 
-    private var toolColumn: some View {
+    private func toolChrome(in geo: GeometryProxy) -> some View {
+        let typePoint = StartMapChrome.typeToolPosition(
+            progress: ChromeLength(typeToolFlight),
+            screenWidth: ChromeLength(geo.size.width),
+            screenHeight: ChromeLength(geo.size.height)
+        )
+        return ZStack(alignment: .topLeading) {
+            companionToolColumn
+                .offset(
+                    x: CGFloat(StartMapChrome.toolLeading),
+                    y: toolColumnOrigin(in: geo)
+                )
+                .opacity(companionToolsVisible ? 1 : 0)
+                .allowsHitTesting(companionToolsVisible && !showSportRoulette)
+                .accessibilityHidden(!companionToolsVisible || showSportRoulette)
+
+            toolButton(draft.sport.symbol, StartMapChrome.typeTool.label) {
+                performTool("类型")
+            }
+            // Match the roulette midline scale so the handoff does not pop.
+            .scaleEffect(1 + CGFloat(SportRouletteGeometry.centerScale - 1) * typeToolFlight)
+            .opacity(showSportRoulette ? 0 : 1)
+            .allowsHitTesting(!showSportRoulette)
+            .accessibilityHidden(showSportRoulette)
+            .position(x: CGFloat(typePoint.x), y: CGFloat(typePoint.y))
+        }
+        // Full-bleed so `.position` uses screen coordinates; empty areas pass hits through.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var companionToolColumn: some View {
         VStack(spacing: CGFloat(StartMapChrome.toolGap)) {
-            ForEach(StartMapChrome.tools, id: \.label) { tool in
-                toolButton(symbol(for: tool), tool.label) {
+            Color.clear
+                .frame(
+                    width: CGFloat(StartMapChrome.toolDiameter),
+                    height: CGFloat(StartMapChrome.toolDiameter)
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            ForEach(StartMapChrome.companionTools, id: \.label) { tool in
+                toolButton(tool.symbol, tool.label) {
                     performTool(tool.label)
                 }
             }
         }
-    }
-
-    private func symbol(for tool: StartMapChrome.Tool) -> String {
-        tool.label == "类型" ? draft.sport.symbol : tool.symbol
     }
 
     private func toolButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
@@ -229,26 +267,76 @@ struct StartMapView: View {
     private func performTool(_ label: String) {
         switch label {
         case "类型":
-            showSportRoulette.toggle()
+            if showSportRoulette || typeToolFlight > 0.01 {
+                closeSportRoulette(animated: true)
+            } else {
+                openSportRoulette()
+            }
         case "路线":
-            showSportRoulette = false
+            closeSportRoulette(animated: false)
             cancelCountdown()
             pickingRoute = true
         case "组队":
-            showSportRoulette = false
+            closeSportRoulette(animated: false)
             cancelCountdown()
             path.append(TrainRoute.team)
         case "设置":
-            showSportRoulette = false
+            closeSportRoulette(animated: false)
             sheet = .settings
         default:
             break
         }
     }
 
+    private func openSportRoulette() {
+        rouletteTransitionTask?.cancel()
+        rouletteTransitionTask = Task { @MainActor in
+            withAnimation(.easeOut(duration: Double(StartMapChrome.rouletteOpenCompanionFade))) {
+                companionToolsVisible = false
+            }
+            withAnimation(.spring(
+                response: Double(StartMapChrome.rouletteOpenFly),
+                dampingFraction: 0.86
+            )) {
+                typeToolFlight = 1
+            }
+            let flyNs = UInt64(Double(StartMapChrome.rouletteOpenFly) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: flyNs)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                showSportRoulette = true
+            }
+        }
+    }
+
+    private func closeSportRoulette(animated: Bool) {
+        rouletteTransitionTask?.cancel()
+        if !animated {
+            showSportRoulette = false
+            typeToolFlight = 0
+            companionToolsVisible = true
+            return
+        }
+        rouletteTransitionTask = Task { @MainActor in
+            withAnimation(.easeOut(duration: Double(StartMapChrome.rouletteCloseFade))) {
+                showSportRoulette = false
+            }
+            // Let the flying type button reappear under the fading roulette.
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(
+                response: Double(StartMapChrome.rouletteCloseFly),
+                dampingFraction: 0.86
+            )) {
+                typeToolFlight = 0
+                companionToolsVisible = true
+            }
+        }
+    }
+
     private func start() {
         guard !launching else { return }
-        showSportRoulette = false
+        closeSportRoulette(animated: false)
         if app.activeSession?.phase == .running {
             launching = true
             path.append(TrainRoute.live)

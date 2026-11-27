@@ -41,10 +41,48 @@ enum StartMapChrome {
         max(0, (screenHeight - toolColumnHeight) / 2)
     }
 
-    /// Horizontal midline of the left tool column (same Y the roulette arc uses).
+    /// Horizontal midline of the left tool column.
     static func toolColumnMidY(screenHeight: ChromeLength) -> ChromeLength {
         toolColumnOriginY(screenHeight: screenHeight) + toolColumnHeight / 2
     }
+
+    /// Center of the top「类型」tool while docked in the left column.
+    static func typeToolHomeCenter(screenHeight: ChromeLength) -> (x: ChromeLength, y: ChromeLength) {
+        (
+            toolLeading + toolDiameter / 2,
+            toolColumnOriginY(screenHeight: screenHeight) + toolDiameter / 2
+        )
+    }
+
+    /// Screen center — where「类型」lands before the roulette opens.
+    static func typeToolScreenCenter(
+        screenWidth: ChromeLength,
+        screenHeight: ChromeLength
+    ) -> (x: ChromeLength, y: ChromeLength) {
+        (screenWidth / 2, screenHeight / 2)
+    }
+
+    /// `progress` 0 = docked in the tool column, 1 = screen center.
+    static func typeToolPosition(
+        progress: ChromeLength,
+        screenWidth: ChromeLength,
+        screenHeight: ChromeLength
+    ) -> (x: ChromeLength, y: ChromeLength) {
+        let t = max(0, min(1, progress))
+        let home = typeToolHomeCenter(screenHeight: screenHeight)
+        let center = typeToolScreenCenter(screenWidth: screenWidth, screenHeight: screenHeight)
+        return (
+            home.x + (center.x - home.x) * t,
+            home.y + (center.y - home.y) * t
+        )
+    }
+
+    /// Hide companions → fly type to center → open roulette.
+    static let rouletteOpenCompanionFade: ChromeLength = 0.22
+    static let rouletteOpenFly: ChromeLength = 0.42
+    /// Close roulette → fly type home → restore companions.
+    static let rouletteCloseFade: ChromeLength = 0.18
+    static let rouletteCloseFly: ChromeLength = 0.42
 
     struct Tool: Equatable {
         var symbol: String
@@ -58,6 +96,9 @@ enum StartMapChrome {
         Tool(symbol: "person.2", label: "组队"),
         Tool(symbol: "gearshape", label: "设置"),
     ]
+
+    static var typeTool: Tool { tools[0] }
+    static var companionTools: [Tool] { Array(tools.dropFirst()) }
 
     /// Bottom padding that puts Start 16pt above the pill.
     /// `mapMaxY` and `tabBarMinY` share one coordinate space (global).
