@@ -8,7 +8,9 @@ struct SportRouletteOverlay: View {
 
     @State private var scrollOffset: CGFloat = 0
     @State private var dragOrigin: CGFloat?
+    @State private var pendingTapCommit: DispatchWorkItem?
 
+    private let springResponse: Double = 0.38
     private var itemCount: Int { sports.count }
 
     var body: some View {
@@ -27,7 +29,7 @@ struct SportRouletteOverlay: View {
                 scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: idx))
             }
         }
-        .gesture(drag)
+        .highPriorityGesture(drag)
     }
 
     @ViewBuilder
@@ -69,9 +71,12 @@ struct SportRouletteOverlay: View {
     }
 
     private var drag: some Gesture {
-        DragGesture(minimumDistance: 2)
+        DragGesture(minimumDistance: 9)
             .onChanged { value in
-                if dragOrigin == nil { dragOrigin = scrollOffset }
+                if dragOrigin == nil {
+                    cancelPendingTapCommit()
+                    dragOrigin = scrollOffset
+                }
                 let origin = dragOrigin ?? scrollOffset
                 let deltaIndex = -value.translation.height / CGFloat(SportRouletteGeometry.dragPixelsPerStep)
                 scrollOffset = CGFloat(
@@ -89,7 +94,7 @@ struct SportRouletteOverlay: View {
                     scrollOffset: ChromeLength(predicted),
                     itemCount: itemCount
                 )
-                withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                withAnimation(.spring(response: springResponse, dampingFraction: 0.86)) {
                     scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: nearest))
                 }
                 commit(nearest)
@@ -97,10 +102,22 @@ struct SportRouletteOverlay: View {
     }
 
     private func tap(_ index: Int) {
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+        cancelPendingTapCommit()
+        withAnimation(.spring(response: springResponse, dampingFraction: 0.86)) {
             scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: index))
         }
-        commit(index)
+        scheduleTapCommit(index)
+    }
+
+    private func cancelPendingTapCommit() {
+        pendingTapCommit?.cancel()
+        pendingTapCommit = nil
+    }
+
+    private func scheduleTapCommit(_ index: Int) {
+        let work = DispatchWorkItem { commit(index) }
+        pendingTapCommit = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + springResponse, execute: work)
     }
 
     private func commit(_ index: Int) {
