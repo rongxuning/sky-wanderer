@@ -60,7 +60,7 @@ struct RoutesLibraryView: View {
         }
     }
 
-    /// One sentence. The circular import control above is the only call to action.
+    /// One sentence. The import control above is the only call to action.
     private var emptyState: some View {
         Text("还没有导入的路线")
             .font(SkyTheme.Font.headline)
@@ -122,15 +122,18 @@ struct RoutesLibraryView: View {
     }
 }
 
-/// Circular primary control. The drawn circle is 36pt; the hit target stays 44pt.
+/// Brand-blue import glyph. Drawn at 22pt; the hit target stays 44pt.
 private struct RouteImportButton: View {
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(SkyTheme.Color.onPrimary)
+            Image("RouteImport")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+                .foregroundStyle(SkyTheme.Color.primary)
                 .frame(width: 36, height: 36)
         }
         .buttonStyle(RouteImportButtonStyle())
@@ -141,10 +144,7 @@ private struct RouteImportButton: View {
 private struct RouteImportButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .background(
-                configuration.isPressed ? SkyTheme.Color.primaryPressed : SkyTheme.Color.primary,
-                in: Circle()
-            )
+            .opacity(configuration.isPressed ? 0.72 : 1)
             .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin, alignment: .trailing)
             .contentShape(Rectangle())
     }
