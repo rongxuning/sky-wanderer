@@ -389,17 +389,37 @@ enum AppleHealth {
         if let pin = metadataStartPin(for: workout) {
             return [pin]
         }
+        // Fitness often stamps the gym route a few seconds before `startDate`.
+        // A short pad recovers that pin; a long outdoor track in the same window
+        // is rejected below so a neighbor run cannot become the gym map.
+        let pad: TimeInterval = 120
         let timed = await routePoints(
             predicate: HKQuery.predicateForSamples(
-                withStart: workout.startDate,
-                end: workout.endDate,
-                options: [.strictStartDate, .strictEndDate]
+                withStart: workout.startDate.addingTimeInterval(-pad),
+                end: workout.endDate.addingTimeInterval(pad),
+                options: []
             ),
             sortAscending: true
         )
-        guard let first = timed.first else { return [] }
-        // Keep at most the start fix for the list map — not a full track that
-        // merely overlapped this indoor session's clock.
+        return gymStartPin(from: timed)
+    }
+
+    /// First point of a short / stationary sample. Rejects a long outdoor track
+    /// that only overlaps the indoor clock.
+    private static func gymStartPin(from points: [GeoPoint]) -> [GeoPoint] {
+        guard let first = points.first.flatMap({
+            GeoPoint.valid(
+                latitude: $0.latitude,
+                longitude: $0.longitude,
+                altitude: $0.altitude,
+                timestamp: $0.timestamp
+            )
+        }) else { return [] }
+        guard points.count >= 2 else { return [first] }
+        let path = RouteStats.distance(points)
+        let diameter = TrackNoise.footprintDiameter(points)
+        // A real outdoor run is long. Keep a scribble or a short walk to the rack.
+        guard path <= 200 || (path < 400 && diameter <= 80) else { return [] }
         return [first]
     }
 
@@ -485,6 +505,15 @@ enum AppleHealth {
         }
         if let text = value as? String {
             return geoPoint(fromCSV: text)
+        }
+        if let data = value as? Data {
+            // Fitness / HealthKit sometimes archives CLLocation as NSData.
+            if let location = try? NSKeyedUnarchiver.unarchivedObject(
+                ofClass: CLLocation.self,
+                from: data
+            ) {
+                return geoPoint(from: location)
+            }
         }
         if let dictionary = value as? [String: Any] {
             let latitude = doubleValue(dictionary["latitude"] ?? dictionary["lat"])

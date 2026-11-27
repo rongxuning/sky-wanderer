@@ -324,6 +324,12 @@ check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
 check(RecordListCardLayout.monthSectionTop == 12, "in-list month top inset is half of section")
+check(RecordListCardLayout.monthSectionBottom == 8, "in-list month bottom inset matches the related gap")
+check(
+    RecordListCardLayout.monthSectionLeading == RecordListCardLayout.mapLeading,
+    "in-list month leading matches the card map"
+)
+check(RecordListCardLayout.accentBarWidth == 2, "card accent bar is 2pt")
 check(RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock, "map side equals the fixed metrics height")
 check(RecordListCardLayout.mapSide == 84, "map side is the approved 84pt square")
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
@@ -332,6 +338,7 @@ check(RecordListCardLayout.upperLine == 33, "the distance line is 33pt for the 2
 check(RecordListCardLayout.middleToBottom == 3, "middle to bottom row is half of the previous 6pt")
 check(RecordListChrome.durationHex == 0x8E8E93, "list duration uses light gray")
 check(RecordListChrome.distanceHex == 0x1E7DD6, "list distance and track share #1E7DD6")
+check(RecordListChrome.energyHex == 0xC2183B, "list energy figure is #C2183B")
 check(RecordListCardLayout.lowerBlock == 14, "secondary metrics are the value line only")
 check(RecordListCardLayout.mapTrackLineWidth == 3.5, "list track stroke is 3.5pt")
 check(RecordListCardLayout.mapTrackBasemapLineWidth == 5.0, "basemap list stroke is 5pt")
@@ -382,7 +389,19 @@ check(
 check(RecordListThumbnailFile.folder == "record-thumbs", "thumbnail folder name is fixed")
 
 check(RecordListChrome.labelHex == 0x1C1C1E, "list duration stays on ink")
-check(RecordListChrome.chipFillHex == 0x3A3A3C, "list sport chip uses dark gray, not ink")
+check(RecordListChrome.chipFillHex == 0x3A3A3C, "legacy chip fill hex stays for older checks")
+check(
+    RecordListChrome.accentHex(for: .outdoorRunning) == RecordListChrome.distanceHex,
+    "running chip and accent follow the distance figure"
+)
+check(
+    RecordListChrome.accentHex(for: .functionalStrength) == RecordListChrome.energyHex,
+    "strength chip and accent follow the energy figure"
+)
+check(
+    RecordListChrome.accentHex(for: .hiit) == RecordListChrome.energyHex,
+    "mixed training chip and accent follow the energy figure"
+)
 check(RecordListThumbnailKind.resolve(routeCount: 0) == .swatch, "no points keep the glass plate")
 check(RecordListThumbnailKind.resolve(routeCount: 1) == .startPoint, "one point is a start pin map")
 check(RecordListThumbnailKind.resolve(routeCount: 2) == .track, "two points draw the track")
@@ -521,6 +540,28 @@ strengthFromMetadata.route = [
 check(
     RecordListThumbnailKind.resolve(routeCount: strengthFromMetadata.listThumbnailPointCount) == .startPoint,
     "a lone gym pin from Health metadata still draws the start map"
+)
+var strengthMissingPin = strengthCard
+strengthMissingPin.healthKitUUID = "strength-pin-1"
+strengthMissingPin.route = []
+var strengthImportedPin = strengthMissingPin
+strengthImportedPin.route = [
+    GeoPoint(latitude: 31.2304, longitude: 121.4737, altitude: 8, timestamp: saturday)
+]
+let strengthBackfilled = WorkoutImport.merging(strengthMissingPin, with: strengthImportedPin)
+check(
+    strengthBackfilled.startCoordinate?.latitude == 31.2304
+        && strengthBackfilled.listThumbnailPointCount == 1,
+    "merge backfills a missing strength start pin from a later Health import"
+)
+var strengthInvalidRoute = strengthMissingPin
+strengthInvalidRoute.route = [
+    GeoPoint(latitude: .nan, longitude: .nan, altitude: 0, timestamp: nil)
+]
+let strengthRepaired = WorkoutImport.merging(strengthInvalidRoute, with: strengthImportedPin)
+check(
+    strengthRepaired.startCoordinate?.longitude == 121.4737,
+    "merge replaces an unusable strength route with the imported gym pin"
 )
 check(
     GeoPoint.valid(latitude: 91, longitude: 121) == nil,

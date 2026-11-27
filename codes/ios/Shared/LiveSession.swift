@@ -125,7 +125,7 @@ final class LiveSession: ObservableObject {
     private var teammatesStarted = false
     /// Every accepted point. Display uses a downsample of this.
     private var recordedRoute: [GeoPoint] = []
-    /// One-shot indoor pin retries after `requestLocation` fails.
+    /// Indoor pin retries after a location failure while still waiting for a gym fix.
     private var startPinRetries = 0
 
     init(sport: SportKind, plannedRoute: [GeoPoint], teammates: [TeammateProfile]) {
@@ -422,6 +422,7 @@ final class LiveSession: ObservableObject {
         phase = .finished
         timer?.invalidate()
         pedometer.stopUpdates()
+        seedIndoorStartPinIfNeeded()
         stopLocationUpdates()
         heartProbe.stop()
         heartProbe.onHeart = nil
@@ -540,7 +541,7 @@ final class LiveSession: ObservableObject {
                 if self.sport.usesOutdoorLocation {
                     self.enableBackgroundLocation(manager)
                 } else {
-                    self.requestStartPinIfAuthorized(manager)
+                    self.beginIndoorStartPin(manager)
                 }
             }
         }
@@ -548,9 +549,10 @@ final class LiveSession: ObservableObject {
             Task { @MainActor in
                 guard let self, !self.sport.usesOutdoorLocation else { return }
                 if let clError = error as? CLError, clError.code == .denied { return }
-                guard self.startPinRetries < 2 else { return }
+                guard self.recordedRoute.isEmpty else { return }
+                guard self.startPinRetries < 3 else { return }
                 self.startPinRetries += 1
-                self.requestStartPinIfAuthorized(manager)
+                self.beginIndoorStartPin(manager)
             }
         }
     }
@@ -598,10 +600,11 @@ final class LiveSession: ObservableObject {
             location.distanceFilter = kCLDistanceFilterNone
             enableBackgroundLocation(location)
         } else {
-            // One fix for the list start-point map (力量 / 综合 / indoor).
+            // Keep listening until the first usable gym pin lands. A single
+            // `requestLocation` often times out indoors before Wi‑Fi positioning.
             location.desiredAccuracy = kCLLocationAccuracyHundredMeters
             location.distanceFilter = kCLDistanceFilterNone
-            requestStartPinIfAuthorized(location)
+            beginIndoorStartPin(location)
         }
     }
 
@@ -619,13 +622,23 @@ final class LiveSession: ObservableObject {
     }
 
     /// Indoor / strength sessions only need the gym location once.
-    private func requestStartPinIfAuthorized(_ manager: CLLocationManager) {
+    /// Continuous updates until the first fix; then `apply` stops them.
+    private func beginIndoorStartPin(_ manager: CLLocationManager) {
         guard !sport.usesOutdoorLocation else { return }
         guard phase == .running, !paused, !simulating, !leavingApple else { return }
         guard recordedRoute.isEmpty else { return }
         let status = manager.authorizationStatus
         guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
-        manager.requestLocation()
+        // Prefer a fresh fix, but seed from the last known location when it is
+        // still usable so a brief gym session is not left without a map.
+        if let cached = manager.location,
+           cached.horizontalAccuracy >= 0,
+           cached.horizontalAccuracy < 500,
+           abs(cached.timestamp.timeIntervalSinceNow) < 15 * 60 {
+            apply(cached)
+            if !recordedRoute.isEmpty { return }
+        }
+        manager.startUpdatingLocation()
     }
 
     private func stopLocationUpdates() {
@@ -634,6 +647,32 @@ final class LiveSession: ObservableObject {
         location.allowsBackgroundLocationUpdates = false
         location.showsBackgroundLocationIndicator = false
         #endif
+    }
+
+    /// Last chance before save: if the gym pin never arrived, reuse a fresh
+    /// last-known fix so 力量 / 综合 still get a list map.
+    private func seedIndoorStartPinIfNeeded() {
+        guard !sport.usesOutdoorLocation else { return }
+        guard recordedRoute.isEmpty else { return }
+        guard let cached = location.location,
+              cached.horizontalAccuracy >= 0,
+              cached.horizontalAccuracy < 500 else { return }
+        let fix = GeoPoint(
+            latitude: cached.coordinate.latitude,
+            longitude: cached.coordinate.longitude,
+            altitude: cached.altitude,
+            timestamp: cached.timestamp
+        )
+        guard GeoPoint.valid(
+            latitude: fix.latitude,
+            longitude: fix.longitude,
+            altitude: fix.altitude,
+            timestamp: fix.timestamp
+        ) != nil else { return }
+        recordedRoute = [fix]
+        route = Self.displayRoute(recordedRoute)
+        userFix = fix
+        lastLocation = cached
     }
 
     private func tick() {
@@ -749,7 +788,7 @@ final class LiveSession: ObservableObject {
             // Indoor sessions ignore the resume jump filter — one dropped fix would
             // leave 力量 / 综合 without a map after a pause or a late authorization.
             guard recordedRoute.isEmpty else { return }
-            guard location.horizontalAccuracy < 200 else { return }
+            guard location.horizontalAccuracy < 500 else { return }
             ignoreNextLocation = false
             userFix = fix
             lastLocation = location
@@ -757,6 +796,8 @@ final class LiveSession: ObservableObject {
             if location.altitude.isFinite {
                 altitudeMeters = location.altitude
             }
+            // Gym pin landed — stop listening so the session does not keep the GPS radio.
+            stopLocationUpdates()
             return
         }
         if ignoreNextLocation || location.timestamp < resumeAnchorDate {
