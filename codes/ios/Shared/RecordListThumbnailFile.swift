@@ -8,7 +8,8 @@ enum RecordListThumbnailFile {
     static let folder = "record-thumbs"
     /// Bumps when the plate camera, track ink, or start-pin drawing changes so
     /// old JPEGs are not reused after a tighter track fit or color change.
-    static let plateVersion = "4"
+    /// v5 drops solid-black failed Tianditu / Metal captures that covered the track.
+    static let plateVersion = "5"
 
     /// Relative path: `record-thumbs/<id>-<basemap>-<side>-v<version>.jpg`.
     static func relativePath(id: UUID, basemapToken: String, side: Int) -> String {

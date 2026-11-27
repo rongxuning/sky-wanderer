@@ -35,8 +35,9 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     }
 
     /// Accent for the empty-route glass plate and other sport-tint UI.
-    /// List duration uses `RecordListChrome.labelHex` (ink). The sport chip fill
-    /// uses `RecordListChrome.chipFillHex` (dark gray), not this accent.
+    /// List duration uses `RecordListChrome.durationHex`. The sport chip fill
+    /// and leading accent bar follow the primary metric via
+    /// `RecordListChrome.accentHex(for:)`, not this sport accent.
     var listAccentHex: UInt32 {
         switch self {
         case .outdoorRunning: return 0x22C55E
@@ -1804,7 +1805,18 @@ enum WorkoutImport {
         fill(&merged.distanceProgress, imported.distanceProgress)
         fill(&merged.pauseIntervals, imported.pauseIntervals)
         fill(&merged.lapMarks, imported.lapMarks)
-        if merged.route.isEmpty, !imported.route.isEmpty {
+        // 力量 / 综合 need a start pin for the list map. Prefer a newly imported
+        // pin when the stored row still has no usable coordinate — even if an
+        // empty-looking or invalid polyline already occupies `route`.
+        if merged.sport.listUsesStartLocationMap,
+           merged.startCoordinate == nil,
+           let pin = imported.startCoordinate {
+            merged.route = [pin]
+            merged.routePointCount = 1
+            if merged.routeTrackFilename == nil {
+                merged.routeTrackFilename = imported.routeTrackFilename
+            }
+        } else if merged.route.isEmpty, !imported.route.isEmpty {
             merged.route = imported.route
             merged.routePointCount = imported.routePointCount > 0
                 ? imported.routePointCount

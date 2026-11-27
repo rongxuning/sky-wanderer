@@ -359,8 +359,9 @@ private func feedEntryID(_ row: RecordFeedList.Row, workouts: [WorkoutRecord]) -
     }
 }
 
-/// In-list year-month. One point larger than headline and bold. No month probe:
-/// the sticky title follows cards only.
+/// In-list year-month. One point larger than headline and bold. Sits on the same
+/// starry-gray band as the sticky top date; leading edge matches the card map.
+/// No month probe: the sticky title follows cards only.
 private struct RecordMonthSectionLabel: View {
     var title: String
     @ScaledMetric(relativeTo: .headline) private var monthSize: CGFloat = 18
@@ -368,11 +369,13 @@ private struct RecordMonthSectionLabel: View {
     var body: some View {
         Text(title)
             .font(.system(size: monthSize, weight: .bold))
-            .foregroundStyle(SkyTheme.Color.ink)
+            .foregroundStyle(SkyTheme.Color.onPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.leading, CGFloat(RecordListCardLayout.monthSectionLeading))
+            .padding(.trailing, CGFloat(RecordListCardLayout.monthSectionTrailing))
             .padding(.top, CGFloat(RecordListCardLayout.monthSectionTop))
-            .padding(.bottom, SkyTheme.Spacing.related)
+            .padding(.bottom, CGFloat(RecordListCardLayout.monthSectionBottom))
+            .background(SkyTheme.Color.starryGray)
             .accessibilityAddTraits(.isHeader)
     }
 }
