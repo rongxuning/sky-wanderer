@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>训练记录页 · 布局标注（以代码为准）</title>
+<style>
+  :root {
+    --ink: #1c1c1e;
+    --secondary: #8e8e93;
+    --grouped: #f5f5f7;
+    --card: #ffffff;
+    --primary: #1e88fe;
+    --starry: #2c2c2e;
+    --starry-chip: #3a3a3c;
+    --on-starry: #c6c6c8;
+    --distance: #00b7eb;
+    --heart: #d13924;
+    --pace-icon: #c9a227;
+    --load-icon: #7c3aed;
+    --mark: #e11d48;
+    --mark-soft: rgba(225, 29, 72, 0.12);
+    --mark-line: rgba(225, 29, 72, 0.85);
+    --page: #eceef2;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    background: var(--page);
+    color: var(--ink);
+    line-height: 1.45;
+  }
+
+  header.doc {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 24px 8px;
+  }
+  header.doc h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+  }
+  header.doc p {
+    margin: 0;
+    color: var(--secondary);
+    font-size: 13px;
+  }
+  header.doc code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    background: #fff;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 16px 24px 48px;
+    display: grid;
+    grid-template-columns: 390px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  /* —— Phone frame —— */
+  .phone-wrap {
+    position: sticky;
+    top: 16px;
+  }
+  .phone {
+    width: 390px;
+    background: var(--grouped);
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(0,0,0,.14);
+    border: 1px solid #d4d6db;
+    position: relative;
+  }
+  .status {
+    height: 48px;
+    background: var(--starry);
+    color: #fff;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 0 22px 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .status .icons { opacity: .9; letter-spacing: 2px; font-size: 12px; }
+
+  .header-bar {
+    background: var(--starry);
+    padding: 0 0 10px 16px; /* filterBarBottom=10, leading screenInset=16 */
+    display: flex;
+    align-items: center;
+    gap: 8px; /* headerGap */
+  }
+  .month-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chips {
+    display: flex;
+    gap: 8px; /* filterChipGap */
+    overflow: hidden;
+    padding-right: 16px;
+  }
+  .chip {
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 7px 12px; /* filterChipPaddingV/H */
+    border-radius: 999px;
+    background: var(--starry-chip);
+    color: var(--on-starry);
+  }
+  .chip.on {
+    background: var(--primary);
+    color: #fff;
+  }
+
+  .scroll {
+    padding: 10px 0 8px; /* firstCardGap top, related bottom */
+    min-height: 560px;
+  }
+
+  .card {
+    background: var(--card);
+    min-height: 120px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px; /* mapToContent */
+    padding: 10px 14px 10px 10px; /* V contentInsetVertical, L mapLeading, R contentTrailing */
+    margin-bottom: 8px; /* related */
+    position: relative;
+  }
+
+  .map {
+    width: 100px;
+    height: 100px;
+    border-radius: 4px; /* mapCorner */
+    background:
+      linear-gradient(135deg, #d7e8f8 0%, #b8cfe4 55%, #9bb8d4 100%);
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .map::after {
+    content: "";
+    position: absolute;
+    inset: 12%;
+    border: 5.5px solid #2f6fbf;
+    border-radius: 40% 20% 45% 25% / 30% 40% 25% 45%;
+    border-left-color: transparent;
+    border-bottom-color: transparent;
+    transform: rotate(-20deg);
+  }
+
+  .metrics {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .title-row {
+    height: 22px; /* titleLine */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .sport-chip {
+    background: var(--ink);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 3px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .date {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .gap-title-mid { height: 12px; } /* titleToMiddle */
+  .upper {
+    height: 32px; /* upperLine */
+    display: flex;
+    align-items: center;
+  }
+  .upper > div { flex: 1; }
+  .dist {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--distance);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.5px;
+  }
+  .dur {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--ink);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .gap-mid-bot { height: 6px; } /* middleToBottom */
+  .lower {
+    min-height: 28px; /* lowerBlock = 14+3+11 */
+    display: flex;
+  }
+  .sec {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px; /* lowerUnitGap */
+  }
+  .sec:nth-child(1) { align-items: flex-start; }
+  .sec:nth-child(2) { align-items: center; }
+  .sec:nth-child(3) { align-items: flex-end; }
+  .sec-val {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .ico {
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+  }
+  .ico.hr { color: var(--heart); }
+  .ico.pace { color: var(--pace-icon); }
+  .ico.load { color: var(--load-icon); }
+  .sec-unit {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--secondary);
+    padding-left: 18px; /* icon column + gap */
+  }
+  .sec:nth-child(2) .sec-unit,
+  .sec:nth-child(3) .sec-unit { padding-left: 0; }
+
+  .month-section {
+    padding: 24px 16px 8px; /* section / screenInset / related */
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  /* —— Annotation overlays —— */
+  .anno {
+    position: absolute;
+    pointer-events: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--mark);
+    line-height: 1.2;
+    white-space: nowrap;
+    z-index: 5;
+  }
+  .anno.tag {
+    background: #fff;
+    border: 1px solid var(--mark-line);
+    border-radius: 3px;
+    padding: 1px 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+  .hline, .vline {
+    position: absolute;
+    background: var(--mark-line);
+    z-index: 4;
+    pointer-events: none;
+  }
+  .hline { height: 1px; }
+  .vline { width: 1px; }
+  .bracket-h {
+    position: absolute;
+    border-top: 1px solid var(--mark-line);
+    border-left: 1px solid var(--mark-line);
+    border-right: 1px solid var(--mark-line);
+    height: 6px;
+    z-index: 4;
+    pointer-events: none;
+  }
+  .bracket-v {
+    position: absolute;
+    border-left: 1px solid var(--mark-line);
+    border-top: 1px solid var(--mark-line);
+    border-bottom: 1px solid var(--mark-line);
+    width: 6px;
+    z-index: 4;
+    pointer-events: none;
+  }
+  .band {
+    position: absolute;
+    background: var(--mark-soft);
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  .card-anno-host { position: relative; }
+
+  /* —— Spec panels —— */
+  .panels { display: flex; flex-direction: column; gap: 16px; }
+  .panel {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e2e4e8;
+    padding: 16px 18px;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .panel h3 {
+    margin: 14px 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--secondary);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  th, td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid #eee;
+    vertical-align: top;
+  }
+  th {
+    color: var(--secondary);
+    font-weight: 600;
+    font-size: 11px;
+  }
+  td.num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 600;
+    color: var(--mark);
+    white-space: nowrap;
+  }
+  td.src {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: #636366;
+  }
+  .tree {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    background: var(--grouped);
+    border-radius: 10px;
+    padding: 12px 14px;
+    white-space: pre;
+    overflow-x: auto;
+    line-height: 1.55;
+  }
+  .swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    vertical-align: -1px;
+    margin-right: 4px;
+    border: 1px solid rgba(0,0,0,.08);
+  }
+  .note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--secondary);
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .legend span::before {
+    content: "";
+    display: inline-block;
+    width: 14px;
+    height: 2px;
+    background: var(--mark);
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+<header class="doc">
+  <h1>训练记录页 · 布局标注</h1>
+  <p>
+    以 iOS 代码为准 ·
+    <code>RecordFeedView</code> +
+    <code>RecordSummaryCard</code> +
+    <code>RecordListCardLayout</code> +
+    <code>SkyTheme</code>
+    · 数值单位 pt · Dynamic Type 默认 Large · Asia/Shanghai 日期格式
+  </p>
+  <div class="legend">
+    <span>红色数字 = 间距 / 尺寸 / 字号</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- ===== Annotated phone ===== -->
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="status">
+        <span>9:41</span>
+        <span class="icons">■■■ ▂</span>
+      </div>
+
+      <!-- Sticky header -->
+      <div class="header-bar" style="position:relative;">
+        <div class="month-title">2026年11月</div>
+        <div class="chips">
+          <div class="chip on">全部</div>
+          <div class="chip">户外跑步</div>
+          <div class="chip">徒步</div>
+        </div>
+
+        <!-- header leading inset -->
+        <div class="band" style="left:0;top:0;bottom:10px;width:16px;"></div>
+        <div class="bracket-v" style="left:4px;top:8px;height:28px;"></div>
+        <div class="anno tag" style="left:12px;top:-2px;">16 screenInset</div>
+
+        <!-- headerGap -->
+        <div class="anno tag" style="left:118px;top:28px;">8 headerGap</div>
+
+        <!-- filterBarBottom -->
+        <div class="band" style="left:0;right:0;bottom:0;height:10px;"></div>
+        <div class="anno tag" style="right:8px;bottom:-1px;">10 filterBarBottom</div>
+
+        <!-- chip padding / gap / type -->
+        <div class="anno tag" style="left:200px;top:-2px;">14 Semibold · chip</div>
+        <div class="anno tag" style="left:200px;top:14px;">pad 7×12 · gap 8</div>
+        <div class="anno tag" style="left:16px;top:36px;">20 Bold · month</div>
+      </div>
+
+      <div class="scroll" style="position:relative;">
+        <!-- firstCardGap -->
+        <div class="band" style="left:0;right:0;top:0;height:10px;"></div>
+        <div class="bracket-h" style="left:40%;width:80px;top:2px;"></div>
+        <div class="anno tag" style="left:42%;top:8px;">10 firstCardGap</div>
+
+        <!-- Card 1 annotated -->
+        <div class="card-anno-host">
+          <div class="card" id="card1">
+            <div class="map"></div>
+            <div class="metrics">
+              <div class="title-row">
+                <span class="sport-chip">户外跑步</span>
+                <span class="date">2026-11-21 15:52 星期六</span>
+              </div>
+              <div class="gap-title-mid"></div>
+              <div class="upper">
+                <div class="dist">8.2公里</div>
+                <div class="dur">00:48:12</div>
+              </div>
+              <div class="gap-mid-bot"></div>
+              <div class="lower">
+                <div class="sec">
+                  <div class="sec-val"><span class="ico hr">♥</span>148</div>
+                  <div class="sec-unit">次/分</div>
+                </div>
+                <div class="sec">
+                  <div class="sec-val"><span class="ico pace">⚡</span>5′52″</div>
+                  <div class="sec-unit">分/公里</div>
+                </div>
+                <div class="sec">
+                  <div class="sec-val"><span class="ico load">▲</span>86</div>
+                  <div class="sec-unit">负荷</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- map leading 10 -->
+          <div class="band" style="left:0;top:10px;width:10px;height:100px;"></div>
+          <div class="anno tag" style="left:0;top:112px;">10 mapLeading</div>
+
+          <!-- map 100 -->
+          <div class="bracket-h" style="left:10px;width:100px;top:4px;"></div>
+          <div class="anno tag" style="left:28px;top:-2px;">100×100 mapSide</div>
+          <div class="anno tag" style="left:10px;top:48px;">r=4</div>
+
+          <!-- mapToContent 14 -->
+          <div class="band" style="left:110px;top:10px;width:14px;height:100px;"></div>
+          <div class="anno tag" style="left:108px;top:112px;">14</div>
+
+          <!-- content trailing 14 -->
+          <div class="band" style="right:0;top:10px;width:14px;height:100px;"></div>
+          <div class="anno tag" style="right:2px;top:112px;">14</div>
+
+          <!-- vertical insets 10 -->
+          <div class="band" style="left:10px;right:14px;top:0;height:10px;"></div>
+          <div class="band" style="left:10px;right:14px;bottom:8px;height:10px;"></div>
+          <div class="anno tag" style="right:40px;top:-2px;">10 contentInsetV</div>
+
+          <!-- titleToMiddle 12 -->
+          <div class="anno tag" style="left:140px;top:38px;">12 titleToMiddle</div>
+
+          <!-- middleToBottom 6 -->
+          <div class="anno tag" style="left:140px;top:78px;">6 middleToBottom</div>
+
+          <!-- fonts -->
+          <div class="anno tag" style="left:140px;top:18px;">12 Sb + 13 Reg · title 22h</div>
+          <div class="anno tag" style="left:140px;top:58px;">28 Bold 距离 · 24 Bold 时长 · 32h</div>
+          <div class="anno tag" style="left:140px;top:96px;">14 Med + 11 Reg · lowerBlock 28</div>
+
+          <!-- card bottom related -->
+          <div class="anno tag" style="left:16px;bottom:-2px;">8 related · 卡间距</div>
+
+          <!-- min height -->
+          <div class="bracket-v" style="right:4px;top:10px;height:100px;"></div>
+          <div class="anno tag" style="right:12px;top:50px;">minH 120</div>
+        </div>
+
+        <!-- Card 2 (lighter, for spacing context) -->
+        <div class="card" style="opacity:.55;">
+          <div class="map" style="background:linear-gradient(135deg,#e8f5e9,#c8e6c9);"></div>
+          <div class="metrics">
+            <div class="title-row">
+              <span class="sport-chip">徒步</span>
+              <span class="date">2026-11-18 09:10 星期二</span>
+            </div>
+            <div class="gap-title-mid"></div>
+            <div class="upper">
+              <div class="dist">12.4公里</div>
+              <div class="dur">02:15:40</div>
+            </div>
+            <div class="gap-mid-bot"></div>
+            <div class="lower">
+              <div class="sec">
+                <div class="sec-val"><span class="ico hr">♥</span>122</div>
+                <div class="sec-unit">次/分</div>
+              </div>
+              <div class="sec">
+                <div class="sec-val"><span class="ico pace">⚡</span>10′54″</div>
+                <div class="sec-unit">分/公里</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="month-section" style="position:relative;">
+          2026年10月
+          <div class="anno tag" style="left:16px;top:2px;">24 section top</div>
+          <div class="anno tag" style="left:120px;top:2px;">17 Semibold headline</div>
+          <div class="anno tag" style="left:16px;bottom:0;">8 related bottom · 16 H</div>
+        </div>
+
+        <div class="card" style="opacity:.4;">
+          <div class="map"></div>
+          <div class="metrics">
+            <div class="title-row">
+              <span class="sport-chip">户外跑步</span>
+              <span class="date">2026-10-30 18:20 星期四</span>
+            </div>
+            <div class="gap-title-mid"></div>
+            <div class="upper">
+              <div class="dist">5.0公里</div>
+              <div class="dur">00:28:01</div>
+            </div>
+            <div class="gap-mid-bot"></div>
+            <div class="lower">
+              <div class="sec">
+                <div class="sec-val"><span class="ico hr">♥</span>155</div>
+                <div class="sec-unit">次/分</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Spec tables ===== -->
+  <div class="panels">
+    <div class="panel">
+      <h2>页面结构</h2>
+      <div class="tree">RecordFeedView
+├─ monthTitleBar（固定，不进滚动）
+│  ├─ RecordMonthTitle          20 Bold / onPrimary
+│  └─ sportFilterBar            横向胶囊 ScrollView
+│     └─ sportChip × N          14 Semibold Capsule
+└─ recordScroll
+   └─ LazyVStack spacing 0
+      ├─ banner?                footnote / secondary
+      ├─ RecordMonthSectionLabel  （跨月才出现）
+      └─ RecordSwipeCard
+         └─ RecordSummaryCard
+            ├─ map / swatch     100 × metricsH, r=4
+            └─ metrics 三行</div>
+      <p class="note">入口：<code>HomeView</code> → 记录 Tab → <code>RecordFeedView</code>。旧版 <code>RecordsView</code> 未挂到首页。</p>
+    </div>
+
+    <div class="panel">
+      <h2>页面级间距</h2>
+      <table>
+        <thead><tr><th>位置</th><th>值 (pt)</th><th>来源</th></tr></thead>
+        <tbody>
+          <tr><td>顶栏左侧内边距</td><td class="num">16</td><td class="src">SkyTheme.Spacing.screenInset</td></tr>
+          <tr><td>月份 ↔ 筛选胶囊</td><td class="num">8</td><td class="src">RecordListCardLayout.headerGap</td></tr>
+          <tr><td>顶栏底边距（列表之上）</td><td class="num">10</td><td class="src">filterBarBottom</td></tr>
+          <tr><td>胶囊间距</td><td class="num">8</td><td class="src">filterChipGap</td></tr>
+          <tr><td>胶囊内边距</td><td class="num">7 × 12</td><td class="src">filterChipPaddingV / H</td></tr>
+          <tr><td>滚动区首卡顶距</td><td class="num">10</td><td class="src">firstCardGap</td></tr>
+          <tr><td>卡片间距（卡底）</td><td class="num">8</td><td class="src">SkyTheme.Spacing.related</td></tr>
+          <tr><td>滚动区底边距</td><td class="num">8</td><td class="src">Spacing.related</td></tr>
+          <tr><td>月分段标题 · 上</td><td class="num">24</td><td class="src">Spacing.section</td></tr>
+          <tr><td>月分段标题 · 下 / 左右</td><td class="num">8 / 16</td><td class="src">related / screenInset</td></tr>
+          <tr><td>空状态水平边距</td><td class="num">32</td><td class="src">RecordFeedView.empty</td></tr>
+          <tr><td>左滑删除按钮宽</td><td class="num">72</td><td class="src">RecordSwipeMetrics.buttonWidth</td></tr>
+          <tr><td>删除按钮与卡间距</td><td class="num">8</td><td class="src">RecordSwipeMetrics.gap</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>卡片内部 · RecordListCardLayout</h2>
+      <table>
+        <thead><tr><th>项</th><th>值 (pt)</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>标准卡高 minHeight</td><td class="num">120</td><td>standardHeight</td></tr>
+          <tr><td>上下内边距</td><td class="num">10</td><td>contentInsetVertical</td></tr>
+          <tr><td>左内边距（图前）</td><td class="num">10</td><td>mapLeading</td></tr>
+          <tr><td>右内边距</td><td class="num">14</td><td>contentTrailing</td></tr>
+          <tr><td>缩略图边长</td><td class="num">100</td><td>mapSide；高度跟 metrics</td></tr>
+          <tr><td>图 ↔ 文</td><td class="num">14</td><td>mapToContent</td></tr>
+          <tr><td>缩略图圆角</td><td class="num">4</td><td>mapCorner</td></tr>
+          <tr><td>标题行高</td><td class="num">22</td><td>titleLine</td></tr>
+          <tr><td>标题 → 主指标</td><td class="num">12</td><td>titleToMiddle</td></tr>
+          <tr><td>主指标行高</td><td class="num">32</td><td>upperLine</td></tr>
+          <tr><td>主指标 → 次指标</td><td class="num">6</td><td>middleToBottom</td></tr>
+          <tr><td>次指标值行高</td><td class="num">14</td><td>lowerValueLine</td></tr>
+          <tr><td>值 ↔ 单位</td><td class="num">3</td><td>lowerUnitGap</td></tr>
+          <tr><td>单位行高</td><td class="num">11</td><td>lowerUnitLine</td></tr>
+          <tr><td>次指标块高</td><td class="num">28</td><td>lowerBlock = 14+3+11</td></tr>
+          <tr><td>信息区最大宽</td><td class="num">220</td><td>informationWidth（上限）</td></tr>
+          <tr><td>轨迹线宽（占位）</td><td class="num">5.5</td><td>mapTrackLineWidth</td></tr>
+          <tr><td>轨迹线宽（底图）</td><td class="num">7.0</td><td>mapTrackBasemapLineWidth</td></tr>
+        </tbody>
+      </table>
+      <p class="note">垂直合计：10 + (22+12+32+6+28) + 10 = 120。文案块 = mapSide = 100。</p>
+    </div>
+
+    <div class="panel">
+      <h2>字体（默认 Dynamic Type Large）</h2>
+      <table>
+        <thead><tr><th>元素</th><th>字号 / 字重</th><th>颜色</th><th>代码</th></tr></thead>
+        <tbody>
+          <tr><td>粘性月份</td><td class="num">20 Bold</td><td><span class="swatch" style="background:#fff"></span>onPrimary</td><td class="src">@ScaledMetric · title3</td></tr>
+          <tr><td>筛选胶囊</td><td class="num">14 Semibold</td><td>选中 onPrimary / 未选 onStarryGray</td><td class="src">@ScaledMetric · subheadline</td></tr>
+          <tr><td>列表月分段</td><td class="num">17 Semibold</td><td>ink</td><td class="src">SkyTheme.Font.headline</td></tr>
+          <tr><td>运动类型标签</td><td class="num">12 Semibold</td><td>onPrimary on ink</td><td class="src">sportSize · pad 2×8 · r3</td></tr>
+          <tr><td>开始时间</td><td class="num">13 Regular</td><td>ink</td><td class="src">dateSize · footnote</td></tr>
+          <tr><td>距离 / 消耗</td><td class="num">28 Bold</td><td>recordDistance / Metric.energy</td><td class="src">distanceSize · title2</td></tr>
+          <tr><td>训练时长</td><td class="num">24 Bold</td><td>ink</td><td class="src">durationSize · title3</td></tr>
+          <tr><td>次指标数值</td><td class="num">14 Medium</td><td>ink</td><td class="src">lowerSize · subheadline</td></tr>
+          <tr><td>次指标单位</td><td class="num">11 Regular</td><td>secondary</td><td class="src">unitSize · caption2</td></tr>
+          <tr><td>次指标图标</td><td class="num">12 Semibold · 14×14</td><td>按列色</td><td class="src">RecordListMetricIcon</td></tr>
+          <tr><td>删除按钮</td><td class="num">15 Semibold</td><td>onPrimary on danger</td><td class="src">Font.subheadline</td></tr>
+          <tr><td>空状态标题</td><td class="num">17 Semibold</td><td>ink</td><td class="src">Font.headline</td></tr>
+          <tr><td>空状态说明</td><td class="num">13 Regular</td><td>secondary</td><td class="src">Font.footnote</td></tr>
+          <tr><td>无坐标色板图标</td><td class="num">34 Medium</td><td>sport×0.72</td><td class="src">RecordSportSwatch</td></tr>
+        </tbody>
+      </table>
+      <p class="note">字族：系统 SF Pro（<code>SkyTheme.Font.fontFamily</code>）。主/次指标数字 <code>monospacedDigit()</code>。</p>
+    </div>
+
+    <div class="panel">
+      <h2>颜色（本页实际用到）</h2>
+      <table>
+        <thead><tr><th>Token</th><th>Hex</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><span class="swatch" style="background:#2c2c2e"></span>starryGray</td><td class="num">#2C2C2E</td><td>顶栏底（含状态栏延伸）</td></tr>
+          <tr><td><span class="swatch" style="background:#3a3a3c"></span>starryChip</td><td class="num">#3A3A3C</td><td>未选中胶囊</td></tr>
+          <tr><td><span class="swatch" style="background:#1e88fe"></span>primary</td><td class="num">#1E88FE</td><td>选中胶囊</td></tr>
+          <tr><td><span class="swatch" style="background:#f5f5f7"></span>grouped</td><td class="num">#F5F5F7</td><td>列表底</td></tr>
+          <tr><td><span class="swatch" style="background:#ffffff"></span>card</td><td class="num">#FFFFFF</td><td>卡片底（代码用 card，非 recordCard）</td></tr>
+          <tr><td><span class="swatch" style="background:#1c1c1e"></span>ink</td><td class="num">#1C1C1E</td><td>类型标签底、时长、次指标值、日期</td></tr>
+          <tr><td><span class="swatch" style="background:#00b7eb"></span>recordDistance</td><td class="num">#00B7EB</td><td>距离数字</td></tr>
+          <tr><td><span class="swatch" style="background:#c2183b"></span>Metric.energy</td><td class="num">#C2183B</td><td>无路线运动的消耗数字</td></tr>
+          <tr><td><span class="swatch" style="background:#8e8e93"></span>secondary</td><td class="num">#8E8E93</td><td>单位、说明</td></tr>
+          <tr><td><span class="swatch" style="background:#2f6fbf"></span>recordTrack</td><td class="num">#2F6FBF</td><td>缩略图轨迹</td></tr>
+          <tr><td><span class="swatch" style="background:#ff3b30"></span>danger</td><td class="num">#FF3B30</td><td>左滑删除</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>对齐与行为</h2>
+      <table>
+        <thead><tr><th>规则</th><th>实现</th></tr></thead>
+        <tbody>
+          <tr><td>主指标两列</td><td>距离/消耗 leading · 时长 trailing · 等分半宽</td></tr>
+          <tr><td>次指标列</td><td>等分；首 leading、中 center、末 trailing（与时长右缘齐）</td></tr>
+          <tr><td>缺值次指标</td><td>不画该列，不显示「—」</td></tr>
+          <tr><td>缩略图高度</td><td>跟随 metrics 实测高度；默认 100</td></tr>
+          <tr><td>左滑删除</td><td>露出 72+8；仅水平手势开始</td></tr>
+          <tr><td>粘性月份</td><td>跟视口顶部卡片月份；同位淡入淡出 0.2s</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</body>
+</html>
