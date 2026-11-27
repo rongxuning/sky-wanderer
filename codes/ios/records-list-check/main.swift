@@ -7,6 +7,7 @@ import Foundation
 //   codes/ios/Shared/RecordFeedList.swift \
 //   codes/ios/Shared/RecordListCard.swift \
 //   codes/ios/Shared/RecordListThumbnailFile.swift \
+//   codes/ios/Shared/RecordListThumbnailQuality.swift \
 //   codes/ios/Shared/WorkoutTrackStore.swift \
 //   codes/ios/records-list-check/main.swift \
 //   -o /tmp/records-list-check && /tmp/records-list-check
@@ -378,10 +379,35 @@ check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
 check(
     RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 100)
-        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v4.jpg",
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v5.jpg",
     "list thumbnails live under record-thumbs with id, basemap, side, and plate version"
 )
-check(RecordListThumbnailFile.plateVersion == "4", "plate version invalidates old track ink and framing")
+check(RecordListThumbnailFile.plateVersion == "5", "plate version drops failed black captures")
+check(
+    !RecordListThumbnailQuality.isUsable(meanLuma: 0.02, darkPixelFraction: 0.98),
+    "near-black MapKit failures are not usable plates"
+)
+check(
+    RecordListThumbnailQuality.isUsable(meanLuma: 0.55, darkPixelFraction: 0.1),
+    "a normal basemap plate stays usable"
+)
+let blackBytes = [UInt8](repeating: 0, count: 4 * 4 * 4)
+let blackSample = RecordListThumbnailQuality.sample(
+    bytes: blackBytes,
+    bytesPerPixel: 4,
+    width: 4,
+    height: 4,
+    step: 1
+)
+check(blackSample.meanLuma < 0.01, "solid black samples near-zero luma")
+check(blackSample.darkPixelFraction > 0.95, "solid black is almost all dark pixels")
+check(
+    !RecordListThumbnailQuality.isUsable(
+        meanLuma: blackSample.meanLuma,
+        darkPixelFraction: blackSample.darkPixelFraction
+    ),
+    "sampled black buffers are rejected"
+)
 check(
     RecordListThumbnailFile.idPrefix(thumbID) == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-",
     "delete uses the workout id prefix"

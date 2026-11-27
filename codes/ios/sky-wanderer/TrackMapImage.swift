@@ -182,7 +182,10 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
                 }
                 let idle = !TiandituTileActivity.busy
                 let ready = self.fullRenders > 0 && idle && (current == .system || elapsed > 0.9)
-                if ready || elapsed > 6 {
+                // Tianditu tiles with canReplaceMapContent need longer; finishing
+                // early captures a solid black plate.
+                let budget = current == .tianditu ? 9.0 : 6.0
+                if ready || elapsed > budget {
                     self.finish()
                     return
                 }
@@ -211,11 +214,20 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         let scale = scene.screen.scale > 0 ? scene.screen.scale : 3
         let format = UIGraphicsImageRendererFormat()
         format.scale = scale
-        format.opaque = true
+        // Keep opaque false so an unpainted Metal layer does not become a solid
+        // black JPEG under Tianditu `canReplaceMapContent`.
+        format.opaque = false
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        return renderer.image { _ in
+        let image = renderer.image { context in
+            SkyBasemapInstaller.backdrop.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
             window.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
         }
+        // Drop failed black plates so the list keeps the SwiftUI track stroke.
+        if thumbnail, !RecordListThumbnailQuality.isUsable(image) {
+            return nil
+        }
+        return image
     }
 
     /// Centers the track in the thumbnail. The longer ground axis meets the

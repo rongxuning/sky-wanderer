@@ -68,19 +68,22 @@ struct RecordRouteThumbnail: View {
         switch kind {
         case .track:
             ZStack {
-                RecordTrackLine(points: route)
-                if let mapImage {
+                // Usable basemap plates already bake the track. A failed black
+                // JPEG must not cover this stroke — quality rejects those plates.
+                if let mapImage, RecordListThumbnailQuality.isUsable(mapImage) {
                     Image(uiImage: mapImage)
                         .resizable()
                         .scaledToFill()
                         .frame(width: width, height: height)
                         .clipped()
                         .transition(.opacity)
+                } else {
+                    RecordTrackLine(points: route)
                 }
             }
         case .startPoint:
             ZStack {
-                if let mapImage {
+                if let mapImage, RecordListThumbnailQuality.isUsable(mapImage) {
                     Image(uiImage: mapImage)
                         .resizable()
                         .scaledToFill()
@@ -208,15 +211,27 @@ final class RecordMapThumbnails: ObservableObject {
             cache.setObject(disk, forKey: key)
             return disk
         }
-        let image = await TrackMapImage.render(
+        var image = await TrackMapImage.render(
             route: route,
             size: CGSize(width: side, height: side),
             overlap: 0,
             thumbnail: true
         )
+        // One retry: the first offscreen paint can finish before Tianditu tiles.
+        if image == nil || image.map({ !RecordListThumbnailQuality.isUsable($0) }) == true {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            image = await TrackMapImage.render(
+                route: route,
+                size: CGSize(width: side, height: side),
+                overlap: 0,
+                thumbnail: true
+            )
+        }
         // The render follows the live basemap. Drop it if the mode moved, so a
         // system-map image is never saved under the Tianditu name.
-        guard let image, Self.basemapToken == token else { return nil }
+        guard let image,
+              RecordListThumbnailQuality.isUsable(image),
+              Self.basemapToken == token else { return nil }
         cache.setObject(image, forKey: key)
         RecordListThumbnailStore.save(image, id: id, basemapToken: token, side: sideKey)
         revision &+= 1
@@ -225,6 +240,7 @@ final class RecordMapThumbnails: ObservableObject {
 
     /// Fills missing plates slowly. The caller restarts this when the workout ids
     /// or the basemap mode change, so each pass uses one token. Sleeps between renders.
+    /// `exists` already rejects solid-black files, so a bad plate is warmed again.
     func backfill(workouts: [WorkoutRecord], side: CGFloat) async {
         let sideKey = Int(side.rounded())
         let token = Self.basemapToken
