@@ -143,7 +143,7 @@ struct RecordSummaryCard: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
                 .background(
-                    SkyTheme.Color.ink,
+                    SkyTheme.Color.starryChip,
                     in: RoundedRectangle(cornerRadius: 3, style: .continuous)
                 )
                 .fixedSize(horizontal: true, vertical: true)

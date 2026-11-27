@@ -373,7 +373,8 @@ check(
 )
 check(RecordListThumbnailFile.folder == "record-thumbs", "thumbnail folder name is fixed")
 
-check(RecordListChrome.labelHex == 0x1C1C1E, "list sport chip and duration use ink")
+check(RecordListChrome.labelHex == 0x1C1C1E, "list duration stays on ink")
+check(RecordListChrome.chipFillHex == 0x3A3A3C, "list sport chip uses dark gray, not ink")
 check(RecordListThumbnailKind.resolve(routeCount: 0) == .swatch, "no points keep the glass plate")
 check(RecordListThumbnailKind.resolve(routeCount: 1) == .startPoint, "one point is a start pin map")
 check(RecordListThumbnailKind.resolve(routeCount: 2) == .track, "two points draw the track")

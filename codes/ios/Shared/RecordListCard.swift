@@ -94,10 +94,13 @@ enum RecordListCardLayout {
     }
 }
 
-/// List-card chrome that stays on the ink token — sport chip fill and duration.
-/// Matches the start-time text. Does not follow `SportKind.listAccentHex`.
+/// List-card chrome. Duration stays on ink with the start-time text.
+/// The sport-type chip uses a softer dark gray so the badge does not dominate.
+/// Neither follows `SportKind.listAccentHex`.
 enum RecordListChrome {
     static let labelHex: UInt32 = 0x1C1C1E
+    /// Sport chip fill. Same value as `SkyTheme.Color.starryChip`.
+    static let chipFillHex: UInt32 = 0x3A3A3C
 }
 
 /// What the list card draws on the left plate.
