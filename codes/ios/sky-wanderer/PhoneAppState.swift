@@ -113,6 +113,7 @@ final class PhoneAppState: ObservableObject {
     /// Saves each track as its own route. `source` is the original GPX; every created route gets its own copy.
     func addGPXRoutes(_ imported: [GPXTrack], source: Data) -> [String] {
         var identifiers: [String] = []
+        var warm: [(id: String, points: [GeoPoint])] = []
         mutate { database in
             for item in imported where item.points.count >= 2 {
                 let identifier = UUID().uuidString
@@ -140,7 +141,15 @@ final class PhoneAppState: ObservableObject {
                     )
                 )
                 identifiers.append(identifier)
+                warm.append((identifier, item.points))
             }
+        }
+        for item in warm {
+            RouteMapThumbnails.shared.enqueueWarm(
+                for: item.id,
+                points: item.points,
+                side: RouteCardLayout.track
+            )
         }
         return identifiers
     }
@@ -152,6 +161,16 @@ final class PhoneAppState: ObservableObject {
             database.routes.removeAll { $0.id == id && $0.kind == .gpx }
         }
         RouteGPXStore.delete(filename: filename)
+        RouteMapThumbnails.shared.forget(id: id)
+    }
+
+    /// Writes the cached province / city onto one imported route. Other fields stay.
+    func storeRouteStartRegion(id: String, region: RouteStartRegion) {
+        guard database.routes.contains(where: { $0.id == id && $0.startRegion != region }) else { return }
+        mutate { database in
+            guard let index = database.routes.firstIndex(where: { $0.id == id }) else { return }
+            database.routes[index].startRegion = region
+        }
     }
 
     /// Writes route-detail card edits onto `Database.routes` in phone.json.

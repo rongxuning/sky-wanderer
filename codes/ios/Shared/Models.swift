@@ -928,6 +928,54 @@ struct RouteWaypoint: Codable, Hashable {
     var cutoff: String? = nil
 }
 
+/// Cached reverse-geocode of a route's first point, province and city only.
+/// Presence means the lookup finished, even when both fields are empty.
+struct RouteStartRegion: Codable, Hashable {
+    /// `CLPlacemark.administrativeArea`, e.g. 浙江省 or 上海市.
+    var province: String?
+    /// `CLPlacemark.locality`, e.g. 杭州市. Often the same as `province` for a municipality.
+    var city: String?
+
+    /// Province then city, with duplicates collapsed. Nil when both are blank.
+    var label: String? {
+        RouteStartRegionText.label(province: province, city: city)
+    }
+}
+
+/// Formats a route card's start place as province + city.
+enum RouteStartRegionText {
+    /// Direct-administered municipalities. Their `locality` is often a district, so the card keeps the city only.
+    private static let municipalities: Set<String> = [
+        "北京市", "上海市", "天津市", "重庆市",
+        "北京", "上海", "天津", "重庆"
+    ]
+
+    static func label(province: String?, city: String?) -> String? {
+        func clean(_ raw: String?) -> String? {
+            guard let raw else { return nil }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        let province = clean(province)
+        let city = clean(city)
+        if let province, municipalities.contains(province) {
+            return province.hasSuffix("市") ? province : province + "市"
+        }
+        switch (province, city) {
+        case let (province?, city?) where province == city || province.contains(city) || city.contains(province):
+            return province
+        case let (province?, city?):
+            return province + city
+        case let (province?, nil):
+            return province
+        case let (nil, city?):
+            return city
+        default:
+            return nil
+        }
+    }
+}
+
 /// A route kept on this device. There is no server.
 struct SavedRoute: Codable, Hashable, Identifiable {
     var id: String
@@ -948,6 +996,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     var cutoffResolved: Bool
     /// Card edits. Nil on routes saved before the detail card could be edited.
     var factOverrides: RouteFactOverrides?
+    /// Province / city of the first track point. Nil until reverse-geocode finishes.
+    var startRegion: RouteStartRegion?
 
     enum Kind: String, Codable {
         /// The one running route the phone editor can change.
@@ -968,7 +1018,8 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         waypoints: [RouteWaypoint] = [],
         gpxFilename: String? = nil,
         cutoffResolved: Bool = false,
-        factOverrides: RouteFactOverrides? = nil
+        factOverrides: RouteFactOverrides? = nil,
+        startRegion: RouteStartRegion? = nil
     ) {
         self.id = id
         self.name = name
@@ -980,6 +1031,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         self.gpxFilename = gpxFilename
         self.cutoffResolved = cutoffResolved
         self.factOverrides = factOverrides
+        self.startRegion = startRegion
     }
 
     var creatorLabel: String {
@@ -988,7 +1040,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, points, kind, importedAt, creator, waypoints, gpxFilename, cutoffResolved, factOverrides
+        case id, name, points, kind, importedAt, creator, waypoints, gpxFilename, cutoffResolved, factOverrides, startRegion
     }
 
     init(from decoder: Decoder) throws {
@@ -1003,6 +1055,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         gpxFilename = try container.decodeIfPresent(String.self, forKey: .gpxFilename)
         cutoffResolved = try container.decodeIfPresent(Bool.self, forKey: .cutoffResolved) ?? false
         factOverrides = try container.decodeIfPresent(RouteFactOverrides.self, forKey: .factOverrides)
+        startRegion = try container.decodeIfPresent(RouteStartRegion.self, forKey: .startRegion)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -1017,6 +1070,7 @@ struct SavedRoute: Codable, Hashable, Identifiable {
         try container.encodeIfPresent(gpxFilename, forKey: .gpxFilename)
         try container.encode(cutoffResolved, forKey: .cutoffResolved)
         try container.encodeIfPresent(factOverrides, forKey: .factOverrides)
+        try container.encodeIfPresent(startRegion, forKey: .startRegion)
     }
 }
 

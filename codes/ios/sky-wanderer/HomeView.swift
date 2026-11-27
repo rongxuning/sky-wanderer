@@ -35,9 +35,16 @@ struct SkyHome: View {
         }
     }
 
-    /// The records header is dark gray under the status bar, so the clock and battery turn light.
+    /// Records and routes headers are dark gray under the status bar, so the clock and battery turn light.
     private var darkHeaderShowing: Bool {
-        tab == .records && recordsPath.isEmpty && !app.workouts.isEmpty
+        switch tab {
+        case .records:
+            return recordsPath.isEmpty && !app.workouts.isEmpty
+        case .routes:
+            return routesPath.isEmpty
+        case .analysis, .training:
+            return false
+        }
     }
 
     var body: some View {
