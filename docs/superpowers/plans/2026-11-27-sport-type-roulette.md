@@ -382,11 +382,15 @@ private var drag: some Gesture {
             )
         }
         .onEnded { value in
+            // Project from dragOrigin — onChanged already applied translation into
+            // scrollOffset, and predictedEndTranslation is from gesture start.
+            let origin = dragOrigin ?? scrollOffset
             dragOrigin = nil
-            let predicted = scrollOffset - value.predictedEndTranslation.height
+            let projected = origin
+                - value.predictedEndTranslation.height
                 / CGFloat(SportRouletteGeometry.dragPixelsPerStep)
             let nearest = SportRouletteGeometry.nearestIndex(
-                scrollOffset: ChromeLength(predicted),
+                scrollOffset: ChromeLength(projected),
                 itemCount: itemCount
             )
             withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
@@ -400,7 +404,9 @@ private func tap(_ index: Int) {
     withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
         scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: index))
     }
-    commit(index)
+    // Design: write after the spring reaches midline (defer ~0.38s); cancel if
+    // a new drag/tap starts. Drag onEnded may commit immediately.
+    scheduleTapCommit(index)
 }
 
 private func commit(_ index: Int) {
