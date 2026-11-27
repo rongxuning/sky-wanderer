@@ -1372,6 +1372,8 @@ private struct ElevationProfileChart: View {
 
     private static let yAxisWidth: CGFloat = 44
     private static let canvasHeight: CGFloat = 110
+    private static let axisSpacing: CGFloat = 4
+    private static let axisTextRowHeight: CGFloat = 16
 
     private var points: [GeoPoint] { route.points }
 
@@ -1440,7 +1442,7 @@ private struct ElevationProfileChart: View {
             GeometryReader { geo in
                 let contentWidth = plotContentWidth(viewport: geo.size.width)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: Self.axisSpacing) {
                         Canvas { context, size in
                             draw(context: context, size: size, low: low, high: high)
                         }
@@ -1455,7 +1457,7 @@ private struct ElevationProfileChart: View {
                 }
                 .onPreferenceChange(PlotWidthKey.self) { plotWidth = $0 }
             }
-            .frame(height: Self.canvasHeight + distanceAxisHeight)
+            .frame(height: Self.canvasHeight + Self.axisSpacing + distanceAxisHeight)
         }
     }
 
@@ -1522,13 +1524,14 @@ private struct ElevationProfileChart: View {
     }
 
     private var chartHeight: CGFloat {
-        let ticks = (samples.count >= 2 && bounds != nil) ? distanceAxisHeight : 0
-        return 52 + Self.canvasHeight + ticks
+        let axis = (samples.count >= 2 && bounds != nil) ? Self.axisSpacing + distanceAxisHeight : 0
+        return 52 + Self.canvasHeight + axis
     }
 
+    /// Tick band plus one 10pt text row. The row is taller than its font size, so reserve the full line.
     private var distanceAxisHeight: CGFloat {
-        let ticks = axisMarks.isEmpty ? 0 : tickBandHeight
-        return ticks + 14
+        let ticks = axisMarks.isEmpty ? 0 : tickBandHeight + 1
+        return ticks + Self.axisTextRowHeight
     }
 
     private var tickBandHeight: CGFloat {
