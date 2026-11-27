@@ -579,7 +579,7 @@ struct RouteDetailView: View {
     @State private var editTarget: RouteFactEditTarget?
     /// Height of the floating card, including the home-indicator padding, so the tools sit above it.
     @State private var chromeHeight: CGFloat = 220
-    /// Title bar, from the top of the map through the map credit. 1× starts below it.
+    /// Title bar height from the top of the map. 1× starts below it.
     @State private var titleHeight: CGFloat = 0
     /// UIKit's latest title string. A class so keystrokes do not re-render the field and move the caret.
     @State private var titleBuffer = RouteTitleBuffer()
@@ -689,8 +689,8 @@ struct RouteDetailView: View {
     ) -> some View {
         let markerCount = RouteKilometers.markers(along: route.points).count
         // Measured title height includes the status bar. Until that arrives, leave room
-        // for the back row, the map credit, and the gaps so the first camera is already 1×.
-        let bandTop = titleHeight > 1 ? titleHeight : topInset + 88
+        // for the back row and the gaps so the first camera is already 1×.
+        let bandTop = titleHeight > 1 ? titleHeight : topInset + 56
         return ZStack {
             OfflineRouteMap(
                 routeID: route.id,
@@ -733,12 +733,6 @@ struct RouteDetailView: View {
                     Spacer(minLength: 0)
                 }
             }
-            Text(basemap.caption)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniInk)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.92), in: Capsule())
         }
         .padding(.horizontal, 12)
         .padding(.top, topInset + 8)
