@@ -88,6 +88,16 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
+    /// Strength and mixed training draw the start fix on a neighborhood map,
+    /// not a track, even when later points were recorded.
+    var listUsesStartLocationMap: Bool {
+        switch self {
+        case .functionalStrength, .hiit: return true
+        case .outdoorRunning, .indoorRunning, .trailRunning, .outdoorWalking, .hiking, .other:
+            return false
+        }
+    }
+
     /// Types that record a GPS route outdoors when HealthKit is available.
     var usesOutdoorLocation: Bool {
         switch self {
@@ -496,6 +506,22 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     /// Point count for list chrome (track / start pin / swatch). Prefers the full-track count.
     var listRouteCount: Int {
         routePointCount > 0 ? routePointCount : route.count
+    }
+
+    /// Polyline the list thumbnail draws. Strength and mixed training keep only the start fix.
+    var listThumbnailRoute: [GeoPoint] {
+        if sport.listUsesStartLocationMap, let start = startCoordinate {
+            return [start]
+        }
+        return route
+    }
+
+    /// Count that picks track, start pin, or the glass plate for the list thumbnail.
+    var listThumbnailPointCount: Int {
+        if sport.listUsesStartLocationMap {
+            return startCoordinate == nil ? 0 : 1
+        }
+        return listRouteCount
     }
 
     /// First route point when it is a finite WGS84 coordinate.

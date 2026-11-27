@@ -582,10 +582,10 @@ final class PhoneAppState: ObservableObject {
             _ = database.insertWorkout(record)
         }
         if let stored = database.workouts.first(where: { $0.id == record.id }),
-           RecordListThumbnailKind.resolve(routeCount: stored.listRouteCount) != .swatch {
+           RecordListThumbnailKind.resolve(routeCount: stored.listThumbnailPointCount) != .swatch {
             RecordMapThumbnails.shared.enqueueWarm(
                 for: stored.id,
-                route: stored.route,
+                route: stored.listThumbnailRoute,
                 side: CGFloat(RecordListCardLayout.mapSide)
             )
         }

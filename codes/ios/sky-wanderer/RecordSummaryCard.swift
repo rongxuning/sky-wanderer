@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Full-width record card. Map (track or start pin) or sport-color plate on the
-/// left; ink sport chip with start time, distance / duration, and secondary
-/// metrics with units on the right. Missing secondary values are omitted.
-/// Cadence and the motivation line stay off.
+/// Full-width record card. A 90pt map on the left — track, or the start pin
+/// for a single fix, including 力量训练 and 综合训练. Sport-color plate only
+/// when there is no start coordinate. Date sits on the right of the title row.
+/// Secondary metrics are the value only; load appends TL. Missing values are omitted.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
     var explainSpace: String
@@ -15,8 +15,6 @@ struct RecordSummaryCard: View {
     @ScaledMetric(relativeTo: .title2) private var distanceSize: CGFloat = 28
     @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 24
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
-    @ScaledMetric(relativeTo: .caption2) private var unitSize: CGFloat = 11
-    @State private var metricsHeight: CGFloat = CGFloat(RecordListCardLayout.standardMapBlock)
 
     /// Default content size keeps the measured line boxes. Larger sizes grow.
     private var usesStandardMetrics: Bool { dynamicTypeSize == .large }
@@ -25,27 +23,14 @@ struct RecordSummaryCard: View {
         RecordListSecondaryMetric.visible(in: workout)
     }
 
-    /// Matches the metrics block so the thumbnail’s bottom edge stays level
-    /// with the third data row. Falls back to the standard map side before
-    /// the first layout pass.
-    private var mapHeight: CGFloat {
-        metricsHeight > 0.5 ? metricsHeight : CGFloat(RecordListCardLayout.mapSide)
-    }
+    private var mapSide: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
 
     var body: some View {
         HStack(alignment: .top, spacing: CGFloat(RecordListCardLayout.mapToContent)) {
             visual
-                .frame(width: CGFloat(RecordListCardLayout.mapSide), height: mapHeight)
+                .frame(width: mapSide, height: mapSide)
             metrics
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: RecordMetricsHeightKey.self,
-                            value: proxy.size.height
-                        )
-                    }
-                }
         }
         .padding(.leading, CGFloat(RecordListCardLayout.mapLeading))
         .padding(.trailing, CGFloat(RecordListCardLayout.contentTrailing))
@@ -53,11 +38,6 @@ struct RecordSummaryCard: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .top)
         .background(SkyTheme.Color.card)
-        .onPreferenceChange(RecordMetricsHeightKey.self) { height in
-            if abs(height - metricsHeight) > 0.5 {
-                metricsHeight = height
-            }
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityAddTraits(.isButton)
@@ -68,14 +48,14 @@ struct RecordSummaryCard: View {
 
     @ViewBuilder
     private var visual: some View {
-        switch RecordListThumbnailKind.resolve(routeCount: workout.listRouteCount) {
+        switch RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount) {
         case .track, .startPoint:
             RecordRouteThumbnail(
                 workoutID: workout.id,
-                route: workout.route,
-                routePointCount: workout.listRouteCount,
-                width: CGFloat(RecordListCardLayout.mapSide),
-                height: mapHeight
+                route: workout.listThumbnailRoute,
+                width: mapSide,
+                height: mapSide,
+                routePointCount: workout.listThumbnailPointCount
             )
         case .swatch:
             RecordSportSwatch(sport: workout.sport)
@@ -153,7 +133,7 @@ struct RecordSummaryCard: View {
                 .foregroundStyle(SkyTheme.Color.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(RecordRowBox(height: RecordListCardLayout.titleLine, enabled: usesStandardMetrics))
@@ -184,21 +164,22 @@ struct RecordSummaryCard: View {
 
     @ViewBuilder
     private func secondaryCell(_ item: RecordListSecondaryMetric, alignment: Alignment) -> some View {
-        let content = VStack(alignment: .leading, spacing: CGFloat(RecordListCardLayout.lowerUnitGap)) {
-            HStack(spacing: 4) {
-                RecordListMetricIcon(column: item.column)
+        let content = HStack(alignment: .center, spacing: 4) {
+            RecordListMetricIcon(column: item.column)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(item.value)
                     .font(lowerFont)
                     .foregroundStyle(SkyTheme.Color.ink)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(usesStandardMetrics ? 0.6 : 0.8)
+                if item.column == .load {
+                    Text(item.unit)
+                        .font(lowerFont)
+                        .foregroundStyle(SkyTheme.Color.ink)
+                        .lineLimit(1)
+                }
             }
-            Text(item.unit)
-                .font(unitFont)
-                .foregroundStyle(SkyTheme.Color.secondary)
-                .padding(.leading, 18)
-                .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: alignment)
 
@@ -242,10 +223,6 @@ struct RecordSummaryCard: View {
         .system(size: lowerSize, weight: .medium)
     }
 
-    private var unitFont: Font {
-        .system(size: unitSize, weight: .regular)
-    }
-
     private var distanceText: String {
         RecordListCardText.distance(workout.distanceMeters)
     }
@@ -280,12 +257,12 @@ struct RecordSummaryCard: View {
             case .pace:
                 parts.append("平均配速 \(item.value)")
             case .load:
-                parts.append("训练负荷 \(item.value)")
+                parts.append("训练负荷 \(item.value) \(item.unit)")
             case .score:
                 parts.append("训练评分 \(item.value)")
             }
         }
-        switch RecordListThumbnailKind.resolve(routeCount: workout.listRouteCount) {
+        switch RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount) {
         case .track:
             parts.append("有轨迹")
         case .startPoint:
@@ -308,14 +285,6 @@ private struct RecordRowBox: ViewModifier {
         } else {
             content
         }
-    }
-}
-
-private struct RecordMetricsHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }
 

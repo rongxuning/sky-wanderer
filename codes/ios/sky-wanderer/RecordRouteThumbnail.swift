@@ -224,11 +224,11 @@ final class RecordMapThumbnails: ObservableObject {
         let token = Self.basemapToken
         for workout in workouts {
             guard !Task.isCancelled else { return }
-            guard RecordListThumbnailKind.resolve(routeCount: workout.listRouteCount) != .swatch else { continue }
+            guard RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount) != .swatch else { continue }
             if await RecordListThumbnailStore.existsAsync(id: workout.id, basemapToken: token, side: sideKey) {
                 continue
             }
-            _ = await warm(for: workout.id, route: workout.route, side: side)
+            _ = await warm(for: workout.id, route: workout.listThumbnailRoute, side: side)
             guard !Task.isCancelled else { return }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }

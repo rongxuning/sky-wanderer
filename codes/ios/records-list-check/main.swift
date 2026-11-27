@@ -278,8 +278,8 @@ check(
     "the lower row is heart rate, pace, load, score"
 )
 check(
-    RecordListMetricColumn.allCases.map(\.unit) == ["次/分", "分/公里", "负荷", "评分"],
-    "each secondary metric has a unit caption"
+    RecordListMetricColumn.allCases.map(\.unit) == ["次/分", "分/公里", "TL", "评分"],
+    "load's visible unit is TL; heart rate and pace units are not drawn on the card"
 )
 check(
     RecordListSecondaryColumnAlign.resolve(index: 0, count: 1) == .leading,
@@ -301,19 +301,20 @@ check(
     "two secondary cells are leading and trailing"
 )
 
-check(RecordListCardLayout.standardTextBlock == 100, "standard text block is 100pt")
-check(RecordListCardLayout.standardMapBlock == 100, "map block matches the text block")
+check(RecordListCardLayout.standardTextBlock == 86, "standard text block is the value rows without unit captions")
+check(RecordListCardLayout.standardMapBlock == 90, "map block is the fixed 90pt square")
 check(
     RecordListCardLayout.standardHeight
-        == RecordListCardLayout.contentInsetVertical * 2 + RecordListCardLayout.standardTextBlock,
-    "card height is vertical insets plus the text block"
+        == RecordListCardLayout.contentInsetVertical * 2
+            + max(RecordListCardLayout.standardTextBlock, RecordListCardLayout.mapSide),
+    "card height is vertical insets plus the taller of the text block and the map"
 )
 check(
     RecordListCardLayout.informationWidth(cardWidth: 393) == 220,
     "a 393pt phone keeps the 220pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 182,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 196,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
@@ -322,16 +323,12 @@ check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
-check(RecordListCardLayout.mapSide == 100, "thumbnail side matches the 100pt text block")
-check(
-    RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock,
-    "thumbnail side equals the standard text block so bottoms align"
-)
+check(RecordListCardLayout.mapSide == 90, "thumbnail is a fixed 90pt square")
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 12, "distance sits 12pt under the title row")
 check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
 check(RecordListCardLayout.middleToBottom == 6, "middle to bottom row is 6pt")
-check(RecordListCardLayout.lowerBlock == 28, "secondary metrics with units are 28pt")
+check(RecordListCardLayout.lowerBlock == 14, "secondary metrics are the value line only")
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
 check(RecordListCardLayout.mapTrackBasemapLineWidth == 7.0, "basemap list stroke is 7pt")
 check(
@@ -360,7 +357,7 @@ check(abs(tallTrack.y - inset) < 0.001, "a tall track meets the top and bottom i
 check(abs(tallTrack.x + tallTrack.width / 2 - 0.5) < 0.001, "a tall track stays horizontally centered")
 check(RecordListCardLayout.mapLeading == 10, "map leading inset is 10pt")
 check(RecordListCardLayout.mapToContent == 14, "map to metrics gap is 14pt")
-check(RecordListCardLayout.contentTrailing == 14, "content trailing inset is 14pt")
+check(RecordListCardLayout.contentTrailing == 10, "content trailing inset is 10pt")
 check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
@@ -484,6 +481,24 @@ let strengthCard = listedWorkout(sport: .functionalStrength, start: saturday)
 check(
     !RecordListSecondaryMetric.visible(in: strengthCard).contains { $0.column == .pace },
     "strength cards never show pace"
+)
+check(SportKind.functionalStrength.listUsesStartLocationMap, "strength maps the start fix")
+check(SportKind.hiit.listUsesStartLocationMap, "mixed training maps the start fix")
+check(!SportKind.outdoorRunning.listUsesStartLocationMap, "running keeps the track plate")
+var strengthWithFix = strengthCard
+strengthWithFix.route = [
+    GeoPoint(latitude: 31.2, longitude: 121.5, altitude: 4, timestamp: saturday),
+    GeoPoint(latitude: 31.21, longitude: 121.51, altitude: 4, timestamp: saturday)
+]
+check(strengthWithFix.listThumbnailPointCount == 1, "strength thumbnail is the start fix, not the later track")
+check(strengthWithFix.listThumbnailRoute.count == 1, "strength thumbnail route keeps only the start coordinate")
+check(
+    RecordListThumbnailKind.resolve(routeCount: strengthWithFix.listThumbnailPointCount) == .startPoint,
+    "a strength start fix draws the neighborhood pin"
+)
+check(
+    RecordListThumbnailKind.resolve(routeCount: strengthCard.listThumbnailPointCount) == .swatch,
+    "strength without a start coordinate keeps the glass plate"
 )
 
 let mixed = [
