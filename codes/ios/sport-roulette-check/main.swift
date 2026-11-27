@@ -71,6 +71,16 @@ check(below.x < mid.x || abs(Double(below.x - mid.x)) < 1, "lower arc side also 
 let leadingDot = StartMapChrome.toolLeading + StartMapChrome.toolDiameter + SportRouletteGeometry.gapAfterTools
 near(mid.x, leadingDot + SportRouletteGeometry.dotDiameter / 2, "centered dot sits just right of the tool column")
 
+near(
+    SportRouletteGeometry.projectedScrollOffsetOnRelease(
+        dragOrigin: 2.5,
+        predictedEndTranslationHeight: 0,
+        itemCount: itemCount
+    ),
+    2.5,
+    "zero-velocity release projection equals drag origin"
+)
+
 if failures.isEmpty {
     print("sport-roulette-check: ok")
 } else {

@@ -29,6 +29,7 @@ struct SportRouletteOverlay: View {
                 scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: idx))
             }
         }
+        .onDisappear(perform: cancelPendingTapCommit)
         .highPriorityGesture(drag)
     }
 
@@ -68,6 +69,7 @@ struct SportRouletteOverlay: View {
         }
         .buttonStyle(.plain)
         .position(x: CGFloat(point.x), y: CGFloat(point.y))
+        .zIndex(1000 - abs(Double(angle)))
     }
 
     private var drag: some Gesture {
@@ -87,11 +89,12 @@ struct SportRouletteOverlay: View {
                 )
             }
             .onEnded { value in
+                let origin = dragOrigin ?? scrollOffset
                 dragOrigin = nil
-                let predicted = scrollOffset
+                let projected = origin
                     - value.predictedEndTranslation.height / CGFloat(SportRouletteGeometry.dragPixelsPerStep)
                 let nearest = SportRouletteGeometry.nearestIndex(
-                    scrollOffset: ChromeLength(predicted),
+                    scrollOffset: ChromeLength(projected),
                     itemCount: itemCount
                 )
                 withAnimation(.spring(response: springResponse, dampingFraction: 0.86)) {

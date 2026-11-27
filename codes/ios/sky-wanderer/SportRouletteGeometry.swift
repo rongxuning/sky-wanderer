@@ -71,4 +71,15 @@ enum SportRouletteGeometry {
     static func clampedScrollOffset(_ offset: ChromeLength, itemCount: Int) -> ChromeLength {
         max(0, min(ChromeLength(itemCount - 1), offset))
     }
+
+    /// Release projection from the drag gesture's origin offset (not live `scrollOffset`, which already includes translation).
+    /// Zero predicted flick (`predictedEndTranslation == 0`) leaves the offset at `dragOrigin`.
+    static func projectedScrollOffsetOnRelease(
+        dragOrigin: ChromeLength,
+        predictedEndTranslationHeight: ChromeLength,
+        itemCount: Int
+    ) -> ChromeLength {
+        let projected = dragOrigin - predictedEndTranslationHeight / dragPixelsPerStep
+        return clampedScrollOffset(projected, itemCount: itemCount)
+    }
 }

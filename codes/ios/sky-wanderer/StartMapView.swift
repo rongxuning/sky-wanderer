@@ -248,6 +248,7 @@ struct StartMapView: View {
 
     private func start() {
         guard !launching else { return }
+        showSportRoulette = false
         if app.activeSession?.phase == .running {
             launching = true
             path.append(TrainRoute.live)
