@@ -664,6 +664,21 @@ check(rebuilt.last?.listedDistanceText == "0.55" && rebuilt.last?.listedTimeText
 check(staleRows.splits.count == 3, "rebuild does not rewrite the stored array")
 check(official.distanceProgress.isEmpty, "a route-only rebuild does not invent official distance progress")
 
+var fullTrackRows = makeWorkout()
+fullTrackRows.distanceMeters = 3_550
+fullTrackRows.trainingDurationSeconds = 800
+fullTrackRows.end = officialEnd
+fullTrackRows.route = lineRoute(points: 120, pauseAt: 10, pauseSeconds: 1_200)
+let inlineSplits = fullTrackRows.resolvedSplits
+
+var detachedRows = fullTrackRows
+WorkoutTrackStore.detach(&detachedRows)
+check(detachedRows.route.count == WorkoutTrackStore.summaryLimit, "detached rows keep only the list summary")
+let detachedSplits = detachedRows.resolvedSplits
+check(detachedSplits.count == inlineSplits.count, "split rebuild reads the full track, got \(detachedSplits.count) vs \(inlineSplits.count)")
+near(detachedSplits.reduce(0.0) { $0 + $1.durationSeconds }, inlineSplits.reduce(0.0) { $0 + $1.durationSeconds }, tolerance: 0.5, "split rebuild from the full track keeps the same duration")
+WorkoutTrackStore.delete(workoutID: detachedRows.id)
+
 let paired = WorkoutPause.intervals(
     from: [
         WorkoutPause.Mark(second: 100, isResume: false, duration: 0),

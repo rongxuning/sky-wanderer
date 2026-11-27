@@ -795,7 +795,7 @@ extension WorkoutRecord {
         if !official.isEmpty { return official }
         if splitsMatchOfficialDistance() { return splits }
         let rebuilt = HealthSeries.track(
-            route: route,
+            route: WorkoutTrackStore.points(for: self),
             distanceSamples: [],
             workoutStart: start,
             workoutEnd: end,
