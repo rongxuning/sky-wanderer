@@ -35,10 +35,10 @@ enum RecordListCardLayout {
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
     static let titleToMiddle = 12.0
-    /// Fits the 32pt distance / energy figure.
+    /// Fits the 31pt distance / energy figure.
     static let upperLine = 36.0
     /// Gap between the distance row and the secondary metrics.
-    static let middleToBottom = 6.0
+    static let middleToBottom = 3.0
     static let lowerValueLine = 14.0
     static let mapLeading = 10.0
     static let mapToContent = 14.0
@@ -60,9 +60,9 @@ enum RecordListCardLayout {
     static let mapTrackLineWidth = 5.5
     /// Matches `TrackPaint.recordListInnerPoints` on the baked basemap plate.
     static let mapTrackBasemapLineWidth = 7.0
-    /// Clearance past the centerline so the thicker of the canvas end dot
-    /// (`0.55 × mapTrackLineWidth`) and the basemap stroke stay inside the frame.
-    static let mapTrackEdgePad = max(mapTrackLineWidth * 0.55, mapTrackBasemapLineWidth / 2)
+    /// Gap between the track bounding box (long axis) and the thumbnail edge.
+    /// 5pt clears the basemap stroke (half of 7) and the canvas end dot.
+    static let mapTrackEdgePad = 5.0
 
     static var lowerBlock: Double {
         lowerValueLine
@@ -95,13 +95,15 @@ enum RecordListCardLayout {
     }
 }
 
-/// List-card chrome. Duration stays on ink with the start-time text.
-/// The sport-type chip uses a softer dark gray so the badge does not dominate.
-/// Neither follows `SportKind.listAccentHex`.
+/// List-card chrome. Duration uses light gray (`secondary`); the start-time
+/// text stays on ink. The sport-type chip uses a softer dark gray so the badge
+/// does not dominate. Neither follows `SportKind.listAccentHex`.
 enum RecordListChrome {
     static let labelHex: UInt32 = 0x1C1C1E
     /// Sport chip fill. Same value as `SkyTheme.Color.starryChip`.
     static let chipFillHex: UInt32 = 0x3A3A3C
+    /// Training duration on the list card. Same value as `SkyTheme.Color.secondary`.
+    static let durationHex: UInt32 = 0x8E8E93
 }
 
 /// What the list card draws on the left plate.
@@ -123,7 +125,7 @@ enum RecordListThumbnailKind: Equatable {
 
 /// How a route sits inside the square record thumbnail.
 ///
-/// The longer ground axis meets the half-stroke inset on both sides. The shorter
+/// The longer ground axis meets the 5pt edge pad on both sides. The shorter
 /// axis stays centered with more margin. Horizontally and vertically the track
 /// is centered; at least one axis is flush to the inset. The full-screen 1.6×
 /// map fit is not used here.
@@ -153,9 +155,8 @@ enum RecordThumbnailFit {
         )
     }
 
-    /// Grow an aspect-filled map rect so a point pad survives without MK edge
-    /// padding. MapKit's edge padding can leave extra empty space and bias the
-    /// track toward the bottom after tiles load.
+    /// How much to grow an aspect-filled map rect so a point pad survives.
+    /// Used when framing without relying on MapKit `edgePadding` alone.
     static func visibleMapScale(side: Double, edgePad: Double) -> Double {
         let usable = max(side - edgePad * 2, 1)
         return side / usable

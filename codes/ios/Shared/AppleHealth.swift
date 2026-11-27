@@ -182,7 +182,13 @@ enum AppleHealth {
         async let oscillationSamples = quantitySamples(.runningVerticalOscillation, unit: .meter(), start: windowStart, end: windowEnd)
         async let linkedDistance = distanceSamples(for: workout)
 
-        let route = await routeTask
+        var route = await routeTask
+        // Strength / mixed / indoor sessions often have no polyline. Apple Fitness
+        // still shows a gym pin; recover that fix from metadata or a time-window
+        // route when the workout-linked series is empty.
+        if route.isEmpty, let pin = metadataStartPin(for: workout) {
+            route = [pin]
+        }
         let stepCadence = await cadenceTask
         let heartRate = HealthSeries.instantaneous(await heartSamples, workoutStart: windowStart, workoutEnd: windowEnd)
         let cadenceSeries = HealthSeries.cadence(stepSamples: await stepSamples, workoutStart: windowStart, workoutEnd: windowEnd)
@@ -353,10 +359,31 @@ enum AppleHealth {
     }
 
     private static func routePoints(for workout: HKWorkout) async -> [GeoPoint] {
+        let linked = await routePoints(predicate: HKQuery.predicateForObjects(from: workout))
+        if !linked.isEmpty { return linked }
+        // Unlinked series: only for sports that need a gym / indoor start pin.
+        // A loose time window must not steal a neighboring outdoor run's polyline.
+        let sport = SportKind.from(workout)
+        guard sport.listUsesStartLocationMap || !sport.usesOutdoorLocation else {
+            return []
+        }
+        let timed = await routePoints(
+            predicate: HKQuery.predicateForSamples(
+                withStart: workout.startDate,
+                end: workout.endDate,
+                options: []
+            )
+        )
+        guard let first = timed.first else { return [] }
+        // Keep at most the start fix for the list map — not a full track that
+        // merely overlapped this indoor session's clock.
+        return [first]
+    }
+
+    private static func routePoints(predicate: NSPredicate) async -> [GeoPoint] {
         await withCheckedContinuation { continuation in
             let once = ResumeOnce()
             let bag = PointBag()
-            let predicate = HKQuery.predicateForObjects(from: workout)
             let query = HKSampleQuery(
                 sampleType: HKSeriesType.workoutRoute(),
                 predicate: predicate,
@@ -383,6 +410,93 @@ enum AppleHealth {
             }
             execute(query)
         }
+    }
+
+    /// Single gym / indoor pin when there is no route series.
+    /// Fitness shows this for strength and mixed training; HealthKit may still
+    /// carry a `CLLocation` under a public or private metadata key.
+    private static func metadataStartPin(for workout: HKWorkout) -> GeoPoint? {
+        guard let metadata = workout.metadata, !metadata.isEmpty else { return nil }
+        for key in self.startPinMetadataKeys {
+            if let point = geoPoint(from: metadata[key]) { return point }
+        }
+        for (key, value) in metadata {
+            // Skip keys already tried. Still scan the rest for a buried CLLocation.
+            if self.startPinMetadataKeys.contains(key) { continue }
+            if let point = geoPoint(from: value) { return point }
+        }
+        return nil
+    }
+
+    private static let startPinMetadataKeys: [String] = [
+        "HKMetadataKeyWorkoutLocation",
+        "HKWorkoutLocation",
+        "_HKPrivateMetadataKeyWorkoutLocation",
+        "WorkoutLocation",
+        SportKind.startLocationMetadataKey
+    ]
+
+    private static func geoPoint(from value: Any?) -> GeoPoint? {
+        guard let value else { return nil }
+        if let location = value as? CLLocation {
+            return GeoPoint.valid(
+                latitude: location.coordinate.latitude,
+                longitude: location.coordinate.longitude,
+                altitude: location.altitude,
+                timestamp: location.timestamp
+            )
+        }
+        if let point = value as? GeoPoint {
+            return GeoPoint.valid(
+                latitude: point.latitude,
+                longitude: point.longitude,
+                altitude: point.altitude,
+                timestamp: point.timestamp
+            )
+        }
+        if let text = value as? String {
+            return geoPoint(fromCSV: text)
+        }
+        if let dictionary = value as? [String: Any] {
+            let latitude = doubleValue(dictionary["latitude"] ?? dictionary["lat"])
+            let longitude = doubleValue(dictionary["longitude"] ?? dictionary["lon"] ?? dictionary["lng"])
+            guard let latitude, let longitude else { return nil }
+            let altitude = doubleValue(dictionary["altitude"] ?? dictionary["alt"]) ?? 0
+            return GeoPoint.valid(
+                latitude: latitude,
+                longitude: longitude,
+                altitude: altitude,
+                timestamp: nil
+            )
+        }
+        return nil
+    }
+
+    /// Parses `lat,lon` or `lat,lon,alt` written by `healthKitFinishMetadata(startPin:)`.
+    private static func geoPoint(fromCSV text: String) -> GeoPoint? {
+        let parts = text.split(separator: ",").map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard parts.count >= 2,
+              let latitude = Double(parts[0]),
+              let longitude = Double(parts[1]) else {
+            return nil
+        }
+        let altitude = parts.count >= 3 ? Double(parts[2]) ?? 0 : 0
+        return GeoPoint.valid(
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude,
+            timestamp: nil
+        )
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        if let value = value as? Double, value.isFinite { return value }
+        if let value = value as? Float, value.isFinite { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        if let value = value as? String, let parsed = Double(value), parsed.isFinite { return parsed }
+        return nil
     }
 
     /// HealthKit callbacks stay on HealthKit's queue. Resume and `execute` hop
@@ -569,7 +683,7 @@ extension SportKind {
             return isIndoor(workout) ? .other : .outdoorWalking
         case .hiking:
             return .hiking
-        case .functionalStrengthTraining:
+        case .functionalStrengthTraining, .traditionalStrengthTraining:
             return .functionalStrength
         case .highIntensityIntervalTraining:
             return .hiit
@@ -584,7 +698,7 @@ extension SportKind {
         case .running: return .outdoorRunning
         case .walking: return .outdoorWalking
         case .hiking: return .hiking
-        case .functionalStrengthTraining: return .functionalStrength
+        case .functionalStrengthTraining, .traditionalStrengthTraining: return .functionalStrength
         case .highIntensityIntervalTraining: return .hiit
         default: return .other
         }
@@ -604,6 +718,9 @@ extension SportKind {
     /// HealthKit has no trail-run activity type. A trail run is saved as `.running`
     /// and tagged with this key so the app can tell it from an outdoor run.
     static let trailRunMetadataKey = "SkyWandererTrailRun"
+    /// Lat/lon dictionary for the list start-pin when a session has no polyline.
+    /// Written beside the indoor/outdoor flags so a later import can rebuild the map.
+    static let startLocationMetadataKey = "SkyWandererStartLocation"
 
     /// Metadata the live builder must carry so Fitness can resolve the outdoor /
     /// indoor activity glyph (e.g. outdoor run) instead of leaving the icon blank.
@@ -615,6 +732,30 @@ extension SportKind {
         if flags.trailRun {
             metadata[Self.trailRunMetadataKey] = true
         }
+        return metadata
+    }
+
+    /// Finish metadata plus an optional start pin for strength / mixed / indoor.
+    /// The pin is a property-list string (`lat,lon,alt`) — HealthKit rejects nested
+    /// dictionaries and `CLLocation` in workout metadata.
+    func healthKitFinishMetadata(startPin: GeoPoint?) -> [String: Any] {
+        var metadata = healthKitFinishMetadata
+        guard let startPin,
+              let pin = GeoPoint.valid(
+                latitude: startPin.latitude,
+                longitude: startPin.longitude,
+                altitude: startPin.altitude,
+                timestamp: startPin.timestamp
+              ) else {
+            return metadata
+        }
+        metadata[Self.startLocationMetadataKey] = String(
+            format: "%.6f,%.6f,%.2f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            pin.latitude,
+            pin.longitude,
+            pin.altitude
+        )
         return metadata
     }
 
@@ -790,11 +931,14 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         // Always stamp indoor/outdoor (and trail) before closing the builder. Fitness
         // resolves the outdoor-run glyph from HKMetadataKeyIndoorWorkout; without it
         // third-party outdoor runs can show the correct title with a blank icon.
+        // Strength / mixed keep a start pin in metadata so a later import can still
+        // draw the gym map when there is no multi-point route series.
         var sport = recordedSport
         if tagsTrailRun {
             sport = .trailRunning
         }
-        let metadata = sport.healthKitFinishMetadata
+        let startPin = route.first
+        let metadata = sport.healthKitFinishMetadata(startPin: startPin)
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             builder.addMetadata(metadata) { _, _ in
                 continuation.resume()
@@ -816,7 +960,8 @@ final class AppleWorkoutRecorder: NSObject, HKWorkoutSessionDelegate, HKLiveWork
         recordedSport = .other
         tagsTrailRun = false
         var routeError: String?
-        if let workout, route.count >= 2 {
+        // One point is enough for the list start-pin map (力量 / 综合 / indoor).
+        if let workout, !route.isEmpty {
             do {
                 try await save(route: route, workout: workout)
             } catch {
