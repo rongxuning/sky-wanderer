@@ -23,7 +23,6 @@ extension EnvironmentValues {
 }
 
 enum StartSheet: String, Identifiable {
-    case type
     case settings
     var id: String { rawValue }
 }
@@ -39,6 +38,7 @@ struct StartMapView: View {
     @StateObject private var location = LocationPermission()
     @ObservedObject private var basemap = SkyBasemapCenter.shared
     @State private var sheet: StartSheet?
+    @State private var showSportRoulette = false
     @State private var pickingRoute = false
     @State private var counting = false
     @State private var count = 3
@@ -62,6 +62,16 @@ struct StartMapView: View {
                 .ignoresSafeArea()
                 if counting {
                     countdown
+                }
+            }
+            .overlay {
+                if showSportRoulette {
+                    SportRouletteOverlay(
+                        selection: $draft.sport,
+                        screenHeight: geo.size.height,
+                        onDismiss: { showSportRoulette = false }
+                    )
+                    .transition(.opacity)
                 }
             }
             .overlay(alignment: .topLeading) {
@@ -127,7 +137,6 @@ struct StartMapView: View {
         }
         .sheet(item: $sheet) { item in
             switch item {
-            case .type: TypeSheet().presentationDetents([.height(280)])
             case .settings: StartSettingsSheet().presentationDetents([.medium])
             }
         }
@@ -220,14 +229,17 @@ struct StartMapView: View {
     private func performTool(_ label: String) {
         switch label {
         case "类型":
-            sheet = .type
+            showSportRoulette.toggle()
         case "路线":
+            showSportRoulette = false
             cancelCountdown()
             pickingRoute = true
         case "组队":
+            showSportRoulette = false
             cancelCountdown()
             path.append(TrainRoute.team)
         case "设置":
+            showSportRoulette = false
             sheet = .settings
         default:
             break
@@ -236,6 +248,7 @@ struct StartMapView: View {
 
     private func start() {
         guard !launching else { return }
+        showSportRoulette = false
         if app.activeSession?.phase == .running {
             launching = true
             path.append(TrainRoute.live)
@@ -271,59 +284,6 @@ struct StartMapView: View {
         countdownTask = nil
         counting = false
         launching = false
-    }
-}
-
-struct TypeSheet: View {
-    @EnvironmentObject private var draft: WorkoutDraft
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
-                Text("类型")
-                    .font(SkyTheme.Font.title)
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    .padding(.top, SkyTheme.Spacing.related)
-                ForEach(SportKind.allCases) { sport in
-                    Button {
-                        draft.sport = sport
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Text(sport.title)
-                                .font(SkyTheme.Font.title2)
-                            Spacer()
-                            if draft.sport == sport {
-                                Image(systemName: "checkmark")
-                                    .font(SkyTheme.Font.headline)
-                                    .foregroundStyle(SkyTheme.Color.primary)
-                            }
-                        }
-                        .foregroundStyle(SkyTheme.Color.ink)
-                        .padding(SkyTheme.Spacing.cardPadding)
-                        .frame(minHeight: SkyTheme.Spacing.touchMin)
-                        .background(
-                            SkyTheme.Color.card,
-                            in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous)
-                                .stroke(
-                                    draft.sport == sport ? SkyTheme.Color.primary : SkyTheme.Color.cardBorder,
-                                    lineWidth: draft.sport == sport ? 1.5 : 1
-                                )
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(SkyTheme.Spacing.screenInset)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .background(SkyTheme.Color.grouped)
-        .presentationBackground(SkyTheme.Color.grouped)
-        .tint(SkyTheme.Color.primary)
     }
 }
 

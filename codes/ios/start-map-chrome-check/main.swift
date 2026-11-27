@@ -26,6 +26,11 @@ near(
     526,
     "column bottom on an 852pt phone"
 )
+near(
+    StartMapChrome.toolColumnMidY(screenHeight: 852),
+    326 + 100,
+    "tool column midline is origin + half of 200pt height"
+)
 near(StartMapChrome.toolLeading, 16, "column sits 16pt from the leading edge")
 near(StartMapChrome.toolDiameter, 44, "each map button is a 44pt target")
 near(StartMapChrome.toolGap, 8, "buttons are 8pt apart")
