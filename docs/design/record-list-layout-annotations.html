@@ -650,27 +650,25 @@
       <table>
         <thead><tr><th>项</th><th>值 (pt)</th><th>说明</th></tr></thead>
         <tbody>
-          <tr><td>标准卡高 minHeight</td><td class="num">120</td><td>standardHeight</td></tr>
+          <tr><td>标准卡高 minHeight</td><td class="num">110</td><td>standardHeight = 上下 10 + max(文案 86, 图 90)</td></tr>
           <tr><td>上下内边距</td><td class="num">10</td><td>contentInsetVertical</td></tr>
           <tr><td>左内边距（图前）</td><td class="num">10</td><td>mapLeading</td></tr>
-          <tr><td>右内边距</td><td class="num">14</td><td>contentTrailing</td></tr>
-          <tr><td>缩略图边长</td><td class="num">100</td><td>mapSide；高度跟 metrics</td></tr>
+          <tr><td>右内边距</td><td class="num">10</td><td>contentTrailing</td></tr>
+          <tr><td>缩略图边长</td><td class="num">90</td><td>mapSide；固定正方形，不跟 metrics 拉高</td></tr>
           <tr><td>图 ↔ 文</td><td class="num">14</td><td>mapToContent</td></tr>
           <tr><td>缩略图圆角</td><td class="num">4</td><td>mapCorner</td></tr>
           <tr><td>标题行高</td><td class="num">22</td><td>titleLine</td></tr>
           <tr><td>标题 → 主指标</td><td class="num">12</td><td>titleToMiddle</td></tr>
           <tr><td>主指标行高</td><td class="num">32</td><td>upperLine</td></tr>
           <tr><td>主指标 → 次指标</td><td class="num">6</td><td>middleToBottom</td></tr>
-          <tr><td>次指标值行高</td><td class="num">14</td><td>lowerValueLine</td></tr>
-          <tr><td>值 ↔ 单位</td><td class="num">3</td><td>lowerUnitGap</td></tr>
-          <tr><td>单位行高</td><td class="num">11</td><td>lowerUnitLine</td></tr>
-          <tr><td>次指标块高</td><td class="num">28</td><td>lowerBlock = 14+3+11</td></tr>
+          <tr><td>次指标值行高</td><td class="num">14</td><td>lowerValueLine；心率、配速不写单位，负荷值后紧跟 TL</td></tr>
+          <tr><td>次指标块高</td><td class="num">14</td><td>lowerBlock</td></tr>
           <tr><td>信息区最大宽</td><td class="num">220</td><td>informationWidth（上限）</td></tr>
           <tr><td>轨迹线宽（占位）</td><td class="num">5.5</td><td>mapTrackLineWidth</td></tr>
           <tr><td>轨迹线宽（底图）</td><td class="num">7.0</td><td>mapTrackBasemapLineWidth</td></tr>
         </tbody>
       </table>
-      <p class="note">垂直合计：10 + (22+12+32+6+28) + 10 = 120。文案块 = mapSide = 100。</p>
+      <p class="note">左右整体距卡片四边都是 10。文案块 22+12+32+6+14 = 86，图固定 90，卡高 10+90+10 = 110。日期在标题行居右。</p>
     </div>
 
     <div class="panel">
@@ -725,7 +723,7 @@
           <tr><td>主指标两列</td><td>距离/消耗 leading · 时长 trailing · 等分半宽</td></tr>
           <tr><td>次指标列</td><td>等分；首 leading、中 center、末 trailing（与时长右缘齐）</td></tr>
           <tr><td>缺值次指标</td><td>不画该列，不显示「—」</td></tr>
-          <tr><td>缩略图高度</td><td>跟随 metrics 实测高度；默认 100</td></tr>
+          <tr><td>缩略图</td><td>固定 90×90，顶对齐。力量训练、综合训练有起点时画该点定位，不画轨迹</td></tr>
           <tr><td>左滑删除</td><td>露出 72+8；仅水平手势开始</td></tr>
           <tr><td>粘性月份</td><td>跟视口顶部卡片月份；同位淡入淡出 0.2s</td></tr>
         </tbody>

@@ -25,7 +25,7 @@ struct RecordFeedView: View {
                 // List cells only read disk/memory plates. Missing ones fill in
                 // slowly here so cold launch never opens an MKMapView per card.
                 let mapped = app.workouts.filter {
-                    RecordListThumbnailKind.resolve(routeCount: $0.listRouteCount) != .swatch
+                    RecordListThumbnailKind.resolve(routeCount: $0.listThumbnailPointCount) != .swatch
                 }
                 await RecordMapThumbnails.shared.backfill(
                     workouts: mapped,

@@ -20,14 +20,16 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// Map sits on the left and stretches to the metrics block height. The first
-/// metrics row shares a top edge with the map; the unit captions share a bottom
-/// edge. Distance is leading and duration is trailing in equal halves.
-/// Secondary metrics split the width evenly: first leading, middle centered,
+/// The map is a fixed square on the left, top-aligned with the metrics.
+/// Distance is leading and duration is trailing in equal halves.
+/// Secondary metrics are the value row only: first leading, middle centered,
 /// last trailing so the last cell shares duration’s right edge.
+/// The map and the metrics together sit 10pt inside every card edge.
 enum RecordListCardLayout {
-    /// Card height at the default text size: vertical insets plus the text block.
-    static let standardHeight = 120.0
+    /// Card height at the default text size: vertical insets plus the taller of the map and the text.
+    static var standardHeight: Double {
+        contentInsetVertical * 2 + max(standardTextBlock, mapSide)
+    }
     static let contentInsetVertical = 10.0
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
@@ -36,14 +38,11 @@ enum RecordListCardLayout {
     /// Gap between the distance row and the secondary metrics.
     static let middleToBottom = 6.0
     static let lowerValueLine = 14.0
-    static let lowerUnitGap = 3.0
-    static let lowerUnitLine = 11.0
-    /// Thumbnail side matches `standardTextBlock` so the plate’s bottom edge
-    /// lines up with the metrics block at the default text size.
-    static let mapSide = 100.0
+    /// Fixed square. Does not stretch to the metrics block.
+    static let mapSide = 90.0
     static let mapLeading = 10.0
     static let mapToContent = 14.0
-    static let contentTrailing = 14.0
+    static let contentTrailing = 10.0
     static let informationWidth = 220.0
     /// Horizontal gap between the sticky month title and the sport chips.
     /// Same value as `SkyTheme.Spacing.related`.
@@ -69,7 +68,7 @@ enum RecordListCardLayout {
     static let mapTrackInsetFraction = mapTrackEdgePad / mapSide
 
     static var lowerBlock: Double {
-        lowerValueLine + lowerUnitGap + lowerUnitLine
+        lowerValueLine
     }
 
     static var standardTextBlock: Double {
@@ -81,7 +80,7 @@ enum RecordListCardLayout {
     }
 
     static var standardMapBlock: Double {
-        standardTextBlock
+        mapSide
     }
 
     /// Width of the right data region inside the card.
@@ -166,7 +165,7 @@ enum RecordListMetricColumn: String, CaseIterable {
         switch self {
         case .heartRate: return "次/分"
         case .pace: return "分/公里"
-        case .load: return "负荷"
+        case .load: return "TL"
         case .score: return "评分"
         }
     }
