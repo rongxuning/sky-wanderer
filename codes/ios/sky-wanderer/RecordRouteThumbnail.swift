@@ -6,8 +6,8 @@ import UIKit
 ///
 /// The list never opens a live `MKMapView` per card. That stampeded on cold
 /// launch and jetsam-killed the app. Plates are written when a workout is saved
-/// or by a gentle backfill. Empty routes are not drawn here — the card swaps in
-/// `RecordSportSwatch` instead.
+/// or by a gentle backfill. Strength / mixed training always use this view —
+/// even with no fix they keep the map chrome instead of a catalog icon.
 struct RecordRouteThumbnail: View {
     var workoutID: UUID
     var route: [GeoPoint]
@@ -17,8 +17,8 @@ struct RecordRouteThumbnail: View {
     @ObservedObject private var thumbs = RecordMapThumbnails.shared
     @State private var mapImage: UIImage?
 
-    /// Plates are always written at the fixed list side, so the lookup uses it too.
-    /// A taller card (larger Dynamic Type) keeps the square top-aligned and leaves the rest as backdrop.
+    /// Plates are written at the layout side. The card may pass a larger square
+    /// (Dynamic Type); the plate scales to fill that square.
     private var plateSide: CGFloat {
         CGFloat(RecordListCardLayout.mapSide)
     }
@@ -35,13 +35,11 @@ struct RecordRouteThumbnail: View {
     }
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             Color(uiColor: SkyBasemapInstaller.backdrop)
             plate
-                .frame(width: plateSide, height: plateSide)
-                .clipped()
         }
-        .frame(width: width, height: height, alignment: .top)
+        .frame(width: width, height: height)
         .clipShape(
             RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
         )
@@ -63,7 +61,7 @@ struct RecordRouteThumbnail: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(kind == .startPoint ? "训练地点" : "轨迹")
+        .accessibilityLabel(kind == .startPoint ? "训练地点" : kind == .track ? "轨迹" : "地图")
     }
 
     @ViewBuilder
@@ -76,6 +74,8 @@ struct RecordRouteThumbnail: View {
                     Image(uiImage: mapImage)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: width, height: height)
+                        .clipped()
                         .transition(.opacity)
                 }
             }
@@ -85,20 +85,24 @@ struct RecordRouteThumbnail: View {
                     Image(uiImage: mapImage)
                         .resizable()
                         .scaledToFill()
+                        .frame(width: width, height: height)
+                        .clipped()
                         .transition(.opacity)
                 } else if let point = route.first {
                     RecordStartPointMark(point: point)
                 }
             }
         case .swatch:
+            // Map chrome only — used by 力量 / 综合 when no start fix exists.
             EmptyView()
         }
     }
 }
 
 /// Frosted glass plate when the card has no start coordinate to map.
-/// Strength and mixed training use their catalog icons; other sports fall
-/// back to the SF Symbol. The tint stays a light wash of the sport accent.
+/// Used for sports that are not 力量 / 综合. Those two keep the map plate
+/// instead of a catalog icon. Other sports fall back to the SF Symbol.
+/// The tint stays a light wash of the sport accent.
 struct RecordSportSwatch: View {
     var sport: SportKind
 

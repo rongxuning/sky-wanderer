@@ -301,13 +301,13 @@ check(
     "two secondary cells are leading and trailing"
 )
 
-check(RecordListCardLayout.standardTextBlock == 86, "standard text block is the value rows without unit captions")
-check(RecordListCardLayout.standardMapBlock == 90, "map block is the fixed 90pt square")
+check(RecordListCardLayout.standardTextBlock == 90, "standard text block matches the map side")
+check(RecordListCardLayout.standardMapBlock == 90, "map side equals the metrics stack height")
 check(
     RecordListCardLayout.standardHeight
         == RecordListCardLayout.contentInsetVertical * 2
-            + max(RecordListCardLayout.standardTextBlock, RecordListCardLayout.mapSide),
-    "card height is vertical insets plus the taller of the text block and the map"
+            + RecordListCardLayout.standardTextBlock,
+    "card height is vertical insets plus the matched text / map side"
 )
 check(
     RecordListCardLayout.informationWidth(cardWidth: 393) == 220,
@@ -323,10 +323,10 @@ check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
-check(RecordListCardLayout.mapSide == 90, "thumbnail is a fixed 90pt square")
+check(RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock, "map side tracks the metrics height")
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 12, "distance sits 12pt under the title row")
-check(RecordListCardLayout.upperLine == 32, "the distance line is 32pt")
+check(RecordListCardLayout.upperLine == 36, "the distance line is 36pt for the larger figure")
 check(RecordListCardLayout.middleToBottom == 6, "middle to bottom row is 6pt")
 check(RecordListCardLayout.lowerBlock == 14, "secondary metrics are the value line only")
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
@@ -498,7 +498,12 @@ check(
 )
 check(
     RecordListThumbnailKind.resolve(routeCount: strengthCard.listThumbnailPointCount) == .swatch,
-    "strength without a start coordinate keeps the glass plate"
+    "strength without a start coordinate has no pin to draw"
+)
+check(
+    SportKind.functionalStrength.listUsesStartLocationMap
+        && RecordListThumbnailKind.resolve(routeCount: strengthCard.listThumbnailPointCount) == .swatch,
+    "strength without a fix still opts into the map chrome, not the catalog icon"
 )
 
 let mixed = [

@@ -61,7 +61,8 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     }
 
     /// Asset catalog name for the list glass plate when there is no start
-    /// coordinate to map. Strength uses the dumbbell; mixed training uses the checklist.
+    /// coordinate to map. Strength and mixed training no longer use these on
+    /// the list card (they keep the map chrome); the assets remain for other UI.
     var listThumbnailAsset: String? {
         switch self {
         case .functionalStrength: return "RecordSportStrength"
@@ -88,8 +89,9 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// Strength and mixed training draw the start fix on a neighborhood map,
-    /// not a track, even when later points were recorded.
+    /// Strength and mixed training always use the left map plate. With a start
+    /// fix they draw that pin on a neighborhood map (not a track). Without a
+    /// fix they still keep the map chrome — never the catalog icon image.
     var listUsesStartLocationMap: Bool {
         switch self {
         case .functionalStrength, .hiit: return true
