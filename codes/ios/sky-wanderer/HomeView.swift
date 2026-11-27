@@ -378,10 +378,13 @@ private extension View {
 /// Capsule width inside the centered avatar + tabs cluster.
 /// Four tabs, still under the design-system ceiling of five.
 /// Three tabs used 70% of the width left after the avatar, the gap, and the screen insets.
-/// Four two-character labels keep that per-tab width (70% × 4/3). That share is capped at the leftover width.
-/// The capsule is also at least four touch targets.
+/// Four two-character labels keep that per-tab width (70% × 4/3), then the slack
+/// above four touch targets is halved so tab-to-tab gaps shrink 50% and the
+/// capsule narrows with them. Never thinner than four touch targets.
 private enum SkyTabBarMetrics {
     static let tabCount: CGFloat = 4
+    /// Keeps half of the former gap above the touch-target floor.
+    static let spacingScale: CGFloat = 0.5
 
     static func width(in containerWidth: CGFloat) -> CGFloat {
         let avatar = SkyTheme.Spacing.touchMin + 4
@@ -390,9 +393,10 @@ private enum SkyTabBarMetrics {
             - avatar
             - SkyTheme.Spacing.controlGap
         let fraction = min(0.7 * tabCount / 3, 1)
-        let narrowed = besideCluster * fraction
+        let previous = besideCluster * fraction
         let minimum = SkyTheme.Spacing.touchMin * tabCount
-        return max(narrowed, minimum)
+        let slack = max(previous - minimum, 0)
+        return minimum + slack * spacingScale
     }
 }
 
