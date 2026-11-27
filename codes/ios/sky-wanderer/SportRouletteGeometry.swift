@@ -1,34 +1,40 @@
 import Foundation
 
-/// Arc layout for the sport-type roulette beside the start-map tool column.
+/// Semicircle layout for the sport-type roulette on the start map.
 /// Uses `ChromeLength` from `StartMapChrome.swift` (same `#if canImport(CoreGraphics)` pattern).
 ///
-/// Convention: the midline item sits at angle `0` on a circle whose center is to the
-/// **left** of the screen so the visible arc bows right `)`.
+/// Convention: the selected (midline) item sits at the **screen center**. The arc
+/// center is to its left so the visible span is a right-facing semicircle `)`.
 /// - `θ = (index - scrollOffset) * angleStep`
-/// - `x = arcCenterX + radius * cos(θ)` with `arcCenterX` left of the dots
-/// - `y = centerY + radius * sin(θ)`
+/// - Five visible steps span `π` (`angleStep = π/4`)
+/// - `x = arcCenterX + radius * cos(θ)` with `arcCenterX = screenCenterX - radius`
+/// - `y = screenCenterY + radius * sin(θ)`
 enum SportRouletteGeometry {
     static let itemCountHintVisible = 5
-    static let radius: ChromeLength = 220
-    static let angleStep: ChromeLength = 0.22
+    /// Semicircle radius; selected item sits `radius` to the right of the arc center.
+    static let radius: ChromeLength = 180
+    /// Four steps between five visible items cover a semicircle.
+    static let angleStep: ChromeLength = .pi / 4
     static let centerScale: ChromeLength = 1.2
     static let edgeScale: ChromeLength = 1.0
     static let edgeOpacity: ChromeLength = 0.45
     static let dotDiameter: ChromeLength = 44
-    static let dragPixelsPerStep: ChromeLength = 44
-    static let gapAfterTools: ChromeLength = 12
+    /// Larger than the old shallow-arc step so a finger flick still feels measured.
+    static let dragPixelsPerStep: ChromeLength = 64
 
+    /// Vertical center of the selected item — screen midline.
     static func centerY(screenHeight: ChromeLength) -> ChromeLength {
-        StartMapChrome.toolColumnMidY(screenHeight: screenHeight)
+        screenHeight / 2
     }
 
-    /// X of the arc center (left of the screen). `screenWidth` is unused; layout follows the tool column.
-    static func centerX(screenWidth: ChromeLength = 0) -> ChromeLength {
-        _ = screenWidth
-        let dotCenterXOnMidline =
-            StartMapChrome.toolLeading + StartMapChrome.toolDiameter + gapAfterTools + dotDiameter / 2
-        return dotCenterXOnMidline - radius
+    /// Horizontal center of the selected item — screen midline.
+    static func selectedCenterX(screenWidth: ChromeLength) -> ChromeLength {
+        screenWidth / 2
+    }
+
+    /// X of the arc center (left of the selected item).
+    static func centerX(screenWidth: ChromeLength) -> ChromeLength {
+        selectedCenterX(screenWidth: screenWidth) - radius
     }
 
     /// Item angle relative to the midline (`0` = on midline). `scrollOffset` is in index units.
@@ -39,10 +45,11 @@ enum SportRouletteGeometry {
     static func position(
         index: Int,
         scrollOffset: ChromeLength,
+        screenWidth: ChromeLength,
         screenHeight: ChromeLength
     ) -> (x: ChromeLength, y: ChromeLength) {
         let theta = angle(forIndex: index, scrollOffset: scrollOffset)
-        let cx = centerX()
+        let cx = centerX(screenWidth: screenWidth)
         let cy = centerY(screenHeight: screenHeight)
         let x = cx + radius * ChromeLength(cos(Double(theta)))
         let y = cy + radius * ChromeLength(sin(Double(theta)))
@@ -81,5 +88,10 @@ enum SportRouletteGeometry {
     ) -> ChromeLength {
         let projected = dragOrigin - predictedEndTranslationHeight / dragPixelsPerStep
         return clampedScrollOffset(projected, itemCount: itemCount)
+    }
+
+    /// True when the item sits on the selection midline (angle ≈ 0).
+    static func isOnMidline(angle: ChromeLength) -> Bool {
+        abs(Double(angle)) < 0.001
     }
 }

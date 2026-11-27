@@ -68,6 +68,7 @@ struct StartMapView: View {
                 if showSportRoulette {
                     SportRouletteOverlay(
                         selection: $draft.sport,
+                        screenWidth: geo.size.width,
                         screenHeight: geo.size.height,
                         onDismiss: { showSportRoulette = false }
                     )
