@@ -22,7 +22,7 @@ struct SportRouletteOverlay: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onDismiss)
 
-            ForEach(Array(sports.enumerated()), id: \.element.id) { index, sport in
+            ForEach(Array(sports.enumerated()).filter { index, _ in isRendered(index) }, id: \.element.id) { index, sport in
                 item(sport: sport, index: index)
             }
         }
@@ -33,6 +33,11 @@ struct SportRouletteOverlay: View {
         }
         .onDisappear(perform: flushPendingTapCommit)
         .highPriorityGesture(drag)
+    }
+
+    private func isRendered(_ index: Int) -> Bool {
+        let angle = SportRouletteGeometry.angle(forIndex: index, scrollOffset: ChromeLength(scrollOffset))
+        return SportRouletteGeometry.isRendered(angle: angle)
     }
 
     @ViewBuilder

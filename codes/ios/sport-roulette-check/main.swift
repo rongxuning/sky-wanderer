@@ -48,6 +48,26 @@ check(
     SportRouletteGeometry.opacity(forAngle: 0) > SportRouletteGeometry.opacity(forAngle: SportRouletteGeometry.angleStep * 2),
     "center is more opaque than far items"
 )
+check(
+    SportRouletteGeometry.opacity(forAngle: SportRouletteGeometry.angleStep * 2) > 0,
+    "items at the semicircle edge stay visible"
+)
+check(
+    SportRouletteGeometry.opacity(forAngle: SportRouletteGeometry.hiddenBeyondAngle) == 0,
+    "items past the hidden angle fade to zero"
+)
+check(
+    SportRouletteGeometry.isRendered(angle: SportRouletteGeometry.angleStep * 2),
+    "edge item is rendered"
+)
+check(
+    !SportRouletteGeometry.isRendered(angle: SportRouletteGeometry.angleStep * 7),
+    "far item does not wrap onto the arc"
+)
+check(
+    !SportRouletteGeometry.isRendered(angle: -SportRouletteGeometry.angleStep * 7),
+    "far item on the other side does not wrap onto the arc"
+)
 check(SportRouletteGeometry.isOnMidline(angle: 0), "angle 0 is on midline")
 check(!SportRouletteGeometry.isOnMidline(angle: SportRouletteGeometry.angleStep), "neighbor is off midline")
 

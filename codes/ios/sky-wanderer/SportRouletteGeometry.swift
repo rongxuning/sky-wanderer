@@ -15,6 +15,8 @@ enum SportRouletteGeometry {
     static let radius: ChromeLength = 180
     /// Four steps between five visible items cover a semicircle.
     static let angleStep: ChromeLength = .pi / 4
+    /// Unwrapped angle past which items are not drawn. Keeps far items from wrapping onto the visible arc.
+    static let hiddenBeyondAngle: ChromeLength = angleStep * 2.5
     static let centerScale: ChromeLength = 1.2
     static let edgeScale: ChromeLength = 1.0
     static let edgeOpacity: ChromeLength = 0.45
@@ -62,8 +64,16 @@ enum SportRouletteGeometry {
     }
 
     static func opacity(forAngle angle: ChromeLength) -> ChromeLength {
-        let t = min(1, abs(Double(angle)) / Double(angleStep * 2))
-        return 1 - ChromeLength(t) * (1 - edgeOpacity)
+        let a = abs(Double(angle))
+        let t = min(1, a / Double(angleStep * 2))
+        let base = 1 - ChromeLength(t) * (1 - edgeOpacity)
+        let fadeSpan = Double(hiddenBeyondAngle - angleStep * 2)
+        let fade = max(0, min(1, (Double(hiddenBeyondAngle) - a) / fadeSpan))
+        return base * ChromeLength(fade)
+    }
+
+    static func isRendered(angle: ChromeLength) -> Bool {
+        abs(Double(angle)) <= Double(hiddenBeyondAngle)
     }
 
     static func nearestIndex(scrollOffset: ChromeLength, itemCount: Int) -> Int {
