@@ -154,10 +154,11 @@ struct WorkoutDetailView: View {
 
     private func mapHeader(_ workout: WorkoutRecord, height: CGFloat, topInset: CGFloat) -> some View {
         let band = obscuredMapBand(height: height, topInset: topInset)
+        let route = app.routePoints(for: workout)
         return ZStack(alignment: .top) {
             SkyTrackMap(
-                route: workout.route,
-                showsEndpoints: workout.route.count >= 2,
+                route: route,
+                showsEndpoints: route.count >= 2,
                 basemapMode: basemap.mode,
                 bottomInset: SkyTheme.Radius.sheet,
                 obscuredTopFraction: band.top,
@@ -167,7 +168,7 @@ struct WorkoutDetailView: View {
             )
             .frame(maxWidth: .infinity)
             .frame(height: height)
-            if workout.route.count < 2 {
+            if route.count < 2 {
                 Text("这次没有轨迹")
                     .font(SkyTheme.Font.footnote)
                     .fontWeight(.semibold)
@@ -189,7 +190,7 @@ struct WorkoutDetailView: View {
                         showShare = true
                     }
                     .disabled(exporting)
-                    if workout.route.count >= 2 {
+                    if route.count >= 2 {
                         mapButton(system: "location.viewfinder", label: "回到轨迹") {
                             fitToken += 1
                         }
@@ -578,7 +579,7 @@ struct WorkoutDetailView: View {
             return
         }
         guard let map = await DetailShareImage.mapImage(
-            route: workout.route,
+            route: app.routePoints(for: workout),
             size: CGSize(width: width, height: mapHeight)
         ) else {
             saveMessage = "图片没有生成"
@@ -1633,7 +1634,7 @@ private enum WorkoutDetailMath {
     }
 
     private static func routeElevation(_ workout: WorkoutRecord) -> [SeriesPoint] {
-        let route = workout.route
+        let route = WorkoutTrackStore.points(for: workout)
         guard route.count >= 2 else { return [] }
         guard isMeaningfulElevation(route.map(\.altitude)) else { return [] }
         if let origin = route.compactMap(\.timestamp).min() {

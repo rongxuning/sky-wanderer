@@ -63,7 +63,8 @@ struct LiveWorkoutView: View {
         let plannedID = draft.plannedRoute(saved: app.savedRoutes, workouts: app.workouts).id
         let course = app.savedRoutes.first(where: { $0.id == plannedID })?.waypoints ?? []
         let title = "\(record.sport.title) \(Format.dayTime(record.start))"
-        guard let gpx = WorkoutTrackExport.gpx(name: title, points: record.route, course: course) else { return }
+        let track = app.routePoints(for: record)
+        guard let gpx = WorkoutTrackExport.gpx(name: title, points: track, course: course) else { return }
         let parsed = GPXFile.parse(gpx)
         _ = app.addGPXRoutes(parsed, source: gpx)
     }

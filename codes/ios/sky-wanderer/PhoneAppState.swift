@@ -49,6 +49,8 @@ final class PhoneAppState: ObservableObject {
         }
         SessionContinuity.reconcile(&loaded, keychain: SessionKeychain.read())
         RecordMotivation.assignMissing(&loaded.workouts)
+        // Pull long GPS tracks out of phone.json before the launch encode.
+        _ = WorkoutTrackStore.migrate(&loaded.workouts)
         database = loaded
         AppFiles.save(loaded, name: filename)
         for name in retiredSampleFiles {
@@ -57,6 +59,12 @@ final class PhoneAppState: ObservableObject {
         SessionKeychain.store(SessionContinuity.credential(in: loaded))
         Task { await self.confirmRemoteSession() }
         Task { await WorkoutLiveActivityCenter.shared.endLingering() }
+    }
+
+    /// Full GPS track for detail, export, and planned-route reuse.
+    /// The records list keeps `workout.route` as a short summary only.
+    func routePoints(for workout: WorkoutRecord) -> [GeoPoint] {
+        WorkoutTrackStore.points(for: workout)
     }
 
     private static func ensurePreset(_ database: inout Database) {
@@ -573,10 +581,11 @@ final class PhoneAppState: ObservableObject {
         mutate { database in
             _ = database.insertWorkout(record)
         }
-        if RecordListThumbnailKind.resolve(routeCount: record.route.count) != .swatch {
+        if let stored = database.workouts.first(where: { $0.id == record.id }),
+           RecordListThumbnailKind.resolve(routeCount: stored.listRouteCount) != .swatch {
             RecordMapThumbnails.shared.enqueueWarm(
-                for: record.id,
-                route: record.route,
+                for: stored.id,
+                route: stored.route,
                 side: CGFloat(RecordListCardLayout.mapSide)
             )
         }
@@ -664,6 +673,7 @@ final class PhoneAppState: ObservableObject {
             }.count
             mutate { database in
                 WorkoutImport.merge(outcome.records, into: &database.workouts, skipping: database.deletedWorkouts)
+                _ = WorkoutTrackStore.migrate(&database.workouts)
             }
             last = outcome
             if unseen < AppleHealth.newBatchSize { break }
@@ -685,7 +695,7 @@ final class PhoneAppState: ObservableObject {
             energyKilocalories: record.energyKilocalories,
             text: text.trimmingCharacters(in: .whitespacesAndNewlines),
             imageFilename: filename,
-            route: record.route
+            route: WorkoutTrackStore.summarize(routePoints(for: record))
         )
         mutate { $0.posts.insert(post, at: 0) }
     }

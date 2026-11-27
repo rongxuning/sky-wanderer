@@ -6,6 +6,7 @@ import Foundation
 //   codes/ios/Shared/GPXFile.swift \
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/RouteStats.swift \
 //   codes/ios/Shared/RouteGPXStore.swift \
+//   codes/ios/Shared/WorkoutTrackStore.swift \
 //   codes/ios/sky-wanderer/PlannedRouteProgress.swift \
 //   codes/ios/training-route-check/main.swift \
 //   -o /tmp/training-route-check && /tmp/training-route-check

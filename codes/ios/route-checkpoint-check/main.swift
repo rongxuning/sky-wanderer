@@ -6,6 +6,7 @@ import Foundation
 //   codes/ios/Shared/GPXFile.swift \
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/RouteStats.swift \
 //   codes/ios/Shared/RouteGPXStore.swift \
+//   codes/ios/Shared/WorkoutTrackStore.swift \
 //   codes/ios/Shared/RouteBandFit.swift \
 //   codes/ios/route-checkpoint-check/main.swift \
 //   -o /tmp/route-checkpoint-check && /tmp/route-checkpoint-check

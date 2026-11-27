@@ -68,11 +68,12 @@ struct RecordSummaryCard: View {
 
     @ViewBuilder
     private var visual: some View {
-        switch RecordListThumbnailKind.resolve(routeCount: workout.route.count) {
+        switch RecordListThumbnailKind.resolve(routeCount: workout.listRouteCount) {
         case .track, .startPoint:
             RecordRouteThumbnail(
                 workoutID: workout.id,
                 route: workout.route,
+                routePointCount: workout.listRouteCount,
                 width: CGFloat(RecordListCardLayout.mapSide),
                 height: mapHeight
             )
@@ -284,7 +285,7 @@ struct RecordSummaryCard: View {
                 parts.append("训练评分 \(item.value)")
             }
         }
-        switch RecordListThumbnailKind.resolve(routeCount: workout.route.count) {
+        switch RecordListThumbnailKind.resolve(routeCount: workout.listRouteCount) {
         case .track:
             parts.append("有轨迹")
         case .startPoint:

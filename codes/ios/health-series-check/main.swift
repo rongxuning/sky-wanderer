@@ -4,7 +4,7 @@ import Foundation
 //   codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/HealthSeries.swift \
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/Database.swift \
-//   codes/ios/Shared/AccountIdentity.swift \
+//   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/WorkoutTrackStore.swift \
 //   codes/ios/health-series-check/main.swift -o /tmp/health-series-check && /tmp/health-series-check
 
 /// SampleLibrary's preset route names this. The check does not compile LiveSession.

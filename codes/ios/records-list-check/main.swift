@@ -7,6 +7,7 @@ import Foundation
 //   codes/ios/Shared/RecordFeedList.swift \
 //   codes/ios/Shared/RecordListCard.swift \
 //   codes/ios/Shared/RecordListThumbnailFile.swift \
+//   codes/ios/Shared/WorkoutTrackStore.swift \
 //   codes/ios/records-list-check/main.swift \
 //   -o /tmp/records-list-check && /tmp/records-list-check
 
@@ -380,6 +381,8 @@ check(RecordListThumbnailKind.resolve(routeCount: 0) == .swatch, "no points keep
 check(RecordListThumbnailKind.resolve(routeCount: 1) == .startPoint, "one point is a start pin map")
 check(RecordListThumbnailKind.resolve(routeCount: 2) == .track, "two points draw the track")
 check(RecordListThumbnailKind.resolve(routeCount: 40) == .track, "longer routes stay on the track plate")
+check(WorkoutTrackStore.summaryLimit == 64, "list cards keep at most 64 summary points in phone.json")
+check(WorkoutTrackStore.folder == "workout-tracks", "full tracks live under workout-tracks")
 let cameraScale = RecordThumbnailFit.visibleMapScale(
     side: RecordListCardLayout.mapSide,
     edgePad: RecordListCardLayout.mapTrackEdgePad
