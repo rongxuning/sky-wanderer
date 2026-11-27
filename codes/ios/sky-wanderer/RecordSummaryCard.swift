@@ -13,7 +13,7 @@ struct RecordSummaryCard: View {
 
     @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
     @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .title1) private var distanceSize: CGFloat = 32
+    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 32
     @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 24
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
 
