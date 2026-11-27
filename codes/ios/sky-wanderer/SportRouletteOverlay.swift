@@ -12,7 +12,7 @@ struct SportRouletteOverlay: View {
     @State private var pendingTapCommit: DispatchWorkItem?
     @State private var pendingTapIndex: Int?
 
-    private let springResponse: Double = 0.38
+    private var springResponse: Double { Double(SportRouletteGeometry.snapSpringResponse) }
     private var itemCount: Int { sports.count }
 
     var body: some View {

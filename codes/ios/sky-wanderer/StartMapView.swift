@@ -22,6 +22,17 @@ extension EnvironmentValues {
     }
 }
 
+/// Peripheral chrome on the training map: companion tools, 开始, and the home tab bar.
+/// `false` while the sport roulette open transition has hidden them.
+struct SkyTrainingPeripheralChromePreference: PreferenceKey {
+    static var defaultValue = true
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        // Hide if any mounted training map asks to hide.
+        value = value && nextValue()
+    }
+}
+
 enum StartSheet: String, Identifiable {
     case settings
     var id: String { rawValue }
@@ -104,6 +115,9 @@ struct StartMapView: View {
                 // Move the bottom guide down by the clearance. The circle's bottom
                 // edge then sits 16pt above the pill, and taps stay on the circle.
                 startButton
+                    .opacity(companionToolsVisible ? 1 : 0)
+                    .allowsHitTesting(companionToolsVisible)
+                    .accessibilityHidden(!companionToolsVisible)
                     .alignmentGuide(.bottom) { dimensions in
                         dimensions[.bottom] + startBottomPadding(in: geo)
                     }
@@ -112,6 +126,11 @@ struct StartMapView: View {
         .ignoresSafeArea()
         .navigationBarHidden(true)
         .tint(SkyTheme.Color.primary)
+        // Other tabs stay mounted; only hide the home bar while this tab is active and chrome is tucked.
+        .preference(
+            key: SkyTrainingPeripheralChromePreference.self,
+            value: !isActive || companionToolsVisible
+        )
         .onAppear {
             location.request()
             if countdownTask == nil {
@@ -120,7 +139,10 @@ struct StartMapView: View {
             if !isActive { cancelCountdown() }
         }
         .onChange(of: isActive) { _, active in
-            if !active { cancelCountdown() }
+            if !active {
+                cancelCountdown()
+                closeSportRoulette(animated: false)
+            }
         }
         .onDisappear {
             cancelCountdown()

@@ -25,6 +25,8 @@ struct SkyHome: View {
     @State private var routesPath = NavigationPath()
     @State private var showLogin = false
     @State private var tabBarAnchor: SkyTabBarAnchor = .unmeasured
+    /// Training map hides companions / 开始 / this bar together while the sport roulette is open.
+    @State private var trainingPeripheralChromeVisible = true
 
     private var showsTabBar: Bool {
         switch tab {
@@ -118,10 +120,21 @@ struct SkyHome: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.bottom, StartMapChrome.tabBarBottomPadding)
+                // Same fade as companion tools / 开始; keep layout so Start padding does not jump.
+                .opacity(trainingPeripheralChromeVisible ? 1 : 0)
+                .allowsHitTesting(trainingPeripheralChromeVisible)
+                .accessibilityHidden(!trainingPeripheralChromeVisible)
+                .animation(
+                    .easeOut(duration: Double(StartMapChrome.rouletteOpenCompanionFade)),
+                    value: trainingPeripheralChromeVisible
+                )
             }
         }
         .onPreferenceChange(SkyTabBarTopPreference.self) { top in
             tabBarAnchor = top.map { SkyTabBarAnchor.measured($0) } ?? .unmeasured
+        }
+        .onPreferenceChange(SkyTrainingPeripheralChromePreference.self) { visible in
+            trainingPeripheralChromeVisible = visible
         }
         .onAppear {
             presentLiveWorkoutIfNeeded()
