@@ -361,8 +361,9 @@ enum RouteCardLayout {
     static let track: CGFloat = 84
     static let corner: CGFloat = 20
     /// Gap from the card to the left and right screen edges.
-    static let listHorizontalInset: CGFloat = 8
-    static let horizontalInset: CGFloat = SkyTheme.Spacing.cardPadding
+    static let listHorizontalInset: CGFloat = 10
+    /// Padding inside every card edge. Matches the records list inset.
+    static let horizontalInset: CGFloat = 10
     static let verticalInset: CGFloat = 10
     static let rowSpacing: CGFloat = 4
 }
