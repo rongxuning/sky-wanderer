@@ -73,7 +73,12 @@ struct SkyHome: View {
 
             stack(path: $trainingPath) {
                 tabScreen {
-                    StartMapView(path: $trainingPath, showsBackButton: false, isActive: tab == .training)
+                    StartMapView(
+                        path: $trainingPath,
+                        showsBackButton: false,
+                        isActive: tab == .training,
+                        peripheralChromeVisible: $trainingPeripheralChromeVisible
+                    )
                 }
             }
             .opacity(tab == .training ? 1 : 0)
@@ -132,9 +137,6 @@ struct SkyHome: View {
         }
         .onPreferenceChange(SkyTabBarTopPreference.self) { top in
             tabBarAnchor = top.map { SkyTabBarAnchor.measured($0) } ?? .unmeasured
-        }
-        .onPreferenceChange(SkyTrainingPeripheralChromePreference.self) { visible in
-            trainingPeripheralChromeVisible = visible
         }
         .onAppear {
             presentLiveWorkoutIfNeeded()
