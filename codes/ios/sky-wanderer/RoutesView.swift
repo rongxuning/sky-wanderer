@@ -102,7 +102,7 @@ struct RoutesLibraryView: View {
                     )
                 }
             }
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.horizontal, RouteCardLayout.listHorizontalInset)
             .padding(.top, CGFloat(RecordListCardLayout.firstCardGap))
             .padding(.bottom, SkyTheme.Spacing.screenInset)
         }
@@ -360,6 +360,8 @@ private struct RouteSwipeCard: View {
 enum RouteCardLayout {
     static let track: CGFloat = 84
     static let corner: CGFloat = 20
+    /// Gap from the card to the left and right screen edges.
+    static let listHorizontalInset: CGFloat = 8
     static let horizontalInset: CGFloat = SkyTheme.Spacing.cardPadding
     static let verticalInset: CGFloat = 10
     static let rowSpacing: CGFloat = 4
