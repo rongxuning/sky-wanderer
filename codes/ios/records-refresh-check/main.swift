@@ -4,6 +4,7 @@ import Foundation
 //   codes/ios/Shared/ZoneDwell.swift \
 //   codes/ios/Shared/SampleLibrary.swift codes/ios/Shared/Database.swift \
 //   codes/ios/Shared/AccountIdentity.swift codes/ios/Shared/Formatting.swift \
+//   codes/ios/Shared/WorkoutTrackStore.swift \
 //   codes/ios/Shared/RecordsRefresh.swift \
 //   codes/ios/records-refresh-check/main.swift \
 //   -o /tmp/records-refresh-check && /tmp/records-refresh-check

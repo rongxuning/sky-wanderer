@@ -421,7 +421,12 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     var averageHeartRate: Double
     var averageCadence: Double
     var elevationGainMeters: Double
+    /// List polyline. Long tracks live in `WorkoutTrackStore`; this stays a short summary.
     var route: [GeoPoint]
+    /// Full GPS point count before summarization. Missing in older phone files.
+    var routePointCount: Int = 0
+    /// Relative path under Application Support when the full track is stored separately.
+    var routeTrackFilename: String? = nil
     var splits: [KilometerSplit]
     var heartRate: [SeriesPoint]
     var cadenceSeries: [SeriesPoint]
@@ -486,6 +491,11 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
             heartRate: heartRate,
             averageHeartRate: resolvedAverageHeartRate
         )
+    }
+
+    /// Point count for list chrome (track / start pin / swatch). Prefers the full-track count.
+    var listRouteCount: Int {
+        routePointCount > 0 ? routePointCount : route.count
     }
 
     /// First route point when it is a finite WGS84 coordinate.
@@ -655,7 +665,8 @@ extension WorkoutRecord {
     private enum CodingKeys: String, CodingKey {
         case id, sport, start, end, distanceMeters, energyKilocalories
         case averageHeartRate, averageCadence, elevationGainMeters
-        case route, splits, heartRate, cadenceSeries, paceSeries
+        case route, routePointCount, routeTrackFilename
+        case splits, heartRate, cadenceSeries, paceSeries
         case stride, elevation, groundContact, power, verticalOscillation
         case origin, healthKitUUID, trainingDurationSeconds, conditions, startPlace
         case distanceProgress, pauseIntervals, lapMarks, motivationLine
@@ -673,6 +684,8 @@ extension WorkoutRecord {
         averageCadence = try container.decode(Double.self, forKey: .averageCadence)
         elevationGainMeters = try container.decode(Double.self, forKey: .elevationGainMeters)
         route = try container.decode([GeoPoint].self, forKey: .route)
+        routePointCount = try container.decodeIfPresent(Int.self, forKey: .routePointCount) ?? route.count
+        routeTrackFilename = try container.decodeIfPresent(String.self, forKey: .routeTrackFilename)
         splits = try container.decode([KilometerSplit].self, forKey: .splits)
         heartRate = try container.decode([SeriesPoint].self, forKey: .heartRate)
         cadenceSeries = try container.decode([SeriesPoint].self, forKey: .cadenceSeries)
@@ -710,6 +723,8 @@ extension WorkoutRecord {
         try container.encode(averageCadence, forKey: .averageCadence)
         try container.encode(elevationGainMeters, forKey: .elevationGainMeters)
         try container.encode(route, forKey: .route)
+        try container.encode(routePointCount, forKey: .routePointCount)
+        try container.encodeIfPresent(routeTrackFilename, forKey: .routeTrackFilename)
         try container.encode(splits, forKey: .splits)
         try container.encode(heartRate, forKey: .heartRate)
         try container.encode(cadenceSeries, forKey: .cadenceSeries)
@@ -1738,6 +1753,13 @@ enum WorkoutImport {
         fill(&merged.distanceProgress, imported.distanceProgress)
         fill(&merged.pauseIntervals, imported.pauseIntervals)
         fill(&merged.lapMarks, imported.lapMarks)
+        if merged.route.isEmpty, !imported.route.isEmpty {
+            merged.route = imported.route
+            merged.routePointCount = imported.routePointCount > 0
+                ? imported.routePointCount
+                : imported.route.count
+            merged.routeTrackFilename = imported.routeTrackFilename
+        }
         if RecordMotivation.storedLine(merged.motivationLine) == nil {
             merged.motivationLine = RecordMotivation.storedLine(imported.motivationLine)
         }

@@ -29,10 +29,17 @@ extension Database {
     mutating func deleteWorkout(id: UUID) {
         guard let workout = workouts.first(where: { $0.id == id }) else { return }
         deletedWorkouts.remember(workout)
+        let removed: [WorkoutRecord]
         if let healthID = WorkoutDenylist.healthIdentity(workout.healthKitUUID) {
+            removed = workouts.filter { WorkoutDenylist.healthIdentity($0.healthKitUUID) == healthID }
             workouts.removeAll { WorkoutDenylist.healthIdentity($0.healthKitUUID) == healthID }
         } else {
+            removed = [workout]
             workouts.removeAll { $0.id == id }
+        }
+        for row in removed {
+            WorkoutTrackStore.delete(filename: row.routeTrackFilename)
+            WorkoutTrackStore.delete(workoutID: row.id)
         }
     }
 
@@ -50,6 +57,7 @@ extension Database {
            let previous = workouts.first(where: { $0.id == record.id }) {
             record.motivationLine = RecordMotivation.storedLine(previous.motivationLine)
         }
+        WorkoutTrackStore.detach(&record)
         workouts.removeAll { $0.id == record.id }
         workouts.append(record)
         workouts.sort { $0.start > $1.start }
@@ -149,7 +157,8 @@ enum AppFiles {
         guard let url = try? file(name) else { return }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        // Compact JSON: pretty/sorted encoding of full workout history blew past the
+        // scene-create watchdog on phones with many GPS tracks.
         guard let data = try? encoder.encode(database) else { return }
         try? data.write(to: url, options: .atomic)
     }

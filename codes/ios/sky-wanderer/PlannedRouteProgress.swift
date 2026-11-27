@@ -18,7 +18,11 @@ enum TrainingRouteDraft {
             return PlannedRoute(id: route.id, name: route.name, points: route.points)
         }
         if let workout = workouts.first(where: { $0.id.uuidString == routeID }) {
-            return PlannedRoute(id: routeID, name: workout.sport.title, points: workout.route)
+            return PlannedRoute(
+                id: routeID,
+                name: workout.sport.title,
+                points: WorkoutTrackStore.points(for: workout)
+            )
         }
         return .free
     }

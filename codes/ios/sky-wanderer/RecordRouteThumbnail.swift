@@ -23,8 +23,11 @@ struct RecordRouteThumbnail: View {
         CGFloat(RecordListCardLayout.mapSide)
     }
 
+    /// Prefer the full-track count when the list only holds a summary polyline.
+    var routePointCount: Int = 0
+
     private var kind: RecordListThumbnailKind {
-        RecordListThumbnailKind.resolve(routeCount: route.count)
+        RecordListThumbnailKind.resolve(routeCount: routePointCount > 0 ? routePointCount : route.count)
     }
 
     private var loadKey: String {
@@ -221,7 +224,7 @@ final class RecordMapThumbnails: ObservableObject {
         let token = Self.basemapToken
         for workout in workouts {
             guard !Task.isCancelled else { return }
-            guard RecordListThumbnailKind.resolve(routeCount: workout.route.count) != .swatch else { continue }
+            guard RecordListThumbnailKind.resolve(routeCount: workout.listRouteCount) != .swatch else { continue }
             if await RecordListThumbnailStore.existsAsync(id: workout.id, basemapToken: token, side: sideKey) {
                 continue
             }
