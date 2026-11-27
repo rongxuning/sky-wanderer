@@ -1366,6 +1366,11 @@ private struct ElevationProfileChart: View {
     var route: SavedRoute
     @State private var plotWidth: CGFloat = 0
 
+    private static let yAxisWidth: CGFloat = 44
+    private static let canvasHeight: CGFloat = 110
+    private static let axisSpacing: CGFloat = 4
+    private static let axisTextRowHeight: CGFloat = 16
+
     private var points: [GeoPoint] { route.points }
 
     private var axisMarks: [ElevationAxisMark] {
@@ -1384,6 +1389,10 @@ private struct ElevationProfileChart: View {
     private var flat: Bool {
         guard let bounds else { return true }
         return bounds.high - bounds.low < ElevationScale.flatSpanMeters
+    }
+
+    private var totalKilometers: Double {
+        samples.last?.distanceKilometers ?? 0
     }
 
     var body: some View {
@@ -1409,18 +1418,55 @@ private struct ElevationProfileChart: View {
                     .foregroundStyle(Color.omniMuted)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let bounds {
-                profile(low: bounds.low, high: bounds.high)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .frame(minHeight: 64)
+                scrollableProfile(low: bounds.low, high: bounds.high)
+                    .frame(maxWidth: .infinity)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(accessibilityText)
-                distanceAxis
             }
         }
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
         .padding(.top, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .frame(height: chartHeight)
+    }
+
+    /// Y labels stay pinned on the leading edge. The curve and distance ticks scroll under long routes.
+    private func scrollableProfile(low: Double, high: Double) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            yAxis(low: low, high: high)
+                .frame(width: Self.yAxisWidth, height: Self.canvasHeight, alignment: .trailing)
+            GeometryReader { geo in
+                let contentWidth = plotContentWidth(viewport: geo.size.width)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: Self.axisSpacing) {
+                        Canvas { context, size in
+                            draw(context: context, size: size, low: low, high: high)
+                        }
+                        .frame(width: contentWidth, height: Self.canvasHeight)
+                        distanceAxis
+                            .frame(width: contentWidth)
+                    }
+                }
+                .scrollDisabled(contentWidth <= geo.size.width + 0.5)
+                .background {
+                    Color.clear.preference(key: PlotWidthKey.self, value: contentWidth)
+                }
+                .onPreferenceChange(PlotWidthKey.self) { plotWidth = $0 }
+            }
+            .frame(height: Self.canvasHeight + Self.axisSpacing + distanceAxisHeight)
+        }
+    }
+
+    private func yAxis(low: Double, high: Double) -> some View {
+        VStack(alignment: .trailing) {
+            Text(meterText(high))
+            Spacer(minLength: 0)
+            Text(meterText((low + high) / 2))
+            Spacer(minLength: 0)
+            Text(meterText(low))
+        }
+        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .foregroundStyle(Color.omniMuted)
     }
 
     /// Kilometer ticks sit under the curve, on the same distance scale, and leave 0 / total in place.
@@ -1437,7 +1483,6 @@ private struct ElevationProfileChart: View {
                     .multilineTextAlignment(.trailing)
             }
         }
-        .padding(.trailing, 50)
         .font(.system(size: 10, weight: .semibold, design: .rounded))
         .foregroundStyle(Color.omniMuted)
         .accessibilityHidden(true)
@@ -1465,17 +1510,24 @@ private struct ElevationProfileChart: View {
             }
         }
         .frame(height: tickBandHeight)
-        .background {
-            GeometryReader { geo in
-                Color.clear.preference(key: PlotWidthKey.self, value: geo.size.width)
-            }
-        }
-        .onPreferenceChange(PlotWidthKey.self) { plotWidth = $0 }
+    }
+
+    private func plotContentWidth(viewport: CGFloat) -> CGFloat {
+        CGFloat(ElevationProfileLayout.contentWidth(
+            totalKilometers: totalKilometers,
+            viewport: Double(viewport)
+        ))
     }
 
     private var chartHeight: CGFloat {
-        let ticks = (samples.count >= 2 && bounds != nil) ? tickBandHeight : 0
-        return 172 + ticks
+        let axis = (samples.count >= 2 && bounds != nil) ? Self.axisSpacing + distanceAxisHeight : 0
+        return 52 + Self.canvasHeight + axis
+    }
+
+    /// Tick band plus one 10pt text row. The row is taller than its font size, so reserve the full line.
+    private var distanceAxisHeight: CGFloat {
+        let ticks = axisMarks.isEmpty ? 0 : tickBandHeight + 1
+        return ticks + Self.axisTextRowHeight
     }
 
     private var tickBandHeight: CGFloat {
@@ -1485,7 +1537,12 @@ private struct ElevationProfileChart: View {
 
     private var laneCount: Int {
         guard !axisMarks.isEmpty else { return 0 }
-        let placed = placedLabels(plotWidth: plotWidth > 1 ? plotWidth : 1)
+        let width = max(
+            plotWidth,
+            CGFloat(ElevationProfileLayout.contentWidth(totalKilometers: totalKilometers, viewport: 1)),
+            1
+        )
+        let placed = placedLabels(plotWidth: width)
         return (placed.map(\.lane).max() ?? 0) + 1
     }
 
@@ -1511,25 +1568,6 @@ private struct ElevationProfileChart: View {
         let font = UIFont(descriptor: descriptor, size: 10)
         let measured = (label as NSString).size(withAttributes: [.font: font]).width
         return max(ceil(measured) + 1, 8)
-    }
-
-    private func profile(low: Double, high: Double) -> some View {
-        HStack(alignment: .center, spacing: 6) {
-            Canvas { context, size in
-                draw(context: context, size: size, low: low, high: high)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            VStack(alignment: .trailing) {
-                Text(meterText(high))
-                Spacer(minLength: 0)
-                Text(meterText((low + high) / 2))
-                Spacer(minLength: 0)
-                Text(meterText(low))
-            }
-            .font(.system(size: 10, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color.omniMuted)
-            .frame(width: 44)
-        }
     }
 
     /// The canvas height is this route's altitude range, so a vertical green→yellow→red
