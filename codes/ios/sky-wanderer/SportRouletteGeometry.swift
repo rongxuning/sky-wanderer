@@ -16,6 +16,7 @@ enum SportRouletteGeometry {
     static let edgeScale: ChromeLength = 1.0
     static let edgeOpacity: ChromeLength = 0.45
     static let dotDiameter: ChromeLength = 44
+    static let dragPixelsPerStep: ChromeLength = 44
     static let gapAfterTools: ChromeLength = 12
 
     static func centerY(screenHeight: ChromeLength) -> ChromeLength {

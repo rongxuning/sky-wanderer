@@ -26,6 +26,7 @@ near(
     "roulette midline matches tool column midline"
 )
 
+near(SportRouletteGeometry.dragPixelsPerStep, 44, "drag pixels per index step")
 near(SportRouletteGeometry.centerScale, 1.2, "center scale is 1.2")
 near(SportRouletteGeometry.scale(forAngle: 0), 1.2, "angle 0 is fully scaled")
 check(

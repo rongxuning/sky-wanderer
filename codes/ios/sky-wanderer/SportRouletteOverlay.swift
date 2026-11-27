@@ -1,0 +1,110 @@
+import SwiftUI
+
+struct SportRouletteOverlay: View {
+    var sports: [SportKind] = Array(SportKind.allCases)
+    @Binding var selection: SportKind
+    var screenHeight: CGFloat
+    var onDismiss: () -> Void
+
+    @State private var scrollOffset: CGFloat = 0
+    @State private var dragOrigin: CGFloat?
+
+    private var itemCount: Int { sports.count }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onDismiss)
+
+            ForEach(Array(sports.enumerated()), id: \.element.id) { index, sport in
+                item(sport: sport, index: index)
+            }
+        }
+        .onAppear {
+            if let idx = sports.firstIndex(of: selection) {
+                scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: idx))
+            }
+        }
+        .gesture(drag)
+    }
+
+    @ViewBuilder
+    private func item(sport: SportKind, index: Int) -> some View {
+        let angle = SportRouletteGeometry.angle(forIndex: index, scrollOffset: ChromeLength(scrollOffset))
+        let point = SportRouletteGeometry.position(
+            index: index,
+            scrollOffset: ChromeLength(scrollOffset),
+            screenHeight: ChromeLength(screenHeight)
+        )
+        let scale = CGFloat(SportRouletteGeometry.scale(forAngle: angle))
+        let opacity = CGFloat(SportRouletteGeometry.opacity(forAngle: angle))
+        let dot = CGFloat(SportRouletteGeometry.dotDiameter)
+        let onMidline = abs(Double(angle)) < 0.001
+
+        Button {
+            tap(index)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(SkyTheme.Color.starryGray)
+                    .frame(width: dot, height: dot)
+                Image(systemName: sport.symbol)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(SkyTheme.Color.onStarryGray)
+            }
+            .overlay(alignment: .leading) {
+                Text(sport.title)
+                    .font(.system(size: 16, weight: onMidline ? .semibold : .regular))
+                    .foregroundStyle(SkyTheme.Color.ink)
+                    .fixedSize()
+                    .padding(.leading, dot + SkyTheme.Spacing.related)
+            }
+            .scaleEffect(scale, anchor: .center)
+            .opacity(opacity)
+        }
+        .buttonStyle(.plain)
+        .position(x: CGFloat(point.x), y: CGFloat(point.y))
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                if dragOrigin == nil { dragOrigin = scrollOffset }
+                let origin = dragOrigin ?? scrollOffset
+                let deltaIndex = -value.translation.height / CGFloat(SportRouletteGeometry.dragPixelsPerStep)
+                scrollOffset = CGFloat(
+                    SportRouletteGeometry.clampedScrollOffset(
+                        ChromeLength(origin + deltaIndex),
+                        itemCount: itemCount
+                    )
+                )
+            }
+            .onEnded { value in
+                dragOrigin = nil
+                let predicted = scrollOffset
+                    - value.predictedEndTranslation.height / CGFloat(SportRouletteGeometry.dragPixelsPerStep)
+                let nearest = SportRouletteGeometry.nearestIndex(
+                    scrollOffset: ChromeLength(predicted),
+                    itemCount: itemCount
+                )
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                    scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: nearest))
+                }
+                commit(nearest)
+            }
+    }
+
+    private func tap(_ index: Int) {
+        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+            scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: index))
+        }
+        commit(index)
+    }
+
+    private func commit(_ index: Int) {
+        guard sports.indices.contains(index) else { return }
+        selection = sports[index]
+    }
+}
