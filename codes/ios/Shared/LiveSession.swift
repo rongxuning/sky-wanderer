@@ -125,6 +125,8 @@ final class LiveSession: ObservableObject {
     private var teammatesStarted = false
     /// Every accepted point. Display uses a downsample of this.
     private var recordedRoute: [GeoPoint] = []
+    /// One-shot indoor pin retries after `requestLocation` fails.
+    private var startPinRetries = 0
 
     init(sport: SportKind, plannedRoute: [GeoPoint], teammates: [TeammateProfile]) {
         self.sport = sport
@@ -542,6 +544,15 @@ final class LiveSession: ObservableObject {
                 }
             }
         }
+        locationProxy.onFailure = { [weak self] manager, error in
+            Task { @MainActor in
+                guard let self, !self.sport.usesOutdoorLocation else { return }
+                if let clError = error as? CLError, clError.code == .denied { return }
+                guard self.startPinRetries < 2 else { return }
+                self.startPinRetries += 1
+                self.requestStartPinIfAuthorized(manager)
+            }
+        }
     }
 
     private func startTimer() {
@@ -726,10 +737,6 @@ final class LiveSession: ObservableObject {
 
     private func apply(_ location: CLLocation) {
         guard phase == .running, !paused, !simulating, !leavingApple else { return }
-        if ignoreNextLocation || location.timestamp < resumeAnchorDate {
-            ignoreNextLocation = false
-            return
-        }
         guard location.horizontalAccuracy >= 0 else { return }
         let fix = GeoPoint(
             latitude: location.coordinate.latitude,
@@ -739,14 +746,21 @@ final class LiveSession: ObservableObject {
         )
         if !sport.usesOutdoorLocation {
             // Keep the first usable fix as the list start pin; do not build a track.
+            // Indoor sessions ignore the resume jump filter — one dropped fix would
+            // leave 力量 / 综合 without a map after a pause or a late authorization.
             guard recordedRoute.isEmpty else { return }
             guard location.horizontalAccuracy < 200 else { return }
+            ignoreNextLocation = false
             userFix = fix
             lastLocation = location
             appendPoint(fix)
             if location.altitude.isFinite {
                 altitudeMeters = location.altitude
             }
+            return
+        }
+        if ignoreNextLocation || location.timestamp < resumeAnchorDate {
+            ignoreNextLocation = false
             return
         }
         // Map follow uses every usable fix. Track and climb wait for real movement.
@@ -1059,6 +1073,7 @@ enum MapOrigin {
 final class LocationProxy: NSObject, CLLocationManagerDelegate {
     var onLocation: ((CLLocation) -> Void)?
     var onAuthorization: ((CLLocationManager) -> Void)?
+    var onFailure: ((CLLocationManager, Error) -> Void)?
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let location = locations.last else { return }
@@ -1066,9 +1081,9 @@ final class LocationProxy: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // `requestLocation` can fail (denied / timeout). The session keeps going
-        // without a start pin; the list falls back to the sport swatch.
-        _ = error
+        // `requestLocation` can fail (denied / timeout). The session may retry
+        // once for an indoor start pin; otherwise the list keeps map chrome only.
+        onFailure?(manager, error)
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {

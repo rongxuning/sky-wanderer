@@ -149,8 +149,9 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             if !thumbnail, shown.count >= 2, let last = shown.last?.coordinate {
                 map.addAnnotation(EndpointAnnotation(coordinate: last, square: true))
             }
-        } else if thumbnail, shown.count == 1, let only = shown.first?.coordinate {
-            map.addAnnotation(EndpointAnnotation(coordinate: only, square: false))
+        } else if thumbnail, shown.count == 1 {
+            // Neighborhood basemap only. The list card overlays the start pin in
+            // SwiftUI so the mark color stays `#1E7DD6` with the distance figure.
         }
         if let credit = window?.viewWithTag(41) as? BasemapCreditLabel {
             credit.setText(SkyBasemapCenter.shared.caption)

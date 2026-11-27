@@ -656,9 +656,15 @@ final class PhoneAppState: ObservableObject {
         var last = RecordsRefresh.Outcome.empty
         while true {
             let known = Set(database.workouts.compactMap { WorkoutDenylist.healthIdentity($0.healthKitUUID) })
+            // Re-read 力量 / 综合 rows that still have no start fix so the list map can appear.
+            let prioritize = Set(database.workouts.compactMap { workout -> String? in
+                guard workout.sport.listUsesStartLocationMap,
+                      workout.startCoordinate == nil else { return nil }
+                return WorkoutDenylist.healthIdentity(workout.healthKitUUID)
+            })
             let denied = database.deletedWorkouts
             let outcome = await RecordsRefresh.performAsync {
-                try await source.importWorkouts(known: known, denied: denied)
+                try await source.importWorkouts(known: known, denied: denied, prioritize: prioritize)
             }
             if outcome.failed {
                 banner = "暂时读不到 Apple 健康里的锻炼"
@@ -674,6 +680,18 @@ final class PhoneAppState: ObservableObject {
             mutate { database in
                 WorkoutImport.merge(outcome.records, into: &database.workouts, skipping: database.deletedWorkouts)
                 _ = WorkoutTrackStore.migrate(&database.workouts)
+            }
+            // Warm plates for pin-less strength / mixed rows that just gained a start fix.
+            for record in outcome.records where record.sport.listUsesStartLocationMap {
+                guard let stored = database.workouts.first(where: { $0.healthKitUUID == record.healthKitUUID }),
+                      RecordListThumbnailKind.resolve(routeCount: stored.listThumbnailPointCount) != .swatch else {
+                    continue
+                }
+                RecordMapThumbnails.shared.enqueueWarm(
+                    for: stored.id,
+                    route: stored.listThumbnailRoute,
+                    side: CGFloat(RecordListCardLayout.mapSide)
+                )
             }
             last = outcome
             if unseen < AppleHealth.newBatchSize { break }

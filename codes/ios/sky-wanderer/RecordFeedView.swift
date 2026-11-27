@@ -371,7 +371,7 @@ private struct RecordMonthSectionLabel: View {
             .foregroundStyle(SkyTheme.Color.ink)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, SkyTheme.Spacing.screenInset)
-            .padding(.top, SkyTheme.Spacing.section)
+            .padding(.top, CGFloat(RecordListCardLayout.monthSectionTop))
             .padding(.bottom, SkyTheme.Spacing.related)
             .accessibilityAddTraits(.isHeader)
     }

@@ -42,8 +42,8 @@ Sky 是户外运动数据应用。信息结构参考 Strava：运动动态、活
 | `chartTrack` | `#1E88FE` | 轨迹、配速主线，等于 `primary` |
 | `chartNeutral` | `#8E8E93` | 图表中性灰 |
 | `chartNeutralMuted` | `#C6C6C8` | 图表第二条中性灰 |
-| `recordTrack` | `#2F6FBF` | 记录列表缩略图上的轨迹线 |
-| `recordDistance` | `#00B7EB` | 记录列表距离数字。详情仍用 `metric.distance` |
+| `recordTrack` | `#1E7DD6` | 记录列表缩略图上的轨迹线 |
+| `recordDistance` | `#1E7DD6` | 记录列表距离数字，与轨迹同色。详情仍用 `metric.distance` |
 
 图表的中性系列仍只用 `primary` 再加一到两条中性灰。记录列表和记录详情的指标另用下面的指标色，不另起一套页面色板。
 
