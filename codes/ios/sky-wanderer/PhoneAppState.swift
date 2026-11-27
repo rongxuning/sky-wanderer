@@ -196,6 +196,17 @@ final class PhoneAppState: ObservableObject {
         }
     }
 
+    /// Writes the creator shown on the route list and detail card.
+    /// Blank clears the name so the UI shows 未知. The original GPX file is not changed.
+    func updateRouteCreator(id: String, creator: String) {
+        let trimmed = creator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard database.routes.contains(where: { $0.id == id && $0.creator != trimmed }) else { return }
+        mutate { database in
+            guard let index = database.routes.firstIndex(where: { $0.id == id }) else { return }
+            database.routes[index].creator = trimmed
+        }
+    }
+
     var metricOrder: [LiveBlock] {
         let saved = database.metricOrder.filter { LiveBlock.standard.contains($0) }
         let missing = LiveBlock.standard.filter { !saved.contains($0) }

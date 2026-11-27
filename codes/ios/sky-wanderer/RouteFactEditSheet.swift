@@ -27,6 +27,7 @@ struct RouteFactEditSheet: View {
     var target: RouteFactEditTarget
 
     @State private var name = ""
+    @State private var creator = ""
     @State private var cutoff = ""
     @State private var distance = ""
     @State private var ascent = ""
@@ -57,7 +58,7 @@ struct RouteFactEditSheet: View {
                         .font(SkyTheme.Font.footnote)
                         .foregroundStyle(SkyTheme.Color.danger)
                 }
-                Text("留空并保存会恢复为轨迹计算值。分段和累积各自保存，改一边不会改另一边。")
+                Text(footnote)
                     .font(SkyTheme.Font.footnote)
                     .foregroundStyle(SkyTheme.Color.secondary)
             }
@@ -92,8 +93,18 @@ struct RouteFactEditSheet: View {
         }
     }
 
+    private var footnote: String {
+        switch target {
+        case .totals:
+            return "创建人留空显示为未知。指标留空并保存会恢复为轨迹计算值。"
+        case .waypoint, .finish:
+            return "留空并保存会恢复为轨迹计算值。分段和累积各自保存，改一边不会改另一边。"
+        }
+    }
+
     private var totalsFields: some View {
         Group {
+            textField("创建人", text: $creator, placeholder: "未知")
             numberField("距离", text: $distance, unit: "公里")
             numberField("爬升", text: $ascent, unit: "米")
             numberField("下降", text: $descent, unit: "米")
@@ -119,9 +130,13 @@ struct RouteFactEditSheet: View {
         }
     }
 
-    private func textField(_ label: String, text: Binding<String>) -> some View {
+    private func textField(
+        _ label: String,
+        text: Binding<String>,
+        placeholder: String = "留空恢复"
+    ) -> some View {
         LabeledContent(label) {
-            TextField("留空恢复", text: text)
+            TextField(placeholder, text: text)
                 .multilineTextAlignment(.trailing)
         }
     }
@@ -145,6 +160,7 @@ struct RouteFactEditSheet: View {
         switch target {
         case .totals:
             let totals = RouteFacts.displayTotals(route)
+            creator = route.creator.trimmingCharacters(in: .whitespacesAndNewlines)
             distance = Format.kilometers(totals.distanceMeters)
             ascent = metersText(totals.ascentMeters)
             descent = metersText(totals.descentMeters)
@@ -193,6 +209,7 @@ struct RouteFactEditSheet: View {
                 descent: descentChange,
                 maxElevation: peakChange
             )
+            app.updateRouteCreator(id: route.id, creator: creator)
         case .waypoint(let id):
             let progress = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
             guard let row = progress.first(where: { $0.id == id }) else {
