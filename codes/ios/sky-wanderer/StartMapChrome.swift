@@ -41,6 +41,11 @@ enum StartMapChrome {
         max(0, (screenHeight - toolColumnHeight) / 2)
     }
 
+    /// Horizontal midline of the left tool column (same Y the roulette arc uses).
+    static func toolColumnMidY(screenHeight: ChromeLength) -> ChromeLength {
+        toolColumnOriginY(screenHeight: screenHeight) + toolColumnHeight / 2
+    }
+
     struct Tool: Equatable {
         var symbol: String
         var label: String
