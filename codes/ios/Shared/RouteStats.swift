@@ -1063,6 +1063,16 @@ struct ElevationAxisLabel: Equatable, Identifiable {
     var lane: Int
 }
 
+/// How wide the elevation curve may grow before the card scrolls horizontally.
+enum ElevationProfileLayout {
+    /// Stretch long routes so about one kilometer gets this many points of chart width.
+    static let pointsPerKilometer: Double = 28
+
+    static func contentWidth(totalKilometers: Double, viewport: Double) -> Double {
+        max(max(viewport, 1), max(0, totalKilometers) * pointsPerKilometer)
+    }
+}
+
 /// Checkpoint ticks for the elevation profile, in track order.
 /// Real waypoints keep their snapped distances. A synthetic finish tick is added at the
 /// track end when a finish card exists. The text under a tick is that distance in

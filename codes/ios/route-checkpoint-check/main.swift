@@ -1436,6 +1436,10 @@ let crowdedMarks = [
 let crowdedLabels = ElevationProfileAxis.labels(crowdedMarks, plotWidth: 260, labelWidth: { Double($0.count) * 6.5 })
 check(crowdedLabels.map(\.lane) == [0, 1], "overlapping kilometer labels use another row \(crowdedLabels.map(\.lane))")
 
+near(ElevationProfileLayout.contentWidth(totalKilometers: 5, viewport: 300), 300, 0.001, "short routes stay at the card width")
+near(ElevationProfileLayout.contentWidth(totalKilometers: 32, viewport: 300), 32 * ElevationProfileLayout.pointsPerKilometer, 0.001, "long routes stretch past the card")
+near(ElevationProfileLayout.contentWidth(totalKilometers: 0, viewport: 0), 1, 0.001, "empty viewport still has a floor")
+
 check(RouteBandFit.contentSpanScale > 1 && RouteBandFit.contentSpanScale < 1.6, "band padding is tighter than the full-screen 1.6× box")
 check(RouteBandFit.contentSpan(latitudes: [], longitudes: []) == nil, "no span without points")
 let onePoint = RouteBandFit.contentSpan(latitudes: [31.2], longitudes: [121.5])
