@@ -218,10 +218,11 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
     }
 
     /// Centers the track in the thumbnail. The longer ground axis meets the
-    /// half-stroke inset; the shorter axis stays centered. A straight
-    /// north-south or east-west trace opens its zero side just enough for
-    /// MapKit to keep the line in the middle. A single start pin uses a
-    /// fixed neighborhood span.
+    /// 5pt edge pad; the shorter axis stays centered. MapKit alone often parks
+    /// the region toward the bottom of the square after tiles load — after the
+    /// initial fit we measure the track in view points and pan/zoom so the
+    /// bounding box keeps that 5pt inset. A single start pin uses a fixed
+    /// neighborhood span.
     private func show(_ route: [GeoPoint], on map: MKMapView, mode: SkyBasemapMode) {
         let shown = TrackDatum.displayed(route, mode: mode)
         if thumbnail, shown.count == 1, let only = shown.first {
@@ -235,22 +236,86 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             return
         }
         if thumbnail, let rect = Self.trackRect(route, mode: mode) {
-            map.layoutIfNeeded()
-            // Expand the aspect-filled rect instead of using MK edge padding.
-            // Edge padding left extra empty space and often parked the track low
-            // after tiles finished loading.
-            let fitted = Self.aspectFilledMapRect(rect, viewSize: size)
-            let visible = Self.paddedVisibleMapRect(
-                fitted,
-                viewSize: size,
-                edgePad: RecordListCardLayout.mapTrackEdgePad
-            )
-            map.setVisibleMapRect(visible, animated: false)
+            Self.frameThumbnailTrack(rect, on: map, viewSize: size)
             return
         }
         if let region = region(for: route, mode: mode) {
             map.setRegion(region, animated: false)
         }
+    }
+
+    /// Aspect-fill the track, leave `mapTrackEdgePad` on every edge, then correct
+    /// any leftover MapKit bias in screen space so the bbox stays centered.
+    static func frameThumbnailTrack(_ track: MKMapRect, on map: MKMapView, viewSize: CGSize) {
+        map.layoutIfNeeded()
+        let pad = CGFloat(RecordListCardLayout.mapTrackEdgePad)
+        let bounds = map.bounds.size
+        let fittedSize = bounds.width > 1 && bounds.height > 1 ? bounds : viewSize
+        let fitted = aspectFilledMapRect(track, viewSize: fittedSize)
+        map.setVisibleMapRect(
+            fitted,
+            edgePadding: UIEdgeInsets(top: pad, left: pad, bottom: pad, right: pad),
+            animated: false
+        )
+        recenterTrack(track, on: map)
+        refitTrackEdgePad(track, on: map, edgePad: pad)
+        recenterTrack(track, on: map)
+    }
+
+    /// Pan so the track bbox center lands on the view center.
+    static func recenterTrack(_ track: MKMapRect, on map: MKMapView) {
+        guard let mid = trackCenterPoint(track, on: map) else { return }
+        let target = CGPoint(x: map.bounds.midX, y: map.bounds.midY)
+        let dx = mid.x - target.x
+        let dy = mid.y - target.y
+        guard abs(dx) > 0.5 || abs(dy) > 0.5 else { return }
+        let centerPt = map.convert(map.centerCoordinate, toPointTo: map)
+        let shifted = CGPoint(x: centerPt.x + dx, y: centerPt.y + dy)
+        let coordinate = map.convert(shifted, toCoordinateFrom: map)
+        guard CLLocationCoordinate2DIsValid(coordinate) else { return }
+        map.setCenter(coordinate, animated: false)
+    }
+
+    /// Zoom so the longer screen axis of the track meets `edgePad` from the sides.
+    static func refitTrackEdgePad(_ track: MKMapRect, on map: MKMapView, edgePad: CGFloat) {
+        guard let box = trackScreenBox(track, on: map) else { return }
+        let longSpan = max(box.width, box.height, 1)
+        let side = min(map.bounds.width, map.bounds.height)
+        let target = max(side - edgePad * 2, 1)
+        let factor = Double(longSpan / target)
+        guard abs(factor - 1) > 0.02 else { return }
+        let visible = map.visibleMapRect
+        let width = visible.size.width * factor
+        let height = visible.size.height * factor
+        map.setVisibleMapRect(
+            MKMapRect(
+                x: visible.midX - width / 2,
+                y: visible.midY - height / 2,
+                width: width,
+                height: height
+            ),
+            animated: false
+        )
+    }
+
+    private static func trackCenterPoint(_ track: MKMapRect, on map: MKMapView) -> CGPoint? {
+        guard let box = trackScreenBox(track, on: map) else { return nil }
+        return CGPoint(x: box.midX, y: box.midY)
+    }
+
+    private static func trackScreenBox(_ track: MKMapRect, on map: MKMapView) -> CGRect? {
+        let topLeftCoord = MKMapPoint(x: track.minX, y: track.minY).coordinate
+        let bottomRightCoord = MKMapPoint(x: track.maxX, y: track.maxY).coordinate
+        guard CLLocationCoordinate2DIsValid(topLeftCoord),
+              CLLocationCoordinate2DIsValid(bottomRightCoord) else { return nil }
+        let topLeft = map.convert(topLeftCoord, toPointTo: map)
+        let bottomRight = map.convert(bottomRightCoord, toPointTo: map)
+        return CGRect(
+            x: min(topLeft.x, bottomRight.x),
+            y: min(topLeft.y, bottomRight.y),
+            width: abs(bottomRight.x - topLeft.x),
+            height: abs(bottomRight.y - topLeft.y)
+        )
     }
 
     private static func trackRect(_ route: [GeoPoint], mode: SkyBasemapMode) -> MKMapRect? {
@@ -298,8 +363,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         return result
     }
 
-    /// Scales an aspect-filled track rect so the stroke pad fits without MK
-    /// `edgePadding`, which was zooming the track back out after load.
+    /// Scales an aspect-filled track rect so a point pad survives. Kept for
+    /// checks; live thumbnails use `frameThumbnailTrack` (edge pad + screen fix).
     static func paddedVisibleMapRect(_ rect: MKMapRect, viewSize: CGSize, edgePad: Double) -> MKMapRect {
         let side = Double(min(viewSize.width, viewSize.height))
         let scale = RecordThumbnailFit.visibleMapScale(side: side, edgePad: edgePad)

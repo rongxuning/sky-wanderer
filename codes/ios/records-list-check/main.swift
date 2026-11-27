@@ -333,8 +333,12 @@ check(RecordListCardLayout.lowerBlock == 14, "secondary metrics are the value li
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
 check(RecordListCardLayout.mapTrackBasemapLineWidth == 7.0, "basemap list stroke is 7pt")
 check(
-    abs(RecordListCardLayout.mapTrackEdgePad - 3.5) < 0.0001,
-    "edge pad is half the thicker basemap stroke"
+    abs(RecordListCardLayout.mapTrackEdgePad - 5) < 0.0001,
+    "track bbox keeps a 5pt gap from the thumbnail edge"
+)
+check(
+    RecordListCardLayout.mapTrackEdgePad >= RecordListCardLayout.mapTrackBasemapLineWidth / 2,
+    "edge pad clears half the basemap stroke"
 )
 check(
     RecordListCardLayout.mapTrackEdgePad >= RecordListCardLayout.mapTrackLineWidth * 0.55,
@@ -364,10 +368,10 @@ check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
 check(
     RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 100)
-        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v2.jpg",
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v3.jpg",
     "list thumbnails live under record-thumbs with id, basemap, side, and plate version"
 )
-check(RecordListThumbnailFile.plateVersion == "2", "plate version invalidates old track framing")
+check(RecordListThumbnailFile.plateVersion == "3", "plate version invalidates old bottom-biased framing")
 check(
     RecordListThumbnailFile.idPrefix(thumbID) == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-",
     "delete uses the workout id prefix"

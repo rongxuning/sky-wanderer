@@ -60,9 +60,9 @@ enum RecordListCardLayout {
     static let mapTrackLineWidth = 5.5
     /// Matches `TrackPaint.recordListInnerPoints` on the baked basemap plate.
     static let mapTrackBasemapLineWidth = 7.0
-    /// Clearance past the centerline so the thicker of the canvas end dot
-    /// (`0.55 × mapTrackLineWidth`) and the basemap stroke stay inside the frame.
-    static let mapTrackEdgePad = max(mapTrackLineWidth * 0.55, mapTrackBasemapLineWidth / 2)
+    /// Gap between the track bounding box (long axis) and the thumbnail edge.
+    /// 5pt clears the basemap stroke (half of 7) and the canvas end dot.
+    static let mapTrackEdgePad = 5.0
 
     static var lowerBlock: Double {
         lowerValueLine
@@ -125,7 +125,7 @@ enum RecordListThumbnailKind: Equatable {
 
 /// How a route sits inside the square record thumbnail.
 ///
-/// The longer ground axis meets the half-stroke inset on both sides. The shorter
+/// The longer ground axis meets the 5pt edge pad on both sides. The shorter
 /// axis stays centered with more margin. Horizontally and vertically the track
 /// is centered; at least one axis is flush to the inset. The full-screen 1.6×
 /// map fit is not used here.
@@ -155,9 +155,8 @@ enum RecordThumbnailFit {
         )
     }
 
-    /// Grow an aspect-filled map rect so a point pad survives without MK edge
-    /// padding. MapKit's edge padding can leave extra empty space and bias the
-    /// track toward the bottom after tiles load.
+    /// How much to grow an aspect-filled map rect so a point pad survives.
+    /// Used when framing without relying on MapKit `edgePadding` alone.
     static func visibleMapScale(side: Double, edgePad: Double) -> Double {
         let usable = max(side - edgePad * 2, 1)
         return side / usable
