@@ -53,9 +53,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         window.frame = CGRect(origin: .zero, size: size)
         window.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.normal.rawValue - 1)
         window.isUserInteractionEnabled = false
-        let map: MKMapView = thumbnail
-            ? ThumbnailMapView(frame: CGRect(origin: .zero, size: size))
-            : MKMapView(frame: CGRect(origin: .zero, size: size))
+        let map = ProviderChromeMapView(frame: CGRect(origin: .zero, size: size))
         map.delegate = self
         map.overrideUserInterfaceStyle = .light
         map.isRotateEnabled = false
@@ -154,8 +152,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
                     self.installContent(on: map)
                     self.show(self.route, on: map, mode: current)
                 }
-                if self.thumbnail, let map = self.map {
-                    MapLegalChrome.hideThumbnailChrome(on: map)
+                if let map = self.map {
+                    MapLegalChrome.hideProviderChrome(on: map)
                 }
                 let idle = !TiandituTileActivity.busy
                 let ready = self.fullRenders > 0 && idle && (current == .system || elapsed > 0.9)
@@ -398,10 +396,10 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
 }
 
 /// Hides the provider line after MapKit lays it out, so a snapshot cannot
-/// burn 法律信息 or the 高德地图 mark back in.
-private final class ThumbnailMapView: MKMapView {
+/// burn 法律信息 or the 高德地图 mark back in. Used for thumbnails and share images alike.
+private final class ProviderChromeMapView: MKMapView {
     override func layoutSubviews() {
         super.layoutSubviews()
-        MapLegalChrome.hideThumbnailChrome(on: self)
+        MapLegalChrome.hideProviderChrome(on: self)
     }
 }
