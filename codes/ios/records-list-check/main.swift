@@ -301,8 +301,8 @@ check(
     "two secondary cells are leading and trailing"
 )
 
-check(RecordListCardLayout.standardTextBlock == 90, "standard text block matches the map side")
-check(RecordListCardLayout.standardMapBlock == 90, "map side equals the metrics stack height")
+check(RecordListCardLayout.standardTextBlock == 87, "standard text block matches the map side")
+check(RecordListCardLayout.standardMapBlock == 87, "map side equals the metrics stack height")
 check(
     RecordListCardLayout.standardHeight
         == RecordListCardLayout.contentInsetVertical * 2
@@ -314,7 +314,7 @@ check(
     "a 393pt phone keeps the 220pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 196,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 199,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
@@ -327,7 +327,8 @@ check(RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock, "m
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 12, "distance sits 12pt under the title row")
 check(RecordListCardLayout.upperLine == 36, "the distance line is 36pt for the larger figure")
-check(RecordListCardLayout.middleToBottom == 6, "middle to bottom row is 6pt")
+check(RecordListCardLayout.middleToBottom == 3, "middle to bottom row is half of the previous 6pt")
+check(RecordListChrome.durationHex == 0x8E8E93, "list duration uses light gray")
 check(RecordListCardLayout.lowerBlock == 14, "secondary metrics are the value line only")
 check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
 check(RecordListCardLayout.mapTrackBasemapLineWidth == 7.0, "basemap list stroke is 7pt")
@@ -505,6 +506,22 @@ check(
     SportKind.functionalStrength.listUsesStartLocationMap
         && RecordListThumbnailKind.resolve(routeCount: strengthCard.listThumbnailPointCount) == .swatch,
     "strength without a fix still opts into the map chrome, not the catalog icon"
+)
+var strengthFromMetadata = strengthCard
+strengthFromMetadata.route = [
+    GeoPoint(latitude: 31.2304, longitude: 121.4737, altitude: 8, timestamp: saturday)
+]
+check(
+    RecordListThumbnailKind.resolve(routeCount: strengthFromMetadata.listThumbnailPointCount) == .startPoint,
+    "a lone gym pin from Health metadata still draws the start map"
+)
+check(
+    GeoPoint.valid(latitude: 91, longitude: 121) == nil,
+    "out-of-range latitudes are not start pins"
+)
+check(
+    GeoPoint.valid(latitude: 31.2, longitude: 121.5)?.latitude == 31.2,
+    "finite WGS84 coordinates become a start pin"
 )
 
 let mixed = [

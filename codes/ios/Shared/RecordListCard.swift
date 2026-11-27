@@ -35,10 +35,10 @@ enum RecordListCardLayout {
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
     static let titleToMiddle = 12.0
-    /// Fits the 32pt distance / energy figure.
+    /// Fits the 31pt distance / energy figure.
     static let upperLine = 36.0
     /// Gap between the distance row and the secondary metrics.
-    static let middleToBottom = 6.0
+    static let middleToBottom = 3.0
     static let lowerValueLine = 14.0
     static let mapLeading = 10.0
     static let mapToContent = 14.0
@@ -95,13 +95,15 @@ enum RecordListCardLayout {
     }
 }
 
-/// List-card chrome. Duration stays on ink with the start-time text.
-/// The sport-type chip uses a softer dark gray so the badge does not dominate.
-/// Neither follows `SportKind.listAccentHex`.
+/// List-card chrome. Duration uses light gray (`secondary`); the start-time
+/// text stays on ink. The sport-type chip uses a softer dark gray so the badge
+/// does not dominate. Neither follows `SportKind.listAccentHex`.
 enum RecordListChrome {
     static let labelHex: UInt32 = 0x1C1C1E
     /// Sport chip fill. Same value as `SkyTheme.Color.starryChip`.
     static let chipFillHex: UInt32 = 0x3A3A3C
+    /// Training duration on the list card. Same value as `SkyTheme.Color.secondary`.
+    static let durationHex: UInt32 = 0x8E8E93
 }
 
 /// What the list card draws on the left plate.

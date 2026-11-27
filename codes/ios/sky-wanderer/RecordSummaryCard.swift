@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Full-width record card. Fixed 90pt map square on the left — track, or the
-/// start pin for 力量训练 / 综合训练. Those two sports never use the catalog
-/// icon plate; without a fix they still show the map chrome. The metrics stack
-/// keeps the same fixed height as the map. Date sits on the right of the title
-/// row. Secondary metrics are the value only; load appends TL. Missing values
-/// are omitted.
+/// Full-width record card. Fixed map square on the left — track, or the start
+/// pin for 力量训练 / 综合训练. Those two sports never use the catalog icon
+/// plate; without a fix they still show the map chrome. The metrics stack keeps
+/// the same fixed height as the map (`RecordListCardLayout.mapSide`). Date sits
+/// on the right of the title row. Secondary metrics are the value only; load
+/// appends TL. Missing values are omitted.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
     var explainSpace: String
@@ -13,8 +13,8 @@ struct RecordSummaryCard: View {
 
     @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
     @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 32
-    @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 24
+    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 31
+    @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 23
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
 
     private var secondaryMetrics: [RecordListSecondaryMetric] {
@@ -90,7 +90,7 @@ struct RecordSummaryCard: View {
                 primaryMetric(
                     RecordListCardText.clock(workout.trainingDuration),
                     durationFont,
-                    SkyTheme.Color.ink,
+                    SkyTheme.Color.secondary,
                     alignment: .trailing
                 )
             }

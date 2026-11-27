@@ -359,13 +359,15 @@ private func feedEntryID(_ row: RecordFeedList.Row, workouts: [WorkoutRecord]) -
     }
 }
 
-/// In-list year-month. Headline, not the sticky bar's Title3 Bold. No month probe: the sticky title follows cards only.
+/// In-list year-month. One point larger than headline and bold. No month probe:
+/// the sticky title follows cards only.
 private struct RecordMonthSectionLabel: View {
     var title: String
+    @ScaledMetric(relativeTo: .headline) private var monthSize: CGFloat = 18
 
     var body: some View {
         Text(title)
-            .font(SkyTheme.Font.headline)
+            .font(.system(size: monthSize, weight: .bold))
             .foregroundStyle(SkyTheme.Color.ink)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, SkyTheme.Spacing.screenInset)

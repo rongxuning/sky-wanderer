@@ -135,6 +135,27 @@ struct GeoPoint: Codable, Hashable {
     }
     #endif
 
+    /// Finite WGS84 coordinate, or nil when the numbers are not a real map fix.
+    static func valid(
+        latitude: Double,
+        longitude: Double,
+        altitude: Double = 0,
+        timestamp: Date? = nil
+    ) -> GeoPoint? {
+        guard latitude.isFinite,
+              longitude.isFinite,
+              (-90...90).contains(latitude),
+              (-180...180).contains(longitude) else {
+            return nil
+        }
+        return GeoPoint(
+            latitude: latitude,
+            longitude: longitude,
+            altitude: altitude.isFinite ? altitude : 0,
+            timestamp: timestamp
+        )
+    }
+
     func moved(northMeters: Double, eastMeters: Double) -> GeoPoint {
         let lat = latitude + northMeters / 111_320
         let lon = longitude + eastMeters / (111_320 * cos(latitude * .pi / 180))
@@ -529,12 +550,13 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
 
     /// First route point when it is a finite WGS84 coordinate.
     var startCoordinate: GeoPoint? {
-        guard let first = route.first,
-              first.latitude.isFinite,
-              first.longitude.isFinite,
-              (-90...90).contains(first.latitude),
-              (-180...180).contains(first.longitude) else { return nil }
-        return first
+        guard let first = route.first else { return nil }
+        return GeoPoint.valid(
+            latitude: first.latitude,
+            longitude: first.longitude,
+            altitude: first.altitude,
+            timestamp: first.timestamp
+        )
     }
 
     /// Steps per minute for the record card, detail grid, splits footer, and stats.
