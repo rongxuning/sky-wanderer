@@ -12,7 +12,8 @@ import Foundation
 enum SportRouletteGeometry {
     static let itemCountHintVisible = 5
     /// Semicircle radius; selected item sits `radius` to the right of the arc center.
-    static let radius: ChromeLength = 180
+    /// Compacted from 180 so neighboring dots sit closer on screen.
+    static let radius: ChromeLength = 140
     /// Four steps between five visible items cover a semicircle.
     static let angleStep: ChromeLength = .pi / 4
     /// Unwrapped angle past which items are not drawn. Keeps far items from wrapping onto the visible arc.
@@ -22,7 +23,10 @@ enum SportRouletteGeometry {
     static let edgeOpacity: ChromeLength = 0.45
     static let dotDiameter: ChromeLength = 44
     /// Larger than the old shallow-arc step so a finger flick still feels measured.
-    static let dragPixelsPerStep: ChromeLength = 64
+    /// 20% higher than 64 → slower index travel per finger pixel.
+    static let dragPixelsPerStep: ChromeLength = 77
+    /// Snap / tap-to-center spring. 20% slower than the previous 0.38s response.
+    static let snapSpringResponse: ChromeLength = 0.456
 
     /// Vertical center of the selected item — screen midline.
     static func centerY(screenHeight: ChromeLength) -> ChromeLength {

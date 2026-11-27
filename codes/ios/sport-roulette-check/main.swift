@@ -36,8 +36,10 @@ near(
     screenWidth / 2 - SportRouletteGeometry.radius,
     "arc center sits radius left of screen center"
 )
+near(SportRouletteGeometry.radius, 140, "compact semicircle radius")
 near(SportRouletteGeometry.angleStep, .pi / 4, "five visible items span a semicircle")
-near(SportRouletteGeometry.dragPixelsPerStep, 64, "drag pixels per index step")
+near(SportRouletteGeometry.dragPixelsPerStep, 77, "drag pixels per index step (20% slower than 64)")
+near(SportRouletteGeometry.snapSpringResponse, 0.456, "snap spring is 20% slower than 0.38")
 near(SportRouletteGeometry.centerScale, 1.2, "center scale is 1.2")
 near(SportRouletteGeometry.scale(forAngle: 0), 1.2, "angle 0 is fully scaled")
 check(
