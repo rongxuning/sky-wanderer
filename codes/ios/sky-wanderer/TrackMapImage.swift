@@ -53,9 +53,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         window.frame = CGRect(origin: .zero, size: size)
         window.windowLevel = UIWindow.Level(rawValue: UIWindow.Level.normal.rawValue - 1)
         window.isUserInteractionEnabled = false
-        let map: MKMapView = thumbnail
-            ? ThumbnailMapView(frame: CGRect(origin: .zero, size: size))
-            : MKMapView(frame: CGRect(origin: .zero, size: size))
+        let map = ProviderChromeMapView(frame: CGRect(origin: .zero, size: size))
         map.delegate = self
         map.overrideUserInterfaceStyle = .light
         map.isRotateEnabled = false
@@ -69,15 +67,6 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         map.pointOfInterestFilter = thumbnail || mode == .tianditu ? .excludingAll : nil
         map.backgroundColor = SkyBasemapInstaller.backdrop
         window.addSubview(map)
-        if !thumbnail {
-            let credit = BasemapCreditLabel()
-            credit.setText(SkyBasemapCenter.shared.caption)
-            let creditSize = credit.sizeThatFits(.zero)
-            let creditY = size.height - max(0, overlap) - creditSize.height - 10
-            credit.frame = CGRect(x: 12, y: max(8, creditY), width: creditSize.width, height: creditSize.height)
-            credit.tag = 41
-            window.addSubview(credit)
-        }
         if route.count < 2, !thumbnail {
             let caption = Self.emptyCaption()
             caption.center = CGPoint(x: size.width / 2, y: size.height - max(0, overlap) - 12 - caption.bounds.height / 2)
@@ -88,9 +77,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         self.map = map
         installContent(on: map)
         show(route, on: map, mode: mode)
-        if thumbnail {
-            MapLegalChrome.hideThumbnailChrome(on: map)
-        }
+        MapLegalChrome.hideProviderChrome(on: map)
         watch()
     }
 
@@ -123,13 +110,11 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
     func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
         guard fullyRendered else { return }
         fullRenders += 1
+        MapLegalChrome.hideProviderChrome(on: mapView)
         if thumbnail {
-            MapLegalChrome.hideThumbnailChrome(on: mapView)
             // MapKit can nudge the camera during the first paint; lock the
             // centered edge-fit again before the snapshot.
             show(route, on: mapView, mode: mode)
-        } else {
-            MapLegalChrome.setAppleAttributionHidden(SkyBasemapCenter.shared.mode == .tianditu, on: mapView)
         }
     }
 
@@ -153,17 +138,7 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
             // Neighborhood basemap only. The list card overlays the start pin in
             // SwiftUI so the mark color stays `#1E7DD6` with the distance figure.
         }
-        if let credit = window?.viewWithTag(41) as? BasemapCreditLabel {
-            credit.setText(SkyBasemapCenter.shared.caption)
-            let creditSize = credit.sizeThatFits(.zero)
-            let creditY = size.height - max(0, overlap) - creditSize.height - 10
-            credit.frame = CGRect(x: 12, y: max(8, creditY), width: creditSize.width, height: creditSize.height)
-        }
-        if thumbnail {
-            MapLegalChrome.hideThumbnailChrome(on: map)
-        } else {
-            MapLegalChrome.setAppleAttributionHidden(mode == .tianditu, on: map)
-        }
+        MapLegalChrome.hideProviderChrome(on: map)
     }
 
     private func watch() {
@@ -177,8 +152,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
                     self.installContent(on: map)
                     self.show(self.route, on: map, mode: current)
                 }
-                if self.thumbnail, let map = self.map {
-                    MapLegalChrome.hideThumbnailChrome(on: map)
+                if let map = self.map {
+                    MapLegalChrome.hideProviderChrome(on: map)
                 }
                 let idle = !TiandituTileActivity.busy
                 let ready = self.fullRenders > 0 && idle && (current == .system || elapsed > 0.9)
@@ -208,8 +183,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
 
     private func capture() -> UIImage? {
         guard let window else { return nil }
-        if thumbnail, let map {
-            MapLegalChrome.hideThumbnailChrome(on: map)
+        if let map {
+            MapLegalChrome.hideProviderChrome(on: map)
         }
         let scale = scene.screen.scale > 0 ? scene.screen.scale : 3
         let format = UIGraphicsImageRendererFormat()
@@ -421,10 +396,10 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
 }
 
 /// Hides the provider line after MapKit lays it out, so a snapshot cannot
-/// burn 法律信息 or the 高德地图 mark back in.
-private final class ThumbnailMapView: MKMapView {
+/// burn 法律信息 or the 高德地图 mark back in. Used for thumbnails and share images alike.
+private final class ProviderChromeMapView: MKMapView {
     override func layoutSubviews() {
         super.layoutSubviews()
-        MapLegalChrome.hideThumbnailChrome(on: self)
+        MapLegalChrome.hideProviderChrome(on: self)
     }
 }

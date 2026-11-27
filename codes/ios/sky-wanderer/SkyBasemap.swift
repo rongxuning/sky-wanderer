@@ -17,15 +17,8 @@ final class SkyBasemapCenter: ObservableObject {
     private var otherFailures = 0
     private var gaveUp = false
 
-    /// Screens use this. Route detail keeps the string above the title as well.
-    var caption: String {
-        switch mode {
-        case .tianditu:
-            return TiandituConfig.credit
-        case .system:
-            return "系统地图"
-        }
-    }
+    /// Maps no longer draw a provider line. Kept empty so old call sites stay quiet.
+    var caption: String { "" }
 
     private init() {
         mode = TiandituConfig.token.isEmpty ? .system : .tianditu
@@ -81,12 +74,22 @@ enum SkyBasemapInstaller {
 }
 
 enum MapLegalChrome {
+    /// Hides MapKit's 法律信息 / 高德地图 line and any other provider mark.
+    /// Used on full-screen maps, share snapshots, and list thumbnails alike.
+    static func hideProviderChrome(on map: MKMapView) {
+        hideThumbnailChrome(on: map)
+    }
+
     static func setAppleAttributionHidden(_ hidden: Bool, on map: MKMapView) {
+        if hidden {
+            hideProviderChrome(on: map)
+            return
+        }
         func walk(_ view: UIView) {
             let name = String(describing: type(of: view))
             if name.contains("Attribution") {
-                view.isHidden = hidden
-                view.alpha = hidden ? 0 : 1
+                view.isHidden = false
+                view.alpha = 1
             }
             for child in view.subviews {
                 walk(child)
@@ -95,9 +98,7 @@ enum MapLegalChrome {
         walk(map)
     }
 
-    /// Record thumbnails are too small for the provider line. Hides 法律信息,
-    /// the 高德地图 mark, and any other attribution or logo view. Full-screen
-    /// maps keep their own credit.
+    /// Hides 法律信息, the 高德地图 mark, and any other attribution or logo view.
     static func hideThumbnailChrome(on map: MKMapView) {
         func conceal(_ view: UIView) {
             guard !view.isHidden else { return }
@@ -142,7 +143,7 @@ enum MapLegalChrome {
             return true
         }
         let text = labelText(view) + " " + (view.accessibilityLabel ?? "")
-        if text.contains("法律") || text.contains("高德") {
+        if text.contains("法律") || text.contains("高德") || text.contains("系统地图") || text.contains("天地图") {
             return true
         }
         let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))

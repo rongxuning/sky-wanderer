@@ -61,7 +61,7 @@ struct OfflineRouteMap: UIViewRepresentable {
     var basemapMode: SkyBasemapMode
     /// Bottom of the title bar. 1× fits the route below this and above the card.
     var topContentInset: CGFloat = 0
-    /// Lifts the legal label above the floating card, and is the bottom of the 1× band.
+    /// Clears the floating card, and is the bottom of the 1× band.
     var legalBottomInset: CGFloat = 0
     var onZoomChanged: (Double) -> Void
     var onZoomDrag: (ZoomDragPhase) -> Void
@@ -108,7 +108,7 @@ struct OfflineRouteMap: UIViewRepresentable {
             coordinator.prepareForDatumChange()
         }
         container.creditBottomInset = max(0, legalBottomInset)
-        container.setCredit(basemapMode == .tianditu ? TiandituConfig.credit : nil)
+        container.setCredit(nil)
         container.zoomCover.isHidden = !zoomArmed
         map.isScrollEnabled = !zoomArmed
         map.isZoomEnabled = !zoomArmed
@@ -149,7 +149,7 @@ struct OfflineRouteMap: UIViewRepresentable {
             margins.bottom = inset
             map.layoutMargins = margins
         }
-        MapLegalChrome.setAppleAttributionHidden(basemapMode == .tianditu, on: map)
+        MapLegalChrome.hideProviderChrome(on: map)
     }
 
     static func dismantleUIView(_ container: RouteMapContainer, coordinator: OfflineRouteMapCoordinator) {
@@ -260,7 +260,7 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
 
     func replaceTiles(on map: MKMapView) {
         tileOverlays = SkyBasemapInstaller.attach(to: map, mode: mode, removing: tileOverlays)
-        MapLegalChrome.setAppleAttributionHidden(mode == .tianditu, on: map)
+        MapLegalChrome.hideProviderChrome(on: map)
         liftLines(on: map)
     }
 
@@ -333,7 +333,7 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
     }
 
     func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
-        MapLegalChrome.setAppleAttributionHidden(mode == .tianditu, on: mapView)
+        MapLegalChrome.hideProviderChrome(on: mapView)
     }
 
     @objc func handlePan(_ gesture: UIPanGestureRecognizer) {

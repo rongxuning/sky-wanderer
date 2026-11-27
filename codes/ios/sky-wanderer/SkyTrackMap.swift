@@ -109,7 +109,7 @@ struct SkyTrackMap: UIViewRepresentable {
         coordinator.bottomInset = bottomInset
         container.placement = creditPlacement
         container.creditBottomInset = max(creditBottomInset, bottomInset)
-        container.setCredit(SkyBasemapCenter.shared.caption)
+        container.setCredit("")
         map.isScrollEnabled = scrollEnabled
         map.isZoomEnabled = true
         map.isRotateEnabled = false
@@ -132,7 +132,7 @@ struct SkyTrackMap: UIViewRepresentable {
             vertices: vertices,
             map: map
         )
-        MapLegalChrome.setAppleAttributionHidden(basemapMode == .tianditu, on: map)
+        MapLegalChrome.hideProviderChrome(on: map)
     }
 }
 
@@ -360,7 +360,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     }
 
     func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
-        MapLegalChrome.setAppleAttributionHidden(mode == .tianditu, on: mapView)
+        MapLegalChrome.hideProviderChrome(on: mapView)
     }
 
     @objc func handleTap(_ gesture: UITapGestureRecognizer) {
