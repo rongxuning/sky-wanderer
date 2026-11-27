@@ -22,17 +22,6 @@ extension EnvironmentValues {
     }
 }
 
-/// Peripheral chrome on the training map: companion tools, 开始, and the home tab bar.
-/// `false` while the sport roulette open transition has hidden them.
-struct SkyTrainingPeripheralChromePreference: PreferenceKey {
-    static var defaultValue = true
-
-    static func reduce(value: inout Bool, nextValue: () -> Bool) {
-        // Hide if any mounted training map asks to hide.
-        value = value && nextValue()
-    }
-}
-
 enum StartSheet: String, Identifiable {
     case settings
     var id: String { rawValue }
@@ -46,6 +35,8 @@ struct StartMapView: View {
     var showsBackButton = false
     /// False while another home tab is showing. The view stays mounted, so this is what stops a countdown.
     var isActive = true
+    /// Home glass tab bar follows companion tools / 开始. Binding — PreferenceKey does not leave NavigationStack.
+    var peripheralChromeVisible: Binding<Bool> = .constant(true)
     @StateObject private var location = LocationPermission()
     @ObservedObject private var basemap = SkyBasemapCenter.shared
     @State private var sheet: StartSheet?
@@ -126,23 +117,23 @@ struct StartMapView: View {
         .ignoresSafeArea()
         .navigationBarHidden(true)
         .tint(SkyTheme.Color.primary)
-        // Other tabs stay mounted; only hide the home bar while this tab is active and chrome is tucked.
-        .preference(
-            key: SkyTrainingPeripheralChromePreference.self,
-            value: !isActive || companionToolsVisible
-        )
         .onAppear {
             location.request()
             if countdownTask == nil {
                 launching = false
             }
             if !isActive { cancelCountdown() }
+            publishPeripheralChrome()
+        }
+        .onChange(of: companionToolsVisible) { _, _ in
+            publishPeripheralChrome()
         }
         .onChange(of: isActive) { _, active in
             if !active {
                 cancelCountdown()
                 closeSportRoulette(animated: false)
             }
+            publishPeripheralChrome()
         }
         .onDisappear {
             cancelCountdown()
@@ -151,6 +142,7 @@ struct StartMapView: View {
             showSportRoulette = false
             typeToolFlight = 0
             companionToolsVisible = true
+            publishPeripheralChrome()
         }
         .onChange(of: location.coordinate?.latitude) { _, _ in
             if let coordinate = location.coordinate {
@@ -284,6 +276,14 @@ struct StartMapView: View {
 
     private func toolColumnOrigin(in geo: GeometryProxy) -> CGFloat {
         CGFloat(StartMapChrome.toolColumnOriginY(screenHeight: ChromeLength(geo.size.height)))
+    }
+
+    /// Other tabs stay mounted; only tuck the home bar while this tab is active and chrome is hidden.
+    private func publishPeripheralChrome() {
+        let next = !isActive || companionToolsVisible
+        if peripheralChromeVisible.wrappedValue != next {
+            peripheralChromeVisible.wrappedValue = next
+        }
     }
 
     private func performTool(_ label: String) {

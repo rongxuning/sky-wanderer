@@ -36,8 +36,20 @@ near(
     screenWidth / 2 - SportRouletteGeometry.radius,
     "arc center sits radius left of screen center"
 )
-near(SportRouletteGeometry.radius, 140, "compact semicircle radius")
+near(SportRouletteGeometry.dotDiameter, 44, "circular icon diameter")
+near(SportRouletteGeometry.neighborEdgeGap, 22, "neighbor edge gap is half a circular icon")
+near(
+    SportRouletteGeometry.neighborCenterDistance,
+    SportRouletteGeometry.dotDiameter + SportRouletteGeometry.neighborEdgeGap,
+    "center distance = diameter + half-diameter gap"
+)
 near(SportRouletteGeometry.angleStep, .pi / 4, "five visible items span a semicircle")
+near(
+    SportRouletteGeometry.radius,
+    SportRouletteGeometry.neighborCenterDistance
+        / (2 * ChromeLength(sin(Double(SportRouletteGeometry.angleStep) / 2))),
+    "radius follows chord and angleStep"
+)
 near(SportRouletteGeometry.dragPixelsPerStep, 77, "drag pixels per index step (20% slower than 64)")
 near(SportRouletteGeometry.snapSpringResponse, 0.456, "snap spring is 20% slower than 0.38")
 near(SportRouletteGeometry.centerScale, 1.2, "center scale is 1.2")
@@ -118,6 +130,10 @@ check(above.y < mid.y, "lower index is above midline")
 check(below.y > mid.y, "higher index is below midline")
 check(above.x < mid.x || abs(Double(above.x - mid.x)) < 1, "semicircle bows so off-center x is not right of center")
 check(below.x < mid.x || abs(Double(below.x - mid.x)) < 1, "lower semicircle side also left of or at center x")
+let neighborChord = ChromeLength(
+    (Double(above.x - mid.x) * Double(above.x - mid.x) + Double(above.y - mid.y) * Double(above.y - mid.y)).squareRoot()
+)
+near(neighborChord, SportRouletteGeometry.neighborCenterDistance, "on-screen neighbor chord matches geometry")
 
 // Neighbors at ±angleStep sit near ±45° on the semicircle.
 let expectedNeighborX = SportRouletteGeometry.centerX(screenWidth: screenWidth)
