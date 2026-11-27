@@ -301,8 +301,8 @@ check(
     "two secondary cells are leading and trailing"
 )
 
-check(RecordListCardLayout.standardTextBlock == 87, "standard text block matches the map side")
-check(RecordListCardLayout.standardMapBlock == 87, "map side equals the metrics stack height")
+check(RecordListCardLayout.standardTextBlock == 84, "standard text block matches the map side")
+check(RecordListCardLayout.standardMapBlock == 84, "map side equals the metrics stack height")
 check(
     RecordListCardLayout.standardHeight
         == RecordListCardLayout.contentInsetVertical * 2
@@ -314,7 +314,7 @@ check(
     "a 393pt phone keeps the 220pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 199,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 202,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month and the chips keep an 8pt gap")
@@ -323,15 +323,18 @@ check(RecordListCardLayout.filterChipGap == 8, "sport chips keep an 8pt gap")
 check(RecordListCardLayout.filterChipPaddingH == 12, "chip horizontal padding is 12pt")
 check(RecordListCardLayout.filterChipPaddingV == 7, "chip vertical padding is 7pt")
 check(RecordListCardLayout.firstCardGap == 10, "first card sits 10pt below the header")
+check(RecordListCardLayout.monthSectionTop == 12, "in-list month top inset is half of section")
 check(RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock, "map side equals the fixed metrics height")
+check(RecordListCardLayout.mapSide == 84, "map side is the approved 84pt square")
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 12, "distance sits 12pt under the title row")
-check(RecordListCardLayout.upperLine == 36, "the distance line is 36pt for the larger figure")
+check(RecordListCardLayout.upperLine == 33, "the distance line is 33pt for the 28pt figure")
 check(RecordListCardLayout.middleToBottom == 3, "middle to bottom row is half of the previous 6pt")
 check(RecordListChrome.durationHex == 0x8E8E93, "list duration uses light gray")
+check(RecordListChrome.distanceHex == 0x1E7DD6, "list distance and track share #1E7DD6")
 check(RecordListCardLayout.lowerBlock == 14, "secondary metrics are the value line only")
-check(RecordListCardLayout.mapTrackLineWidth == 5.5, "list track stroke is 5.5pt")
-check(RecordListCardLayout.mapTrackBasemapLineWidth == 7.0, "basemap list stroke is 7pt")
+check(RecordListCardLayout.mapTrackLineWidth == 3.5, "list track stroke is 3.5pt")
+check(RecordListCardLayout.mapTrackBasemapLineWidth == 5.0, "basemap list stroke is 5pt")
 check(
     abs(RecordListCardLayout.mapTrackEdgePad - 5) < 0.0001,
     "track bbox keeps a 5pt gap from the thumbnail edge"
@@ -368,10 +371,10 @@ check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
 check(
     RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 100)
-        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v3.jpg",
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v4.jpg",
     "list thumbnails live under record-thumbs with id, basemap, side, and plate version"
 )
-check(RecordListThumbnailFile.plateVersion == "3", "plate version invalidates old bottom-biased framing")
+check(RecordListThumbnailFile.plateVersion == "4", "plate version invalidates old track ink and framing")
 check(
     RecordListThumbnailFile.idPrefix(thumbID) == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-",
     "delete uses the workout id prefix"

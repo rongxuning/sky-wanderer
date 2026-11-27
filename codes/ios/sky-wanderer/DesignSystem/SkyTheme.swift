@@ -36,10 +36,10 @@ enum SkyTheme {
         static let chartTrack = SkyHex.color(0x1E88FE)
         static let chartNeutral = SkyHex.color(0x8E8E93)
         static let chartNeutralMuted = SkyHex.color(0xC6C6C8)
-        /// Record-list map track. Lighter than navy, darker than brand primary.
-        static let recordTrack = SkyHex.color(0x2F6FBF)
-        /// Record-list distance figure. Brighter cyan than detail `Metric.distance`.
-        static let recordDistance = SkyHex.color(0x00B7EB)
+        /// Record-list map track. Matches the list distance figure.
+        static let recordTrack = SkyHex.color(0x1E7DD6)
+        /// Record-list distance figure. Same blue as the thumbnail track.
+        static let recordDistance = SkyHex.color(0x1E7DD6)
         /// Pace lightning on the record list. Deep yellow.
         static let recordPaceIcon = SkyHex.color(0xC9A227)
         /// Load debuff triangle on the record list.

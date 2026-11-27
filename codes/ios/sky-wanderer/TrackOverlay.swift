@@ -4,22 +4,22 @@ import UIKit
 enum TrackPaint {
     /// Sky primary `#1E88FE`. Start, live, record, library, and share.
     static let primary = UIColor(red: 30.0 / 255, green: 136.0 / 255, blue: 254.0 / 255, alpha: 1)
-    /// Record-list thumbnail track `#2F6FBF`.
-    static let recordList = UIColor(red: 47.0 / 255, green: 111.0 / 255, blue: 191.0 / 255, alpha: 1)
+    /// Record-list thumbnail track `#1E7DD6`.
+    static let recordList = UIColor(red: 30.0 / 255, green: 125.0 / 255, blue: 214.0 / 255, alpha: 1)
     /// Planned line on the live map, so it stays distinct from the recording.
     static let planned = UIColor(red: 142.0 / 255, green: 142.0 / 255, blue: 147.0 / 255, alpha: 1)
     static let casing = UIColor.white.withAlphaComponent(0.92)
     static let casingPoints: CGFloat = 8
     static let solidInnerPoints: CGFloat = 4.5
-    /// Thicker list stroke; no white casing so the blue reads as one solid line.
-    static let recordListInnerPoints: CGFloat = 7
+    /// List stroke; no white casing so the blue reads as one solid line.
+    static let recordListInnerPoints: CGFloat = 5
     static let recordListCasingPoints: CGFloat = 0
     static let elevationInnerPoints: CGFloat = 4
 }
 
 enum TrackStyle {
     case solid(UIColor)
-    /// Record-list thumbnail: thick `#2F6FBF` stroke without a white casing.
+    /// Record-list thumbnail: `#1E7DD6` stroke without a white casing.
     case recordList
     /// Route detail. Green (0.18, 0.78, 0.22) → yellow → red on this route's own altitudes.
     case elevation

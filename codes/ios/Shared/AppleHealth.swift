@@ -9,7 +9,18 @@ protocol ActivitySource {
     var brandName: String { get }
     func prepare() async throws
     /// Apple Health workouts mapped onto `SportKind`. See `AppleHealth.importWorkouts`.
-    func importWorkouts(known: Set<String>, denied: WorkoutDenylist) async throws -> [WorkoutRecord]
+    /// `prioritize` re-reads known 力量 / 综合 rows that still lack a start pin.
+    func importWorkouts(
+        known: Set<String>,
+        denied: WorkoutDenylist,
+        prioritize: Set<String>
+    ) async throws -> [WorkoutRecord]
+}
+
+extension ActivitySource {
+    func importWorkouts(known: Set<String>, denied: WorkoutDenylist) async throws -> [WorkoutRecord] {
+        try await importWorkouts(known: known, denied: denied, prioritize: [])
+    }
 }
 
 struct AppleActivitySource: ActivitySource {
@@ -19,8 +30,12 @@ struct AppleActivitySource: ActivitySource {
         try await AppleHealth.authorize()
     }
 
-    func importWorkouts(known: Set<String>, denied: WorkoutDenylist) async throws -> [WorkoutRecord] {
-        try await AppleHealth.importWorkouts(known: known, denied: denied)
+    func importWorkouts(
+        known: Set<String>,
+        denied: WorkoutDenylist,
+        prioritize: Set<String>
+    ) async throws -> [WorkoutRecord] {
+        try await AppleHealth.importWorkouts(known: known, denied: denied, prioritize: prioritize)
     }
 }
 
@@ -67,9 +82,12 @@ enum AppleHealth {
     /// `refreshWindow` stored ones and up to `newBatchSize` that are not stored yet.
     /// Deleted workouts are skipped. Activity types outside the app list become `other`.
     /// A pass that returns `newBatchSize` unknown ids may have more history left.
+    /// HealthKit ids that should be re-read even when they already sit in the log.
+    /// Used to backfill a missing gym / indoor start pin on 力量 / 综合 rows.
     static func importWorkouts(
         known: Set<String>,
-        denied: WorkoutDenylist
+        denied: WorkoutDenylist,
+        prioritize: Set<String> = []
     ) async throws -> [WorkoutRecord] {
         guard available else { return [] }
         let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { continuation in
@@ -90,13 +108,19 @@ enum AppleHealth {
         }
         var records: [WorkoutRecord] = []
         var refreshed = 0
+        var prioritized = 0
         var added = 0
         for workout in workouts {
             let id = workout.uuid.uuidString
             if denied.containsHealthKitUUID(id) { continue }
             if known.contains(id) {
-                guard refreshed < refreshWindow else { continue }
-                refreshed += 1
+                if prioritize.contains(id) {
+                    guard prioritized < refreshWindow else { continue }
+                    prioritized += 1
+                } else {
+                    guard refreshed < refreshWindow else { continue }
+                    refreshed += 1
+                }
             } else {
                 guard added < newBatchSize else { continue }
                 added += 1
@@ -182,13 +206,7 @@ enum AppleHealth {
         async let oscillationSamples = quantitySamples(.runningVerticalOscillation, unit: .meter(), start: windowStart, end: windowEnd)
         async let linkedDistance = distanceSamples(for: workout)
 
-        var route = await routeTask
-        // Strength / mixed / indoor sessions often have no polyline. Apple Fitness
-        // still shows a gym pin; recover that fix from metadata or a time-window
-        // route when the workout-linked series is empty.
-        if route.isEmpty, let pin = metadataStartPin(for: workout) {
-            route = [pin]
-        }
+        let route = await routeTask
         let stepCadence = await cadenceTask
         let heartRate = HealthSeries.instantaneous(await heartSamples, workoutStart: windowStart, workoutEnd: windowEnd)
         let cadenceSeries = HealthSeries.cadence(stepSamples: await stepSamples, workoutStart: windowStart, workoutEnd: windowEnd)
@@ -367,12 +385,17 @@ enum AppleHealth {
         guard sport.listUsesStartLocationMap || !sport.usesOutdoorLocation else {
             return []
         }
+        // Prefer this workout's metadata pin over any overlapping time-window sample.
+        if let pin = metadataStartPin(for: workout) {
+            return [pin]
+        }
         let timed = await routePoints(
             predicate: HKQuery.predicateForSamples(
                 withStart: workout.startDate,
                 end: workout.endDate,
-                options: []
-            )
+                options: [.strictStartDate, .strictEndDate]
+            ),
+            sortAscending: true
         )
         guard let first = timed.first else { return [] }
         // Keep at most the start fix for the list map — not a full track that
@@ -380,15 +403,21 @@ enum AppleHealth {
         return [first]
     }
 
-    private static func routePoints(predicate: NSPredicate) async -> [GeoPoint] {
+    private static func routePoints(
+        predicate: NSPredicate,
+        sortAscending: Bool? = nil
+    ) async -> [GeoPoint] {
         await withCheckedContinuation { continuation in
             let once = ResumeOnce()
             let bag = PointBag()
+            let sort: [NSSortDescriptor]? = sortAscending.map {
+                [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: $0)]
+            }
             let query = HKSampleQuery(
                 sampleType: HKSeriesType.workoutRoute(),
                 predicate: predicate,
                 limit: 1,
-                sortDescriptors: nil
+                sortDescriptors: sort
             ) { _, samples, _ in
                 guard let route = samples?.first as? HKWorkoutRoute else {
                     once.resume { hop([GeoPoint](), to: continuation) }

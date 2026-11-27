@@ -87,7 +87,10 @@ struct RecordRouteThumbnail: View {
                         .frame(width: width, height: height)
                         .clipped()
                         .transition(.opacity)
-                } else if let point = route.first {
+                }
+                // Always draw the SwiftUI pin. Plates bake the basemap only; the
+                // pin stays on `#1E7DD6` and never depends on MapKit annotations.
+                if let point = route.first {
                     RecordStartPointMark(point: point)
                 }
             }

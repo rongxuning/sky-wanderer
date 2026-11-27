@@ -13,8 +13,8 @@ struct RecordSummaryCard: View {
 
     @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
     @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 31
-    @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 23
+    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 28
+    @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 22
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
 
     private var secondaryMetrics: [RecordListSecondaryMetric] {
@@ -71,7 +71,7 @@ struct RecordSummaryCard: View {
             titleRow
             Spacer()
                 .frame(height: CGFloat(RecordListCardLayout.titleToMiddle))
-            HStack(spacing: 0) {
+            HStack(alignment: .lastTextBaseline, spacing: 0) {
                 if showsRouteMetrics {
                     primaryMetric(
                         distanceText,
@@ -94,7 +94,7 @@ struct RecordSummaryCard: View {
                     alignment: .trailing
                 )
             }
-            .modifier(RecordRowBox(height: RecordListCardLayout.upperLine))
+            .frame(height: CGFloat(RecordListCardLayout.upperLine), alignment: .bottom)
             Spacer()
                 .frame(height: CGFloat(RecordListCardLayout.middleToBottom))
             // Equal-width columns. First leading, middle centered, last trailing

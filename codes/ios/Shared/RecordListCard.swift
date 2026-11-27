@@ -35,8 +35,8 @@ enum RecordListCardLayout {
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
     static let titleToMiddle = 12.0
-    /// Fits the 31pt distance / energy figure.
-    static let upperLine = 36.0
+    /// Fits the 28pt distance / energy figure beside the 84pt map.
+    static let upperLine = 33.0
     /// Gap between the distance row and the secondary metrics.
     static let middleToBottom = 3.0
     static let lowerValueLine = 14.0
@@ -54,14 +54,16 @@ enum RecordListCardLayout {
     static let filterChipPaddingH = 12.0
     static let filterChipPaddingV = 7.0
     static let firstCardGap = 10.0
+    /// Top inset of an in-list year-month label. Half of `SkyTheme.Spacing.section`.
+    static let monthSectionTop = 12.0
     /// Thumbnail corner. Slightly tighter than `SkyTheme.Radius.chip`.
     static let mapCorner = 4.0
     /// Fallback / pending stroke width inside the square before the basemap lands.
-    static let mapTrackLineWidth = 5.5
+    static let mapTrackLineWidth = 3.5
     /// Matches `TrackPaint.recordListInnerPoints` on the baked basemap plate.
-    static let mapTrackBasemapLineWidth = 7.0
+    static let mapTrackBasemapLineWidth = 5.0
     /// Gap between the track bounding box (long axis) and the thumbnail edge.
-    /// 5pt clears the basemap stroke (half of 7) and the canvas end dot.
+    /// 5pt clears the basemap stroke (half of 5) and the canvas end dot.
     static let mapTrackEdgePad = 5.0
 
     static var lowerBlock: Double {
@@ -104,6 +106,8 @@ enum RecordListChrome {
     static let chipFillHex: UInt32 = 0x3A3A3C
     /// Training duration on the list card. Same value as `SkyTheme.Color.secondary`.
     static let durationHex: UInt32 = 0x8E8E93
+    /// Distance figure and thumbnail track. Same value as `SkyTheme.Color.recordDistance`.
+    static let distanceHex: UInt32 = 0x1E7DD6
 }
 
 /// What the list card draws on the left plate.
