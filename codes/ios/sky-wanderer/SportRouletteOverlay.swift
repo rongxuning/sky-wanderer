@@ -9,6 +9,7 @@ struct SportRouletteOverlay: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var dragOrigin: CGFloat?
     @State private var pendingTapCommit: DispatchWorkItem?
+    @State private var pendingTapIndex: Int?
 
     private let springResponse: Double = 0.38
     private var itemCount: Int { sports.count }
@@ -29,7 +30,7 @@ struct SportRouletteOverlay: View {
                 scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: idx))
             }
         }
-        .onDisappear(perform: cancelPendingTapCommit)
+        .onDisappear(perform: flushPendingTapCommit)
         .highPriorityGesture(drag)
     }
 
@@ -115,11 +116,23 @@ struct SportRouletteOverlay: View {
     private func cancelPendingTapCommit() {
         pendingTapCommit?.cancel()
         pendingTapCommit = nil
+        pendingTapIndex = nil
+    }
+
+    private func flushPendingTapCommit() {
+        guard let index = pendingTapIndex else { return }
+        cancelPendingTapCommit()
+        commit(index)
     }
 
     private func scheduleTapCommit(_ index: Int) {
-        let work = DispatchWorkItem { commit(index) }
+        let work = DispatchWorkItem {
+            pendingTapCommit = nil
+            pendingTapIndex = nil
+            commit(index)
+        }
         pendingTapCommit = work
+        pendingTapIndex = index
         DispatchQueue.main.asyncAfter(deadline: .now() + springResponse, execute: work)
     }
 
