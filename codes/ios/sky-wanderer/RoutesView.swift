@@ -18,18 +18,18 @@ struct RoutesLibraryView: View {
     @State private var importing = false
     @State private var importError: String?
     @State private var revealedRouteID: String?
+    @ObservedObject private var basemapCenter = SkyBasemapCenter.shared
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
 
+    /// Same content height as the records sport-chip row (14pt type + 7pt vertical padding).
+    private var importBarContentHeight: CGFloat {
+        14 + CGFloat(RecordListCardLayout.filterChipPaddingV) * 2
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Spacer(minLength: 0)
-                RouteImportButton { importing = true }
-            }
-            .padding(.horizontal, SkyTheme.Spacing.screenInset)
-            .padding(.top, SkyTheme.Spacing.related)
-            .padding(.bottom, SkyTheme.Spacing.related)
+            importBar
             if app.importedRoutes.isEmpty {
                 emptyState
             } else {
@@ -58,6 +58,26 @@ struct RoutesLibraryView: View {
                 self.revealedRouteID = nil
             }
         }
+        .task(id: RouteListBackfillKey(
+            ids: app.importedRoutes.map(\.id),
+            tianditu: basemapCenter.mode == .tianditu
+        )) {
+            await backfillListSupport()
+        }
+    }
+
+    /// Header from the top of the screen through the import control, matching the records bar.
+    private var importBar: some View {
+        HStack(alignment: .center, spacing: 0) {
+            Spacer(minLength: 0)
+            RouteImportButton { importing = true }
+        }
+        .frame(height: importBarContentHeight)
+        .padding(.leading, SkyTheme.Spacing.screenInset)
+        .padding(.trailing, SkyTheme.Spacing.screenInset)
+        .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
+        .background(SkyTheme.Color.starryGray, ignoresSafeAreaEdges: .top)
+        .zIndex(1)
     }
 
     /// One sentence. The import control above is the only call to action.
@@ -83,6 +103,7 @@ struct RoutesLibraryView: View {
                 }
             }
             .padding(.horizontal, SkyTheme.Spacing.screenInset)
+            .padding(.top, CGFloat(RecordListCardLayout.firstCardGap))
             .padding(.bottom, SkyTheme.Spacing.screenInset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -96,6 +117,30 @@ struct RoutesLibraryView: View {
             revealedRouteID = nil
         }
         app.deleteRoute(id: route.id)
+    }
+
+    /// Fills missing start regions and map plates away from scroll.
+    private func backfillListSupport() async {
+        let routes = app.importedRoutes
+        for route in routes where route.startRegion == nil {
+            guard !Task.isCancelled else { return }
+            guard let start = route.points.first else {
+                app.storeRouteStartRegion(id: route.id, region: RouteStartRegion(province: nil, city: nil))
+                continue
+            }
+            if let region = await RouteStartRegionLookup.lookup(
+                latitude: start.latitude,
+                longitude: start.longitude
+            ) {
+                app.storeRouteStartRegion(id: route.id, region: region)
+            }
+            guard !Task.isCancelled else { return }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
+        await RouteMapThumbnails.shared.backfill(
+            routes: app.importedRoutes,
+            side: RouteCardLayout.track
+        )
     }
 
     private func importFile(_ result: Result<URL, Error>) {
@@ -312,12 +357,18 @@ private struct RouteSwipeCard: View {
 }
 
 /// Same measurements as a record card. The track sits in that box and does not add height.
-private enum RouteCardLayout {
+enum RouteCardLayout {
     static let track: CGFloat = 84
     static let corner: CGFloat = 20
     static let horizontalInset: CGFloat = SkyTheme.Spacing.cardPadding
     static let verticalInset: CGFloat = 10
     static let rowSpacing: CGFloat = 4
+}
+
+/// Restarts region and map-plate backfill when the list or basemap changes.
+private struct RouteListBackfillKey: Hashable {
+    var ids: [String]
+    var tianditu: Bool
 }
 
 struct RouteSummaryCard: View {
@@ -328,15 +379,12 @@ struct RouteSummaryCard: View {
         RoundedRectangle(cornerRadius: RouteCardLayout.corner, style: .continuous)
     }
 
+    private var startPlaceLabel: String? {
+        route.startRegion?.label
+    }
+
     var body: some View {
-        ZStack(alignment: .trailing) {
-            if route.points.count >= 2 {
-                RecordTrackLine(points: route.points)
-                    .frame(width: RouteCardLayout.track, height: RouteCardLayout.track)
-                    .padding(.trailing, RouteCardLayout.horizontalInset)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
+        HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
             VStack(alignment: .leading, spacing: RouteCardLayout.rowSpacing) {
                 nameRow
                 Text(RouteCardText.imported(route))
@@ -351,11 +399,27 @@ struct RouteSummaryCard: View {
                     .font(SkyTheme.Font.footnote)
                     .foregroundStyle(SkyTheme.Color.secondary)
                     .lineLimit(1)
+                if let startPlaceLabel {
+                    Text(startPlaceLabel)
+                        .font(SkyTheme.Font.footnote)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                        .lineLimit(1)
+                }
             }
-            .padding(.horizontal, RouteCardLayout.horizontalInset)
-            .padding(.vertical, RouteCardLayout.verticalInset)
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            if route.points.count >= 2 {
+                RouteTrackThumbnail(
+                    routeID: route.id,
+                    points: route.points,
+                    side: RouteCardLayout.track
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
         }
+        .padding(.horizontal, RouteCardLayout.horizontalInset)
+        .padding(.vertical, RouteCardLayout.verticalInset)
         .background(SkyTheme.Color.recordCard, in: cardShape)
         .clipShape(cardShape)
         .overlay {
@@ -406,6 +470,9 @@ struct RouteSummaryCard: View {
             "爬升 \(RouteCardText.climb(route.points))",
             RouteCardText.creator(route)
         ]
+        if let startPlaceLabel {
+            parts.append(startPlaceLabel)
+        }
         if selected {
             parts.append("已用于训练")
         }

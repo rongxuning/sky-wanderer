@@ -48,6 +48,48 @@ check(oldRoute.creator == "阿宁", "old creator")
 check(oldRoute.waypoints.isEmpty, "old waypoints default to empty")
 check(oldRoute.gpxFilename == nil, "old file reference defaults to nil")
 check(oldRoute.importedAt == nil, "old import time stays nil")
+check(oldRoute.startRegion == nil, "old saves have no start region yet")
+
+check(
+    RouteStartRegionText.label(province: "浙江省", city: "杭州市") == "浙江省杭州市",
+    "province and city join"
+)
+check(
+    RouteStartRegionText.label(province: "上海市", city: "上海市") == "上海市",
+    "municipality does not repeat"
+)
+check(
+    RouteStartRegionText.label(province: "上海市", city: "浦东新区") == "上海市",
+    "municipality drops the district"
+)
+check(
+    RouteStartRegionText.label(province: "上海", city: "黄浦区") == "上海市",
+    "short municipality name gains 市"
+)
+check(
+    RouteStartRegionText.label(province: "浙江省", city: nil) == "浙江省",
+    "province alone is enough"
+)
+check(
+    RouteStartRegionText.label(province: nil, city: "杭州市") == "杭州市",
+    "city alone is enough"
+)
+check(
+    RouteStartRegionText.label(province: "  ", city: nil) == nil,
+    "blank province is empty"
+)
+
+let regionJSON = """
+{"id":"r1","name":"线","points":[{"latitude":30.2,"longitude":120.1,"altitude":4}],"kind":"gpx","creator":"阿宁","startRegion":{"province":"浙江省","city":"杭州市"}}
+""".data(using: .utf8)!
+let regionRoute = try! JSONDecoder().decode(SavedRoute.self, from: regionJSON)
+check(regionRoute.startRegion?.label == "浙江省杭州市", "start region round-trips on decode")
+let regionAgain = try! JSONDecoder().decode(
+    SavedRoute.self,
+    from: JSONEncoder().encode(regionRoute)
+)
+check(regionAgain.startRegion?.province == "浙江省", "start region province encodes")
+check(regionAgain.startRegion?.city == "杭州市", "start region city encodes")
 check(oldRoute.cutoffResolved == false, "old route has not read a cutoff")
 check(oldRoute.factOverrides == nil, "old save has no fact overrides")
 
