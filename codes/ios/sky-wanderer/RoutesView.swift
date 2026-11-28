@@ -1512,10 +1512,10 @@ private struct ElevationProfileChart: View {
             }
             let zero = Text("0").font(font).foregroundStyle(Color.omniMuted)
             context.draw(context.resolve(zero), at: CGPoint(x: 0, y: textY), anchor: .leading)
+            // Keep `Text` (not ModifiedContent) so GraphicsContext.resolve can type-check.
             let total = Text("\(distanceLabel) 公里")
                 .font(font)
                 .foregroundStyle(Color.omniMuted)
-                .lineLimit(1)
             context.draw(
                 context.resolve(total),
                 at: CGPoint(x: size.width, y: textY),
@@ -1525,7 +1525,6 @@ private struct ElevationProfileChart: View {
                 let label = Text(item.name)
                     .font(font)
                     .foregroundStyle(Color.omniMuted)
-                    .lineLimit(1)
                 let center = axisX(item.labelFraction, width: size.width)
                 // Always the same baseline as 0 / total, even when the placer used another lane.
                 context.draw(
