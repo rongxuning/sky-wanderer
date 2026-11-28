@@ -526,7 +526,7 @@ struct RouteSummaryCard: View {
         .padding(.vertical, RouteCardLayout.verticalInset)
         .frame(maxWidth: .infinity, minHeight: RouteCardLayout.height, maxHeight: RouteCardLayout.height, alignment: .leading)
         .clipped()
-        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .background(SkyTheme.Color.card, in: cardShape)
         .clipShape(cardShape)
         .overlay {
             if selected {
@@ -621,7 +621,7 @@ struct FreeRunSummaryCard: View {
         .padding(.vertical, RouteCardLayout.verticalInset)
         .frame(maxWidth: .infinity, minHeight: RouteCardLayout.height, maxHeight: RouteCardLayout.height, alignment: .leading)
         .clipped()
-        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .background(SkyTheme.Color.card, in: cardShape)
         .clipShape(cardShape)
         .overlay {
             if selected {
