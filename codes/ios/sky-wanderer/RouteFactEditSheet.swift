@@ -85,8 +85,7 @@ struct RouteFactEditSheet: View {
             return "编辑总数据"
         case .waypoint(let id):
             guard let route = app.savedRoutes.first(where: { $0.id == routeID }) else { return "编辑检查点" }
-            let progress = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
-            guard let row = progress.first(where: { $0.id == id }) else { return "编辑检查点" }
+            guard let row = RouteFacts.waypointCard(id: id, route: route) else { return "编辑检查点" }
             return "编辑 \(RouteFacts.displayWaypoint(row, route: route).name)"
         case .finish:
             return "编辑终点"
@@ -166,8 +165,7 @@ struct RouteFactEditSheet: View {
             descent = metersText(totals.descentMeters)
             peak = totals.maxElevationMeters.map(metersText) ?? ""
         case .waypoint(let id):
-            let progress = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
-            guard let row = progress.first(where: { $0.id == id }) else { return }
+            guard let row = RouteFacts.waypointCard(id: id, route: route) else { return }
             let shown = RouteFacts.displayWaypoint(row, route: route)
             name = shown.name
             cutoff = shown.cutoff ?? ""
@@ -211,8 +209,7 @@ struct RouteFactEditSheet: View {
             )
             app.updateRouteCreator(id: route.id, creator: creator)
         case .waypoint(let id):
-            let progress = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
-            guard let row = progress.first(where: { $0.id == id }) else {
+            guard let row = RouteFacts.waypointCard(id: id, route: route) else {
                 dismiss()
                 return
             }

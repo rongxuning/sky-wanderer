@@ -862,6 +862,24 @@ enum RouteFacts {
         return cards
     }
 
+    /// The waypoint row the pager shows for `id`. A combined 起终点 is the zeroed 起点 card, so the
+    /// editor and `applyWaypoint` compare against the same figures the card paints.
+    static func waypointCard(id: Int, route: SavedRoute) -> RouteWaypointProgress? {
+        let rows = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
+        guard let row = rows.first(where: { $0.id == id }) else { return nil }
+        if RouteCheckpoints.isCombinedStartFinish(name: row.name) {
+            return startProgress(from: row)
+        }
+        return row
+    }
+
+    /// Title when the card has no stored rename. A combined 起终点 reads 起点…, other cards keep the GPX name.
+    static func defaultWaypointName(_ progress: RouteWaypointProgress) -> String {
+        RouteCheckpoints.isCombinedStartFinish(name: progress.name)
+            ? RouteCheckpoints.startDisplayName(from: progress.name)
+            : progress.name
+    }
+
     /// 起点 page for a combined 起终点. Always start-of-race figures, even when the
     /// GPX point snapped to the track end on a loop. Keeps the waypoint time as 起点时间.
     private static func startProgress(from combined: RouteWaypointProgress) -> RouteWaypointProgress {
@@ -892,13 +910,8 @@ enum RouteFacts {
 
     static func displayWaypoint(_ progress: RouteWaypointProgress, route: SavedRoute) -> Waypoint {
         let stored = storedWaypoint(route, progress: progress)
-        let combined = RouteCheckpoints.isCombinedStartFinish(name: progress.name)
-        let rawName = stored?.name ?? progress.name
-        let name = combined
-            ? RouteCheckpoints.startDisplayName(from: rawName)
-            : rawName
         return Waypoint(
-            name: name,
+            name: stored?.name ?? defaultWaypointName(progress),
             cutoff: stored?.cutoff ?? progress.cutoff,
             segmentDistanceMeters: stored?.segmentDistanceMeters ?? progress.segmentDistanceMeters,
             segmentAscentMeters: stored?.segmentAscentMeters ?? progress.segmentAscentMeters,
@@ -991,7 +1004,7 @@ enum RouteFacts {
                 sourceName: progress.name
             )
         }
-        assign(name, computed: progress.name, to: &row.name)
+        assign(name, computed: defaultWaypointName(progress), to: &row.name)
         assign(cutoff, computed: progress.cutoff, to: &row.cutoff)
         assign(segmentDistance, computed: progress.segmentDistanceMeters, kilometers: true, to: &row.segmentDistanceMeters)
         assign(segmentAscent, computed: progress.segmentAscentMeters, kilometers: false, to: &row.segmentAscentMeters)

@@ -1351,6 +1351,69 @@ check(
     "editing finish 关门时间 does not clear 起点时间"
 )
 
+// The editor must open the same zeroed card the pager shows, not the snapped full-track row.
+guard let editorStart = RouteFacts.waypointCard(id: endStart.id, route: combinedOnEnd) else {
+    check(false, "editor can resolve the split start card")
+    fatalError("editor start card")
+}
+near(editorStart.distanceMeters, 0, 0.001, "editor start card is zeroed even when the GPX point snapped to the end")
+near(editorStart.segmentDistanceMeters, 0, 0.001, "editor start segment is zeroed")
+let rawEndRows = RouteCheckpoints.progress(waypoints: combinedOnEnd.waypoints, points: combinedOnEnd.points)
+let rawEndDistance = rawEndRows.first(where: { $0.id == endStart.id })?.distanceMeters ?? 0
+check(rawEndDistance > 1, "the raw progress row for that id still carries full-track figures")
+let editorDisplay = RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd)
+check(editorDisplay.name == "起点：北门", "editor pre-fills the 起点 title")
+// Saving the pre-filled values unchanged must not store a rename or figures.
+RouteFacts.applyWaypoint(
+    &combinedOnEnd,
+    progress: editorStart,
+    name: RouteFacts.parseLabel(editorDisplay.name),
+    cutoff: RouteFacts.parseLabel(editorDisplay.cutoff ?? ""),
+    segmentDistance: RouteFacts.parseMeters(Format.kilometers(editorDisplay.segmentDistanceMeters), kilometers: true),
+    segmentAscent: RouteFacts.parseMeters(String(Int(editorDisplay.segmentAscentMeters.rounded())), kilometers: false),
+    segmentDescent: RouteFacts.parseMeters(String(Int(editorDisplay.segmentDescentMeters.rounded())), kilometers: false),
+    cumulativeDistance: RouteFacts.parseMeters(Format.kilometers(editorDisplay.cumulativeDistanceMeters), kilometers: true),
+    cumulativeAscent: RouteFacts.parseMeters(String(Int(editorDisplay.cumulativeAscentMeters.rounded())), kilometers: false),
+    cumulativeDescent: RouteFacts.parseMeters(String(Int(editorDisplay.cumulativeDescentMeters.rounded())), kilometers: false)
+)
+let afterNoopSave = RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd)
+check(afterNoopSave.name == "起点：北门", "a no-op save keeps the place name")
+near(afterNoopSave.cumulativeDistanceMeters, 0, 0.001, "a no-op save keeps zero mileage on the start card")
+
+// A real rename survives. The stored title is shown as typed, not re-converted.
+RouteFacts.applyWaypoint(
+    &combinedOnEnd,
+    progress: editorStart,
+    name: .set("起点：南门"),
+    cutoff: .clear,
+    segmentDistance: .clear,
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(
+    RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd).name == "起点：南门",
+    "a renamed start card keeps its place name"
+)
+RouteFacts.applyWaypoint(
+    &combinedOnEnd,
+    progress: editorStart,
+    name: .set("起终点：东门"),
+    cutoff: .clear,
+    segmentDistance: .clear,
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(
+    RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd).name == "起终点：东门",
+    "a stored title is shown as typed"
+)
+
 let finishGPX = """
 <gpx><wpt lat="0" lon="0.01"><name>CP1</name><cmt>关门 09:00</cmt></wpt>
 <wpt lat="0" lon="0.02"><name>CP2</name></wpt>
