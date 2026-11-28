@@ -19,7 +19,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.core.view.WindowCompat
@@ -37,8 +36,9 @@ import com.rongxuning.skywanderer.ui.me.MeScreen
 import com.rongxuning.skywanderer.ui.records.RecordsScreen
 import com.rongxuning.skywanderer.ui.routes.RoutesScreen
 import com.rongxuning.skywanderer.ui.theme.OmniCanvas
+import com.rongxuning.skywanderer.ui.theme.SkyInk
+import com.rongxuning.skywanderer.ui.theme.SkyOnPrimary
 import com.rongxuning.skywanderer.ui.theme.SkyOnStarryGray
-import com.rongxuning.skywanderer.ui.theme.SkyPrimary
 import com.rongxuning.skywanderer.ui.theme.SkyStarryGray
 import com.rongxuning.skywanderer.ui.training.TrainingScreen
 
@@ -95,11 +95,12 @@ fun SkyWandererRoot(navController: NavHostController = rememberNavController()) 
                             icon = { Icon(tab.icon, contentDescription = label) },
                             label = { Text(label) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = SkyPrimary,
-                                selectedTextColor = SkyPrimary,
+                                selectedIconColor = SkyInk,
+                                selectedTextColor = SkyOnPrimary,
                                 unselectedIconColor = SkyOnStarryGray,
                                 unselectedTextColor = SkyOnStarryGray,
-                                indicatorColor = Color.Transparent,
+                                // White pill behind the selected icon (matches iOS circle).
+                                indicatorColor = SkyOnPrimary,
                             ),
                         )
                     }

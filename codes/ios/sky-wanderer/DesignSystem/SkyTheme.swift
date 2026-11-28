@@ -27,7 +27,7 @@ enum SkyTheme {
         static let starryGray = SkyHex.color(0x2C2C2E)
         /// Unselected capsule on `starryGray` (record sport filter chips).
         static let starryChip = SkyHex.color(0x3A3A3C)
-        /// Icon and label on `starryGray` when the control is not the selected brand-blue state.
+        /// Icon and label on `starryGray` when unselected. Selected tab uses white circle + `ink`.
         static let onStarryGray = SkyHex.color(0xC6C6C8)
         static let success = SkyHex.color(0x34C759)
         static let warning = SkyHex.color(0xFF9500)
@@ -36,9 +36,9 @@ enum SkyTheme {
         static let chartTrack = SkyHex.color(0x1E88FE)
         static let chartNeutral = SkyHex.color(0x8E8E93)
         static let chartNeutralMuted = SkyHex.color(0xC6C6C8)
-        /// Record-list map track. Matches the list distance figure.
+        /// Record-list map track stroke.
         static let recordTrack = SkyHex.color(0x1E7DD6)
-        /// Record-list distance figure. Same blue as the thumbnail track.
+        /// Same blue as the thumbnail track. List distance text uses `ink`.
         static let recordDistance = SkyHex.color(0x1E7DD6)
         /// Pace lightning on the record list. Deep yellow.
         static let recordPaceIcon = SkyHex.color(0xC9A227)
