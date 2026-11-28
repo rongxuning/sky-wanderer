@@ -104,18 +104,19 @@ enum StartMapChrome {
     }
 
     /// Route-list search chrome. Docked: search sits above import with import's
-    /// top on the screen midline. Searching: the search row rides 12pt above
-    /// the keyboard (`keyboardOverlap` is how much of `screenHeight` the
-    /// keyboard covers from the bottom).
+    /// top on the screen midline. Searching: the search row’s bottom sits
+    /// 12pt above `keyboardTop`, measured in the same space as `screenHeight`.
+    /// Without a keyboard frame, it rests 12pt above the view’s bottom edge.
     static func routeSearchChromeTop(
         searchExpanded: Bool,
         screenHeight: ChromeLength,
-        keyboardOverlap: ChromeLength
+        keyboardTop: ChromeLength?
     ) -> ChromeLength {
-        if searchExpanded {
-            return screenHeight - keyboardOverlap - searchAboveKeyboardGap - toolDiameter
+        guard searchExpanded else {
+            return screenHeight / 2 - toolGap - toolDiameter
         }
-        return screenHeight / 2 - toolGap - toolDiameter
+        let bottomEdge = keyboardTop ?? screenHeight
+        return bottomEdge - searchAboveKeyboardGap - toolDiameter
     }
 
     /// Hide companions → fly type to center → open roulette.

@@ -138,11 +138,10 @@ struct RoutesLibraryView: View {
         let gap = CGFloat(StartMapChrome.toolGap)
         let leading = CGFloat(StartMapChrome.toolLeading)
         let fieldWidth = max(120, geo.size.width - leading - diameter - gap - 24)
-        let overlap = keyboardOverlap(in: geo)
         let top = CGFloat(StartMapChrome.routeSearchChromeTop(
             searchExpanded: searchExpanded,
             screenHeight: ChromeLength(geo.size.height),
-            keyboardOverlap: ChromeLength(overlap)
+            keyboardTop: keyboardTopInView(in: geo).map { ChromeLength($0) }
         ))
         return VStack(alignment: .leading, spacing: gap) {
             HStack(spacing: gap) {
@@ -175,11 +174,11 @@ struct RoutesLibraryView: View {
         .zIndex(2)
     }
 
-    /// How much of this geometry the keyboard covers from the bottom.
-    private func keyboardOverlap(in geo: GeometryProxy) -> CGFloat {
-        guard keyboardFrame.height > 1 else { return 0 }
-        let geoFrame = geo.frame(in: .global)
-        return max(0, geoFrame.maxY - keyboardFrame.minY)
+    /// Keyboard top edge in this geometry’s space. Measured against the global
+    /// frame because the hidden home tab bar still shrinks this view’s bottom edge.
+    private func keyboardTopInView(in geo: GeometryProxy) -> CGFloat? {
+        guard keyboardFrame.height > 1 else { return nil }
+        return keyboardFrame.minY - geo.frame(in: .global).minY
     }
 
     private func updateKeyboardFrame(from note: Notification, hidden: Bool = false) {
