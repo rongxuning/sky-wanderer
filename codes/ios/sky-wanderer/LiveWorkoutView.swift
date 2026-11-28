@@ -42,9 +42,14 @@ struct LiveWorkoutView: View {
         }
         .sheet(item: $finished) { record in
             EndWorkoutSheet(record: record) { keepRoute in
-                app.addWorkout(record)
+                var saved = record
+                saved.plannedRouteID = TrainingRouteDraft.libraryRouteID(
+                    routeID: draft.routeID,
+                    saved: app.savedRoutes
+                )
+                app.addWorkout(saved)
                 if keepRoute {
-                    saveTrackAsRoute(record)
+                    saveTrackAsRoute(saved)
                 }
                 finished = nil
                 app.noteFinished()

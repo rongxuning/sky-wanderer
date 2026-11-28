@@ -28,7 +28,10 @@ struct RoutesLibraryView: View {
                 if app.importedRoutes.isEmpty {
                     emptyState
                 } else {
-                    routeList
+                    VStack(spacing: 0) {
+                        routeStatsBar
+                        routeList
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -103,6 +106,33 @@ struct RoutesLibraryView: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Sticky counts above the list. Not the records month title.
+    private var routeStatsBar: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text("\(app.importedRoutes.count) 条路线")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text("\(TrainingRouteDraft.usageCount(in: app.workouts)) 次使用")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, SkyTheme.Spacing.screenInset)
+        .padding(.trailing, SkyTheme.Spacing.screenInset)
+        .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SkyTheme.Color.grouped, ignoresSafeAreaEdges: .top)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(app.importedRoutes.count) 条路线，\(TrainingRouteDraft.usageCount(in: app.workouts)) 次使用"
+        )
+        .zIndex(1)
     }
 
     private var routeList: some View {

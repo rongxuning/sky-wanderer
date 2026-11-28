@@ -492,6 +492,9 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     /// List-card line already chosen for this workout.
     /// Missing, or blank, in phone files saved before lines were stored: the row is still unassigned.
     var motivationLine: String? = nil
+    /// Saved-route id selected for this training. Nil for free run, Health imports,
+    /// older phone files, or when the draft pointed at a past workout track.
+    var plannedRouteID: String? = nil
 
     /// Wall-clock span from `start` to `end`, including any pauses.
     var elapsedDuration: TimeInterval { end.timeIntervalSince(start) }
@@ -732,7 +735,7 @@ extension WorkoutRecord {
         case splits, heartRate, cadenceSeries, paceSeries
         case stride, elevation, groundContact, power, verticalOscillation
         case origin, healthKitUUID, trainingDurationSeconds, conditions, startPlace
-        case distanceProgress, pauseIntervals, lapMarks, motivationLine
+        case distanceProgress, pauseIntervals, lapMarks, motivationLine, plannedRouteID
     }
 
     init(from decoder: Decoder) throws {
@@ -772,6 +775,12 @@ extension WorkoutRecord {
         } else {
             motivationLine = nil
         }
+        if let raw = try container.decodeIfPresent(String.self, forKey: .plannedRouteID) {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            plannedRouteID = trimmed.isEmpty ? nil : trimmed
+        } else {
+            plannedRouteID = nil
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -806,6 +815,7 @@ extension WorkoutRecord {
         try container.encode(pauseIntervals, forKey: .pauseIntervals)
         try container.encode(lapMarks, forKey: .lapMarks)
         try container.encodeIfPresent(motivationLine, forKey: .motivationLine)
+        try container.encodeIfPresent(plannedRouteID, forKey: .plannedRouteID)
     }
 }
 

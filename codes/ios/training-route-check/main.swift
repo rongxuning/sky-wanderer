@@ -67,6 +67,19 @@ check(freed.points.isEmpty, "自由跑 has no planned points")
 let unknown = TrainingRouteDraft.planned(routeID: "missing", saved: [saved], workouts: [])
 check(unknown == PlannedRoute.free, "an unknown id is a free run")
 
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: saved.id, saved: [saved]) == saved.id,
+    "a library route id is stamped for usage"
+)
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: freeID, saved: [saved]) == nil,
+    "自由跑 does not stamp a planned route id"
+)
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: "missing", saved: [saved]) == nil,
+    "an unknown draft id does not stamp a planned route id"
+)
+
 let workoutID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
 let workoutRoute = [start, end]
 let workout = WorkoutRecord(
@@ -93,6 +106,17 @@ let workout = WorkoutRecord(
 let fromWorkout = TrainingRouteDraft.planned(routeID: workoutID.uuidString, saved: [], workouts: [workout])
 check(fromWorkout.points == workoutRoute, "a saved workout id still supplies its track")
 check(fromWorkout.id == workoutID.uuidString, "the workout id stays on the planned route")
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: workoutID.uuidString, saved: [saved]) == nil,
+    "a past workout track is not a library route use"
+)
+
+var used = workout
+used.plannedRouteID = saved.id
+var freeRun = workout
+freeRun.plannedRouteID = nil
+check(TrainingRouteDraft.usageCount(in: [used, freeRun, used]) == 2, "usage counts stamped library routes")
+check(TrainingRouteDraft.usageCount(in: [freeRun]) == 0, "workouts without a planned route do not count")
 
 let importedWins = TrainingRouteDraft.planned(routeID: saved.id, saved: [saved], workouts: [workout])
 check(importedWins.points == line, "an imported route wins over a workout with another id")
