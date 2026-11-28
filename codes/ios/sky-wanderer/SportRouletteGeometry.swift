@@ -18,8 +18,10 @@ enum SportRouletteGeometry {
     /// Chord between adjacent centers = diameter + edge gap.
     static let neighborCenterDistance: ChromeLength = dotDiameter + neighborEdgeGap
     /// 20% larger than the five-on-semicircle radius so the visible bow is deeper.
+    /// Semicircle baseline uses `sin(π/8)` (half of `π/4` steps); use `Double.pi` so
+    /// `ChromeLength` as `CGFloat` does not make `.pi` ambiguous at archive time.
     static let radius: ChromeLength = neighborCenterDistance
-        / (2 * ChromeLength(sin(Double(.pi / 4) / 2))) * 1.2
+        / (2 * ChromeLength(sin(Double.pi / 8))) * 1.2
     /// From chord + enlarged radius — five visible items no longer fill a semicircle.
     static let angleStep: ChromeLength = 2 * ChromeLength(
         asin(Double(neighborCenterDistance / (2 * radius)))
