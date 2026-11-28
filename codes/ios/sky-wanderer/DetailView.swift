@@ -270,8 +270,8 @@ struct WorkoutDetailView: View {
     }
 
     /// Starry-gray circular tools (same language as the records-list filter).
-    /// Column top sits on the screen horizontal midline. 分段信息 / 分享 / 回到轨迹
-    /// used to live on the card peek and the map’s top-trailing corner.
+    /// Docks with its top on the screen horizontal midline, but never lower than
+    /// the visible map band above the summary card, so it stays on the map.
     private func detailToolColumn(
         _ workout: WorkoutRecord,
         in geo: GeometryProxy,
@@ -282,7 +282,9 @@ struct WorkoutDetailView: View {
         let gap = CGFloat(StartMapChrome.toolGap)
         let count = route.count >= 2 ? 3 : 2
         let columnHeight = CGFloat(count) * diameter + CGFloat(count - 1) * gap
-        let top = geo.size.height / 2
+        let cardTop = geo.size.height - (summaryHeight > 1 ? summaryHeight : DetailHeroMetrics.summaryFallback)
+        let floor = topInset + SkyTheme.Spacing.related + SkyTheme.Spacing.touchMin
+        let top = max(floor, min(geo.size.height / 2, cardTop - columnHeight - SkyTheme.Spacing.related))
         return VStack(spacing: gap) {
             detailToolButton(system: "list.number", label: "分段信息", hint: "查看每公里分段", action: onSegments)
             detailToolButton(system: "square.and.arrow.up", label: "分享", hint: "导出训练图片") {
@@ -335,9 +337,8 @@ struct WorkoutDetailView: View {
     private func summarySheet(_ workout: WorkoutRecord, overlapsMap: Bool, bottomInset: CGFloat) -> some View {
         let avatarLift = DetailHeroMetrics.avatar / 2
         let bottomPad = max(SkyTheme.Spacing.related, bottomInset)
-        return VStack(alignment: .leading, spacing: 0) {
+        return VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
             summaryHeader(workout)
-            Spacer(minLength: DetailHeroMetrics.metricsGap)
             VStack(spacing: DetailHeroMetrics.metricsGap) {
                 metricPair(
                     DetailMetric(label: "训练时间", value: Format.clock(workout.trainingDuration)),
@@ -360,10 +361,8 @@ struct WorkoutDetailView: View {
                     DetailMetric(label: "能量（千卡）", value: countText(workout.energyKilocalories))
                 )
             }
-            Spacer(minLength: DetailHeroMetrics.metricsGap)
         }
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .padding(.top, avatarLift + SkyTheme.Spacing.related)
         .padding(.bottom, bottomPad)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
@@ -377,11 +376,8 @@ struct WorkoutDetailView: View {
             .fill(SkyTheme.Color.background)
             .shadow(color: Color.black.opacity(0.08), radius: 12, y: -2)
         }
-        .overlay(alignment: .top) {
-            profileStack(workout)
-                .frame(maxWidth: .infinity)
-                .frame(height: DetailHeroMetrics.trailingBlockHeight)
-                .offset(y: -DetailHeroMetrics.avatar / 2)
+        .overlay {
+            profileOverlay(workout)
         }
         .padding(.top, overlapsMap ? -(SkyTheme.Radius.sheet) : avatarLift)
         .background {
@@ -397,8 +393,8 @@ struct WorkoutDetailView: View {
         }
     }
 
-    /// Sport / time / weather on the left. Avatar + name + place sit in `profileStack`.
-    /// The three left rows use 6pt gaps and share a bottom edge with the trailing stack.
+    /// Sport / time / weather on the left. The row is bottom-aligned to the same line
+    /// as the place row in `profileOverlay`, so both blocks share one bottom edge.
     private func summaryHeader(_ workout: WorkoutRecord) -> some View {
         HStack(alignment: .bottom, spacing: 12) {
             VStack(alignment: .leading, spacing: DetailHeroMetrics.headerRowSpacing) {
@@ -425,32 +421,34 @@ struct WorkoutDetailView: View {
 
             Color.clear
                 .frame(width: DetailHeroMetrics.trailingColumn)
-                .frame(height: DetailHeroMetrics.trailingReserveHeight)
         }
+        .frame(height: DetailHeroMetrics.headerHeight, alignment: .bottom)
     }
 
-    /// Avatar center sits on the card top edge at one-quarter width from the right.
+    /// Avatar center sits on the card top edge at three-quarters of the card width.
     /// Name is 6pt under the avatar; place is 6pt under the name. Trailing edges align.
-    /// The overlay frame is offset so its top is the avatar top; y = 0 here is that edge.
-    private func profileStack(_ workout: WorkoutRecord) -> some View {
+    /// Positioned from the card's own top-left so it shares the header's bottom edge.
+    private func profileOverlay(_ workout: WorkoutRecord) -> some View {
         GeometryReader { geo in
             let diameter = DetailHeroMetrics.avatar
-            let column = max(diameter, DetailHeroMetrics.trailingColumn)
-            let centerX = geo.size.width * 0.75
-            let blockHeight = DetailHeroMetrics.trailingBlockHeight
-            VStack(alignment: .trailing, spacing: DetailHeroMetrics.headerRowSpacing) {
-                profileAvatar
-                    .shadow(color: Color.black.opacity(0.16), radius: 6, y: 2)
-                    .accessibilityHidden(true)
-                profileNameRow
-                placeRow(workout)
-            }
-            .frame(width: column, alignment: .trailing)
-            .position(
-                // Trailing-aligned column: avatar center = position.x + column/2 - diameter/2.
-                x: centerX - column / 2 + diameter / 2,
-                y: blockHeight / 2
-            )
+            let column = DetailHeroMetrics.trailingColumn
+            profileBlock(workout)
+                .frame(width: column, alignment: .trailing)
+                .position(
+                    x: geo.size.width * 0.75 - column / 2 + diameter / 2,
+                    y: DetailHeroMetrics.trailingBlockHeight / 2 - diameter / 2
+                )
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func profileBlock(_ workout: WorkoutRecord) -> some View {
+        VStack(alignment: .trailing, spacing: DetailHeroMetrics.headerRowSpacing) {
+            profileAvatar
+                .shadow(color: Color.black.opacity(0.16), radius: 6, y: 2)
+                .accessibilityHidden(true)
+            profileNameRow
+            placeRow(workout)
         }
     }
 
@@ -466,9 +464,9 @@ struct WorkoutDetailView: View {
         static var trailingBlockHeight: CGFloat {
             avatar + headerRowSpacing + nameLine + headerRowSpacing + placeLine
         }
-        /// Portion of the trailing stack that sits inside the card (below the top edge).
-        static var trailingReserveHeight: CGFloat {
-            avatar / 2 + headerRowSpacing + nameLine + headerRowSpacing + placeLine
+        /// Header row height: from the card top to the shared bottom edge (place row).
+        static var headerHeight: CGFloat {
+            trailingBlockHeight - avatar / 2
         }
         static let mapFloor: CGFloat = 240
         static let summaryFallback: CGFloat = 360
