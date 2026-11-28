@@ -29,15 +29,13 @@ struct WorkoutDetailView: View {
     var body: some View {
         GeometryReader { geo in
             let top = geo.safeAreaInsets.top
-            let bottom = geo.safeAreaInsets.bottom
             ScrollViewReader { proxy in
                 ScrollView {
                     if let workout {
                         detail(
                             workout,
                             viewportHeight: geo.size.height,
-                            topInset: top,
-                            bottomInset: bottom
+                            topInset: top
                         )
                     } else {
                         missing(viewportHeight: geo.size.height)
@@ -47,11 +45,21 @@ struct WorkoutDetailView: View {
                 .background(SkyTheme.Color.grouped)
                 .overlay(alignment: .topLeading) {
                     if let workout {
-                        detailToolColumn(workout, in: geo) {
-                            withAnimation(.easeInOut(duration: 0.35)) {
-                                proxy.scrollTo(DetailScrollID.splits, anchor: .top)
+                        detailToolColumn(
+                            workout,
+                            in: geo,
+                            onSegments: {
+                                withAnimation(.easeInOut(duration: 0.35)) {
+                                    proxy.scrollTo(DetailScrollID.splits, anchor: .top)
+                                }
+                            },
+                            onFitTrack: {
+                                fitToken += 1
+                                withAnimation(.easeInOut(duration: 0.35)) {
+                                    proxy.scrollTo(DetailScrollID.top, anchor: .top)
+                                }
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -120,14 +128,14 @@ struct WorkoutDetailView: View {
     private func detail(
         _ workout: WorkoutRecord,
         viewportHeight: CGFloat,
-        topInset: CGFloat,
-        bottomInset: CGFloat
+        topInset: CGFloat
     ) -> some View {
         let mapHeight = firstScreenMapHeight(viewportHeight: viewportHeight, topInset: topInset)
         return VStack(spacing: 0) {
             mapHeader(workout, height: mapHeight, topInset: topInset)
                 .padding(.top, -topInset)
-            recordColumn(workout, showsCharts: true, overlapsMap: true, bottomInset: bottomInset)
+                .id(DetailScrollID.top)
+            recordColumn(workout, showsCharts: true, overlapsMap: true)
         }
     }
 
@@ -143,11 +151,10 @@ struct WorkoutDetailView: View {
     private func recordColumn(
         _ workout: WorkoutRecord,
         showsCharts: Bool,
-        overlapsMap: Bool,
-        bottomInset: CGFloat
+        overlapsMap: Bool
     ) -> some View {
         VStack(spacing: 0) {
-            summarySheet(workout, overlapsMap: overlapsMap, bottomInset: bottomInset)
+            summarySheet(workout, overlapsMap: overlapsMap)
             if showsCharts {
                 charts(workout)
             }
@@ -270,12 +277,14 @@ struct WorkoutDetailView: View {
     }
 
     /// Starry-gray circular tools (same language as the records-list filter).
-    /// Docks with its top on the screen horizontal midline, but never lower than
-    /// the visible map band above the summary card, so it stays on the map.
+    /// Top to bottom: 分享 → 分段 → 回到轨迹. Docks with its top on the screen
+    /// horizontal midline, but never lower than the visible map band above the
+    /// summary card, so it stays on the map.
     private func detailToolColumn(
         _ workout: WorkoutRecord,
         in geo: GeometryProxy,
-        onSegments: @escaping () -> Void
+        onSegments: @escaping () -> Void,
+        onFitTrack: @escaping () -> Void
     ) -> some View {
         let route = app.routePoints(for: workout)
         let diameter = CGFloat(StartMapChrome.toolDiameter)
@@ -286,15 +295,18 @@ struct WorkoutDetailView: View {
         let floor = topInset + SkyTheme.Spacing.related + SkyTheme.Spacing.touchMin
         let top = max(floor, min(geo.size.height / 2, cardTop - columnHeight - SkyTheme.Spacing.related))
         return VStack(spacing: gap) {
-            detailToolButton(system: "list.number", label: "分段信息", hint: "查看每公里分段", action: onSegments)
             detailToolButton(system: "square.and.arrow.up", label: "分享", hint: "导出训练图片") {
                 showShare = true
             }
             .disabled(exporting)
+            detailToolButton(system: "list.number", label: "分段信息", hint: "查看每公里分段", action: onSegments)
             if route.count >= 2 {
-                detailToolButton(system: "location.viewfinder", label: "回到轨迹", hint: "重新框住整条轨迹") {
-                    fitToken += 1
-                }
+                detailToolButton(
+                    system: "location.viewfinder",
+                    label: "回到轨迹",
+                    hint: "重新框住整条轨迹并回到顶部",
+                    action: onFitTrack
+                )
             }
         }
         .position(
@@ -332,11 +344,11 @@ struct WorkoutDetailView: View {
             leading
             trailing
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private func summarySheet(_ workout: WorkoutRecord, overlapsMap: Bool, bottomInset: CGFloat) -> some View {
+    private func summarySheet(_ workout: WorkoutRecord, overlapsMap: Bool) -> some View {
         let avatarLift = DetailHeroMetrics.avatar / 2
-        let bottomPad = max(SkyTheme.Spacing.related, bottomInset)
         return VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
             summaryHeader(workout)
             VStack(spacing: DetailHeroMetrics.metricsGap) {
@@ -361,9 +373,12 @@ struct WorkoutDetailView: View {
                     DetailMetric(label: "能量（千卡）", value: countText(workout.energyKilocalories))
                 )
             }
+            .frame(maxWidth: .infinity)
         }
+        // Same horizontal inset on both sides so the metrics block is centered.
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .padding(.bottom, bottomPad)
+        // Last metric row clears the screen bottom by the same gap used between rows.
+        .padding(.bottom, DetailHeroMetrics.metricsGap)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             UnevenRoundedRectangle(
@@ -425,17 +440,18 @@ struct WorkoutDetailView: View {
         .frame(height: DetailHeroMetrics.headerHeight, alignment: .bottom)
     }
 
-    /// Avatar center sits on the card top edge at three-quarters of the card width.
-    /// Name is 6pt under the avatar; place is 6pt under the name. Trailing edges align.
+    /// Avatar / name / place trail the card. Right inset matches the left text’s
+    /// `screenInset`. Name is 6pt under the avatar; place is 6pt under the name.
     /// Positioned from the card's own top-left so it shares the header's bottom edge.
     private func profileOverlay(_ workout: WorkoutRecord) -> some View {
         GeometryReader { geo in
             let diameter = DetailHeroMetrics.avatar
             let column = DetailHeroMetrics.trailingColumn
+            let inset = SkyTheme.Spacing.screenInset
             profileBlock(workout)
                 .frame(width: column, alignment: .trailing)
                 .position(
-                    x: geo.size.width * 0.75 - column / 2 + diameter / 2,
+                    x: geo.size.width - inset - column / 2,
                     y: DetailHeroMetrics.trailingBlockHeight / 2 - diameter / 2
                 )
         }
@@ -473,6 +489,7 @@ struct WorkoutDetailView: View {
     }
 
     private enum DetailScrollID {
+        static let top = "detail-top"
         static let splits = "detail-splits"
     }
 
@@ -761,7 +778,7 @@ struct WorkoutDetailView: View {
         let viewportHeight = viewport.height > 1 ? viewport.height : 844
         let mapHeight = max(220, firstScreenMapHeight(viewportHeight: viewportHeight, topInset: topInset))
         let summary = DetailShareImage.render(
-            summarySheet(workout, overlapsMap: false, bottomInset: 0),
+            summarySheet(workout, overlapsMap: false),
             width: width
         )
         let chartImage = kind == .full
