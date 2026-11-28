@@ -110,8 +110,8 @@ enum PaceTrack {
     static func make(points: [GeoPoint]) -> [ElevationTrackRun] {
         let paces = vertexPaces(points)
         guard points.count >= 2, paces.count == points.count,
-              let bounds = PaceScale.bounds(paces.compactMap { $0 }) else { return [] }
-        let vertices = coloredVertices(points, paces: paces, bounds: bounds)
+              paces.contains(where: { $0 != nil }) else { return [] }
+        let vertices = coloredVertices(points, paces: paces)
         guard let first = vertices.first else { return [] }
         var runs: [ElevationTrackRun] = []
         var coordinates: [CLLocationCoordinate2D] = [first.coordinate]
@@ -177,25 +177,30 @@ enum PaceTrack {
 
     private static func coloredVertices(
         _ points: [GeoPoint],
-        paces: [Double?],
-        bounds: (slow: Double, fast: Double)
+        paces: [Double?]
     ) -> [(coordinate: CLLocationCoordinate2D, bucket: Int)] {
         var vertices: [(coordinate: CLLocationCoordinate2D, bucket: Int)] = []
+        /// Fallback stays in Z1 (有氧基础) when a vertex still has no pace.
         func pace(at index: Int) -> Double {
-            paces[index] ?? ((bounds.slow + bounds.fast) / 2)
+            paces[index] ?? PaceScale.edges[0]
         }
-        vertices.append((points[0].coordinate, bucket(pace(at: 0), bounds: bounds)))
+        vertices.append((points[0].coordinate, PaceScale.bucket(pace: pace(at: 0), steps: steps)))
         for index in 1..<points.count {
             let previous = points[index - 1]
             let point = points[index]
-            let from = bucket(pace(at: index - 1), bounds: bounds)
-            let to = bucket(pace(at: index), bounds: bounds)
+            let fromPace = pace(at: index - 1)
+            let toPace = pace(at: index)
+            let from = PaceScale.bucket(pace: fromPace, steps: steps)
+            let to = PaceScale.bucket(pace: toPace, steps: steps)
             let gap = abs(to - from)
             if gap > 1 {
                 for step in 1..<gap {
                     let fraction = Double(step) / Double(gap)
-                    let blended = pace(at: index - 1) + (pace(at: index) - pace(at: index - 1)) * fraction
-                    vertices.append((interpolate(previous, point, fraction), bucket(blended, bounds: bounds)))
+                    let blended = fromPace + (toPace - fromPace) * fraction
+                    vertices.append((
+                        interpolate(previous, point, fraction),
+                        PaceScale.bucket(pace: blended, steps: steps)
+                    ))
                 }
             }
             vertices.append((point.coordinate, to))
@@ -210,15 +215,22 @@ enum PaceTrack {
         )
     }
 
-    private static func bucket(_ pace: Double, bounds: (slow: Double, fast: Double)) -> Int {
-        let unit = PaceScale.unit(pace: pace, slow: bounds.slow, fast: bounds.fast)
-        let index = Int((unit * Double(steps - 1)).rounded())
-        return min(steps - 1, max(0, index))
-    }
-
     private static func color(for bucket: Int) -> UIColor {
-        let unit = Double(bucket) / Double(max(steps - 1, 1))
-        let rgb = PaceScale.rgb(unit: unit)
+        let last = Double(max(steps - 1, 1))
+        let zoneIndex = Double(bucket) / last * Double(PaceRGB.stops.count - 1)
+        let stops = PaceRGB.stops
+        let floored = Int(zoneIndex.rounded(.down))
+        let rgb: PaceRGB
+        if floored >= stops.count - 1 {
+            rgb = stops[stops.count - 1]
+        } else if floored < 0 {
+            rgb = stops[0]
+        } else {
+            let fraction = zoneIndex - Double(floored)
+            rgb = fraction <= 0
+                ? stops[floored]
+                : stops[floored].mixed(with: stops[floored + 1], fraction: fraction)
+        }
         return UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
     }
 }

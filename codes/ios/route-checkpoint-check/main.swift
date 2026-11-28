@@ -396,18 +396,25 @@ check(ElevationScale.unit(altitude: 100, low: 10, high: 10.2) == 0.5, "flat rout
 check(ElevationScale.unit(altitude: -5, low: 0, high: 10) == 0, "below the route clamps low")
 check(ElevationScale.unit(altitude: 40, low: 0, high: 10) == 1, "above the route clamps high")
 
-check(PaceScale.bounds([]) == nil, "no pace bounds")
-check(PaceScale.bounds([400, 320, 280])?.slow == 400 && PaceScale.bounds([400, 320, 280])?.fast == 280, "pace bounds use this route")
-check(PaceScale.rgb(unit: 0) == .slow, "slow pace is blue")
-check(PaceScale.rgb(unit: 1) == .fast, "fast pace is red")
-check(PaceScale.rgb(unit: 0.5) == PaceRGB.stops[2], "mid unit lands on the threshold stop")
+check(PaceScale.index(pace: 480) == 0, "Z1 stays at base blue")
+check(PaceScale.index(pace: 420) == 0, "Z1 edge is base")
+near(PaceScale.index(pace: 390), 0.5, 0.001, "mid Z2 blends base and endurance")
+check(PaceScale.index(pace: 360) == 1, "Z2 edge is endurance")
+check(PaceScale.index(pace: 330) == 2, "Z3 edge is threshold")
+check(PaceScale.index(pace: 300) == 3, "Z4 edge is speed")
+check(PaceScale.index(pace: 240) == 4, "sprint floor is solid red")
+check(PaceScale.index(pace: 180) == 4, "faster than sprint floor stays red")
+check(PaceScale.rgb(pace: 500) == .base, "slow walk is 有氧基础 blue")
+check(PaceScale.rgb(pace: 360) == .endurance, "6'00\" is 有氧耐力 green")
+check(PaceScale.rgb(pace: 330) == .threshold, "5'30\" is 乳酸阈值 yellow")
+check(PaceScale.rgb(pace: 300) == .speed, "5'00\" is 速度耐力 orange")
+check(PaceScale.rgb(pace: 240) == .sprint, "4'00\" is 冲刺能力 red")
 check(
-    PaceScale.rgb(unit: 0.125) == PaceRGB.slow.mixed(with: .endurance, fraction: 0.5),
-    "pace quarter mixes blue and green"
+    PaceScale.rgb(pace: 390) == PaceRGB.base.mixed(with: .endurance, fraction: 0.5),
+    "zone span soft-blends neighboring colors"
 )
-check(PaceScale.unit(pace: 300, slow: 400, fast: 398) == 0.5, "flat pace stays the middle color")
-check(PaceScale.unit(pace: 500, slow: 400, fast: 280) == 0, "slower than the route clamps slow")
-check(PaceScale.unit(pace: 200, slow: 400, fast: 280) == 1, "faster than the route clamps fast")
+check(PaceScale.bucket(pace: 480, steps: 48) == 0, "Z1 maps to the first bucket")
+check(PaceScale.bucket(pace: 240, steps: 48) == 47, "sprint maps to the last bucket")
 
 let wave = [point(0, 0, 5), point(0, 0.01, 1), point(0, 0.02, 9), point(0, 0.03, 4)]
 let profile = RouteStats.altitudeProfile(wave, limit: 2)

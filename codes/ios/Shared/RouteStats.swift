@@ -338,20 +338,26 @@ enum ElevationScale {
     }
 }
 
-/// Blue (slow) → green → yellow → orange → red (fast) on this route's own pace range.
+/// Zone palette for the detail track. Same cutoffs as `ZoneScale.pace` /
+/// the pace-zone card, and the same hex as `SkyTheme.Color.Zone`.
 struct PaceRGB: Equatable {
     var red: Double
     var green: Double
     var blue: Double
 
-    /// Zone palette stops, slow → fast. Same hex as `SkyTheme.Color.Zone`.
-    static let slow = PaceRGB(red: 30.0 / 255, green: 136.0 / 255, blue: 254.0 / 255)
+    /// 有氧基础 · Z1 · ≥7'00"
+    static let base = PaceRGB(red: 30.0 / 255, green: 136.0 / 255, blue: 254.0 / 255)
+    /// 有氧耐力 · Z2 · 6'00"–6'59"
     static let endurance = PaceRGB(red: 27.0 / 255, green: 158.0 / 255, blue: 75.0 / 255)
+    /// 乳酸阈值 · Z3 · 5'30"–5'59"
     static let threshold = PaceRGB(red: 1, green: 204.0 / 255, blue: 0)
+    /// 速度耐力 · Z4 · 5'00"–5'29"
     static let speed = PaceRGB(red: 1, green: 140.0 / 255, blue: 0)
-    static let fast = PaceRGB(red: 198.0 / 255, green: 40.0 / 255, blue: 40.0 / 255)
+    /// 冲刺能力 · Z5 · <5'00"
+    static let sprint = PaceRGB(red: 198.0 / 255, green: 40.0 / 255, blue: 40.0 / 255)
 
-    static let stops: [PaceRGB] = [slow, endurance, threshold, speed, fast]
+    /// Slow → fast. Index matches `TrainingZone` rawValue − 1.
+    static let stops: [PaceRGB] = [base, endurance, threshold, speed, sprint]
 
     func mixed(with other: PaceRGB, fraction: Double) -> PaceRGB {
         let t = min(1, max(0, fraction))
@@ -363,39 +369,47 @@ struct PaceRGB: Equatable {
     }
 }
 
+/// Fixed pace-zone scale. Colors follow the chart bands, not this route's min…max.
 enum PaceScale {
-    /// A route this flat in pace has no slow-to-fast spread, so every point uses the middle color.
-    static let flatSpanSeconds = 5.0
+    /// Zone edges in sec/km, slow → fast. Same draft as `ZoneScale.pace`.
+    /// Z1 ≥ 420 | Z2 360–419 | Z3 330–359 | Z4 300–329 | Z5 < 300.
+    static let edges: [Double] = [420, 360, 330, 300]
+    /// Fast end of the soft Z5 ramp. Faster than this stays solid sprint red.
+    static let sprintFloor: Double = 240
 
-    /// `slow` is the highest sec/km (slowest), `fast` is the lowest sec/km (fastest).
-    static func bounds(_ paces: [Double]) -> (slow: Double, fast: Double)? {
-        let finite = paces.filter { $0.isFinite && $0 > 0 && $0 < 3_600 }
-        guard let slow = finite.max(), let fast = finite.min() else { return nil }
-        return (slow, fast)
+    /// Continuous zone index 0…4. Crossing an edge blends the neighboring zone colors.
+    static func index(pace: Double) -> Double {
+        guard pace.isFinite, pace > 0 else { return 0 }
+        if pace >= edges[0] { return 0 }
+        if pace >= edges[1] {
+            return (edges[0] - pace) / (edges[0] - edges[1])
+        }
+        if pace >= edges[2] {
+            return 1 + (edges[1] - pace) / (edges[1] - edges[2])
+        }
+        if pace >= edges[3] {
+            return 2 + (edges[2] - pace) / (edges[2] - edges[3])
+        }
+        if pace <= sprintFloor { return 4 }
+        return 3 + (edges[3] - pace) / (edges[3] - sprintFloor)
     }
 
-    /// 0 is this route's slowest pace and 1 is its fastest.
-    static func unit(pace: Double, slow: Double, fast: Double) -> Double {
-        guard pace.isFinite, slow.isFinite, fast.isFinite else { return 0.5 }
-        let span = slow - fast
-        guard span >= flatSpanSeconds else { return 0.5 }
-        return min(1, max(0, (slow - pace) / span))
-    }
-
-    static func rgb(unit: Double) -> PaceRGB {
+    static func rgb(pace: Double) -> PaceRGB {
         let stops = PaceRGB.stops
-        let last = Double(stops.count - 1)
-        let t = min(1, max(0, unit.isFinite ? unit : 0.5)) * last
-        let index = Int(t.rounded(.down))
-        if index >= stops.count - 1 { return stops[stops.count - 1] }
-        if index < 0 { return stops[0] }
-        let fraction = t - Double(index)
-        if fraction <= 0 { return stops[index] }
-        return stops[index].mixed(with: stops[index + 1], fraction: fraction)
+        let t = min(Double(stops.count - 1), max(0, index(pace: pace)))
+        let bucket = Int(t.rounded(.down))
+        if bucket >= stops.count - 1 { return stops[stops.count - 1] }
+        if bucket < 0 { return stops[0] }
+        let fraction = t - Double(bucket)
+        if fraction <= 0 { return stops[bucket] }
+        return stops[bucket].mixed(with: stops[bucket + 1], fraction: fraction)
     }
 
-    static func rgb(pace: Double, slow: Double, fast: Double) -> PaceRGB {
-        rgb(unit: unit(pace: pace, slow: slow, fast: fast))
+    /// Discrete 0…`steps-1` bucket for polyline runs. Soft blends live in the index.
+    static func bucket(pace: Double, steps: Int) -> Int {
+        let last = max(steps - 1, 1)
+        let unit = index(pace: pace) / Double(PaceRGB.stops.count - 1)
+        return min(last, max(0, Int((unit * Double(last)).rounded())))
     }
 }
 
