@@ -724,21 +724,36 @@ struct RouteDetailView: View {
             .overlay(alignment: .topLeading) {
                 toolColumn(markerCount: markerCount)
                     .padding(.leading, CGFloat(StartMapChrome.toolLeading))
-                    .padding(.top, toolColumnTop(screenHeight: geo.size.height))
+                    .padding(.top, toolColumnTop(
+                        screenHeight: geo.size.height,
+                        topBand: bandTop,
+                        legalBottomInset: legalBottomInset,
+                        markerCount: markerCount
+                    ))
             }
         }
     }
 
-    /// Vertically centers the tool stack on the full map height, matching `StartMapChrome`.
-    private func toolColumnTop(screenHeight: CGFloat) -> CGFloat {
+    /// Centers the tool stack in the map band between the title and the bottom card.
+    private func toolColumnTop(
+        screenHeight: CGFloat,
+        topBand: CGFloat,
+        legalBottomInset: CGFloat,
+        markerCount: Int
+    ) -> CGFloat {
         let count = ChromeLength(3)
         var columnHeight =
             count * StartMapChrome.toolDiameter + (count - 1) * StartMapChrome.toolGap
         if zoomArmed {
-            // Drag rail sits above the three tools with the same gap.
             columnHeight += 128 + StartMapChrome.toolGap
         }
-        return CGFloat(max(0, (ChromeLength(screenHeight) - columnHeight) / 2))
+        if showsKilometerMarkers, markerCount == 0 {
+            columnHeight += 22 + StartMapChrome.toolGap
+        }
+        let visibleTop = ChromeLength(topBand)
+        let visibleBottom = ChromeLength(screenHeight - legalBottomInset)
+        let centered = (visibleTop + visibleBottom - columnHeight) / 2
+        return CGFloat(max(visibleTop, centered))
     }
 
     private func titleBar(_ route: SavedRoute, topInset: CGFloat) -> some View {
@@ -1394,6 +1409,7 @@ private struct ElevationProfileChart: View {
 
     private static let yAxisWidth: CGFloat = 36
     private static let axisSpacing: CGFloat = 4
+    private static let tickBandHeight: CGFloat = 7
     private static let axisTextRowHeight: CGFloat = 16
 
     private var points: [GeoPoint] { route.points }
@@ -1486,7 +1502,7 @@ private struct ElevationProfileChart: View {
         Canvas { context, size in
             let placed = placedLabels(plotWidth: size.width)
             let font: Font = .system(size: 10, weight: .semibold, design: .rounded)
-            let textY: CGFloat = 7 + Self.axisTextRowHeight / 2
+            let textY: CGFloat = Self.tickBandHeight + Self.axisTextRowHeight / 2
             for item in placed {
                 let tickX = axisX(item.tickFraction, width: size.width)
                 var tick = Path()
@@ -1530,9 +1546,9 @@ private struct ElevationProfileChart: View {
         ))
     }
 
-    /// Tick stubs plus one text row. Checkpoint kilometers share that row with 0 / total.
+    /// Tick stubs plus one text row. Reserved even without ticks so the 0 / total labels are never clipped.
     private var distanceAxisHeight: CGFloat {
-        (axisMarks.isEmpty ? 0 : 7) + Self.axisTextRowHeight
+        Self.tickBandHeight + Self.axisTextRowHeight
     }
 
     private func placedLabels(plotWidth: CGFloat) -> [ElevationAxisLabel] {
