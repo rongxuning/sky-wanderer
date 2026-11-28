@@ -22,7 +22,7 @@ struct RoutesLibraryView: View {
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
 
-    /// Same content height as the records sport-chip row (14pt type + 7pt vertical padding).
+    /// Same content height as the records header row (14pt type + 7pt vertical padding).
     private var importBarContentHeight: CGFloat {
         14 + CGFloat(RecordListCardLayout.filterChipPaddingV) * 2
     }
@@ -66,17 +66,16 @@ struct RoutesLibraryView: View {
         }
     }
 
-    /// Header from the top of the screen through the import control, matching the records bar.
+    /// Left-aligned import control. Same insets and row height as the records month bar; no dark fill.
     private var importBar: some View {
-        HStack(alignment: .center, spacing: 0) {
-            Spacer(minLength: 0)
+        HStack(alignment: .center, spacing: CGFloat(RecordListCardLayout.headerGap)) {
             RouteImportButton { importing = true }
+            Spacer(minLength: 0)
         }
         .frame(height: importBarContentHeight)
         .padding(.leading, SkyTheme.Spacing.screenInset)
         .padding(.trailing, SkyTheme.Spacing.screenInset)
         .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
-        .background(SkyTheme.Color.starryGray, ignoresSafeAreaEdges: .top)
         .zIndex(1)
     }
 
@@ -190,7 +189,7 @@ private struct RouteImportButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.72 : 1)
-            .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin, alignment: .trailing)
+            .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin, alignment: .leading)
             .contentShape(Rectangle())
     }
 }

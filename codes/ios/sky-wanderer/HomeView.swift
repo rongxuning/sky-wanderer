@@ -43,13 +43,10 @@ struct SkyHome: View {
         trainingPeripheralChromeVisible && recordsPeripheralChromeVisible
     }
 
-    /// Routes header is dark gray under the status bar, so the clock and battery turn light.
-    /// The records header is light grouped gray, so it keeps the light scheme.
+    /// Records and routes headers are light under the status bar, so the clock and battery stay dark.
     private var darkHeaderShowing: Bool {
         switch tab {
-        case .routes:
-            return routesPath.isEmpty
-        case .records, .analysis, .training:
+        case .records, .routes, .analysis, .training:
             return false
         }
     }
