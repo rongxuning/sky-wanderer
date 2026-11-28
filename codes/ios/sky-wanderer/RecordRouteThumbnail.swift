@@ -106,7 +106,7 @@ struct RecordRouteThumbnail: View {
 
 /// Frosted glass plate when the card has no start coordinate to map.
 /// Used for sports that are not 力量 / 综合. Those two keep the map plate
-/// instead of a catalog icon. Other sports fall back to the SF Symbol.
+/// instead of a catalog icon. Other sports show the Sky empty-route mark.
 /// The tint stays a light wash of the sport accent.
 struct RecordSportSwatch: View {
     var sport: SportKind
@@ -127,20 +127,13 @@ struct RecordSportSwatch: View {
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder
     private var glyph: some View {
-        if let asset = sport.listThumbnailAsset {
-            Image(asset)
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
-                .padding(CGFloat(RecordListCardLayout.mapSide) * 0.2)
-        } else {
-            Image(systemName: sport.symbol)
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
-        }
+        Image("RecordEmptyMark")
+            .resizable()
+            .renderingMode(.template)
+            .scaledToFit()
+            .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
+            .padding(CGFloat(RecordListCardLayout.mapSide) * 0.18)
     }
 }
 

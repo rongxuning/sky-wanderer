@@ -62,9 +62,9 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// Asset catalog name for the list glass plate when there is no start
-    /// coordinate to map. Strength and mixed training no longer use these on
-    /// the list card (they keep the map chrome); the assets remain for other UI.
+    /// Legacy sport-specific glass-plate assets. The list card no longer uses
+    /// these: no-track / no-location plates draw `RecordEmptyMark`, and
+    /// strength / mixed training keep the map chrome.
     var listThumbnailAsset: String? {
         switch self {
         case .functionalStrength: return "RecordSportStrength"
