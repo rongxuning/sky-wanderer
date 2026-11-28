@@ -69,6 +69,15 @@ check(Format.startPoint(name: nil, latitude: 31.2, longitude: 121.4) == "31.2000
 check(Format.startPoint(name: "  ", latitude: 31.2, longitude: 121.4) == "31.200000, 121.400000", "blank name is omitted")
 check(Format.startPoint(name: "公园", latitude: nil, longitude: nil) == "—", "no coordinate is a dash")
 check(Format.startPoint(name: nil, latitude: 120, longitude: 10) == "—", "latitude out of range is a dash")
+check(Format.placeLabel(name: "文化园") == "文化园", "place label keeps the name")
+check(Format.placeLabel(name: "  ") == "—", "blank place label is a dash")
+check(Format.placeLabel(name: nil) == "—", "missing place label is a dash")
+check(
+    Format.coordinates(latitude: 27.852837, longitude: 113.136680) == "27.852837, 113.136680",
+    "coordinates keep six decimals"
+)
+check(Format.coordinates(latitude: nil, longitude: 113) == nil, "missing latitude has no coordinates")
+check(Format.coordinates(latitude: 120, longitude: 10) == nil, "out-of-range latitude has no coordinates")
 
 check(
     WorkoutContext.placeName(

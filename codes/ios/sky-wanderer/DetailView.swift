@@ -2,9 +2,10 @@ import Charts
 import SwiftUI
 import UIKit
 
-/// Record detail. Map fills the first screen; the white sheet holds the primary
-/// metrics. Splits and charts sit below the fold. Series that were never stored
-/// stay empty instead of drawing stand-in data.
+/// Record detail. Map fills the leftover first-screen space; the white sheet
+/// holds the primary metrics with a half-raised avatar. Splits and charts sit
+/// below the fold with a short peek. Series that were never stored stay empty
+/// instead of drawing stand-in data.
 struct WorkoutDetailView: View {
     @EnvironmentObject private var app: PhoneAppState
     @Environment(\.dismiss) private var dismiss
@@ -17,6 +18,8 @@ struct WorkoutDetailView: View {
     @State private var saveMessage: String?
     @State private var viewport = CGSize.zero
     @State private var topInset: CGFloat = 0
+    @State private var summaryHeight: CGFloat = 0
+    @State private var showsCoordinates = false
 
     private var workout: WorkoutRecord? {
         app.workouts.first { $0.id == workoutID }
@@ -49,6 +52,7 @@ struct WorkoutDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden(true)
         .task(id: workoutID) {
+            showsCoordinates = false
             await loadContextIfNeeded()
         }
         .sheet(isPresented: $showShare) {
@@ -71,6 +75,16 @@ struct WorkoutDetailView: View {
                     .accessibilityLabel("正在生成图片")
             }
         }
+        .overlay {
+            if showsCoordinates {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .onTapGesture { showsCoordinates = false }
+                    .accessibilityLabel("隐藏坐标")
+                    .accessibilityAddTraits(.isButton)
+            }
+        }
         .background {
             InteractivePopGestureEnabler()
                 .frame(width: 0, height: 0)
@@ -86,12 +100,22 @@ struct WorkoutDetailView: View {
     }
 
     private func detail(_ workout: WorkoutRecord, viewportHeight: CGFloat, topInset: CGFloat) -> some View {
-        let mapHeight = viewportHeight * 0.56 + topInset
+        let mapHeight = firstScreenMapHeight(viewportHeight: viewportHeight, topInset: topInset)
         return VStack(spacing: 0) {
             mapHeader(workout, height: mapHeight, topInset: topInset)
                 .padding(.top, -topInset)
             recordColumn(workout, showsCharts: true, overlapsMap: true)
         }
+    }
+
+    /// Map fills the leftover first-screen space so the summary sits flush with a
+    /// short peek of the charts below. `summaryHeight` is measured after the sheet
+    /// overlap padding, so it already excludes `Radius.sheet`.
+    private func firstScreenMapHeight(viewportHeight: CGFloat, topInset: CGFloat) -> CGFloat {
+        let peek = DetailHeroMetrics.chartPeek
+        let sheet = summaryHeight > 1 ? summaryHeight : DetailHeroMetrics.summaryFallback
+        let body = max(DetailHeroMetrics.mapFloor, viewportHeight - sheet - peek)
+        return body + topInset
     }
 
     private func recordColumn(_ workout: WorkoutRecord, showsCharts: Bool, overlapsMap: Bool) -> some View {
@@ -204,13 +228,14 @@ struct WorkoutDetailView: View {
 
     /// Clear band for the detail camera. Top is the toolbar's bottom edge
     /// (`topInset + related + touchMin`, matching the buttons above). Bottom is the
-    /// summary card overlap (`Radius.sheet`).
+    /// summary card overlap plus the avatar half that sits on the map.
     private func obscuredMapBand(height: CGFloat, topInset: CGFloat) -> (top: Double, bottom: Double) {
         guard height > 1 else { return (0, 0) }
         let toolbarBottom = topInset + SkyTheme.Spacing.related + SkyTheme.Spacing.touchMin
+        let bottomBand = SkyTheme.Radius.sheet + DetailHeroMetrics.avatar / 2
         return (
             max(0, Double(toolbarBottom / height)),
-            max(0, Double(SkyTheme.Radius.sheet / height))
+            max(0, Double(bottomBand / height))
         )
     }
 
@@ -235,63 +260,34 @@ struct WorkoutDetailView: View {
     }
 
     private func summarySheet(_ workout: WorkoutRecord, overlapsMap: Bool) -> some View {
-        VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
-            VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
-                            Text(workout.sport.title)
-                                .font(SkyTheme.Font.title3)
-                                .foregroundStyle(SkyTheme.Color.ink)
-                                .lineLimit(1)
-                            if let badge = originBadge(workout) {
-                                Text(badge)
-                                    .font(SkyTheme.Font.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(SkyTheme.Color.primary)
-                                    .lineLimit(1)
-                            }
-                        }
-                        Text(Format.dateSpan(from: workout.start, to: workout.end))
-                            .font(SkyTheme.Font.footnote)
-                            .foregroundStyle(SkyTheme.Color.secondary)
-                            .lineLimit(2)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    profileColumn
-                }
-                weatherRow(workout)
-                placeRow(workout)
-            }
-
-            VStack(spacing: 4) {
+        let avatarLift = DetailHeroMetrics.avatar / 2
+        return VStack(alignment: .leading, spacing: SkyTheme.Spacing.related) {
+            summaryHeader(workout)
+            VStack(spacing: 8) {
                 metricPair(
-                    DetailMetric(label: "训练时间", value: Format.clock(workout.trainingDuration), color: SkyTheme.Color.Metric.duration),
-                    DetailMetric(label: "经过时间", value: Format.clock(workout.elapsedDuration), color: SkyTheme.Color.Metric.duration)
+                    DetailMetric(label: "训练时间", value: Format.clock(workout.trainingDuration)),
+                    DetailMetric(label: "经过时间", value: Format.clock(workout.elapsedDuration))
                 )
                 metricPair(
-                    DetailMetric(label: "距离", value: distanceText(workout), unit: "公里", color: SkyTheme.Color.Metric.distance),
-                    DetailMetric(label: "配速", value: Format.pace(workout.averagePaceSecPerKm), unit: "/公里", color: SkyTheme.Color.Metric.pace)
+                    DetailMetric(label: "距离", value: distanceText(workout), unit: "公里"),
+                    DetailMetric(label: "配速", value: Format.pace(workout.averagePaceSecPerKm), unit: "/公里")
                 )
                 metricPair(
-                    DetailMetric(label: "心率", value: Format.integer(workout.resolvedAverageHeartRate), unit: "次/分", color: SkyTheme.Color.Metric.heartRate),
-                    DetailMetric(label: "步频", value: Format.integer(workout.resolvedAverageCadence), unit: "步/分", color: SkyTheme.Color.Metric.pace)
+                    DetailMetric(label: "心率", value: Format.integer(workout.resolvedAverageHeartRate), unit: "次/分"),
+                    DetailMetric(label: "步频", value: Format.integer(workout.resolvedAverageCadence), unit: "步/分")
                 )
                 metricPair(
-                    DetailMetric(label: "爬升", value: climbText(workout), unit: "米", color: SkyTheme.Color.Metric.elevation),
-                    DetailMetric(label: "步幅", value: strideText(workout.averageStrideMeters), unit: "米", color: SkyTheme.Color.Metric.pace)
+                    DetailMetric(label: "爬升", value: climbText(workout), unit: "米"),
+                    DetailMetric(label: "步幅", value: strideText(workout.averageStrideMeters), unit: "米")
                 )
                 metricPair(
-                    DetailMetric(label: "负荷", value: countText(Double(workout.sessionLoad)), color: SkyTheme.Color.Metric.load),
-                    DetailMetric(label: "能量", value: countText(workout.energyKilocalories), unit: "千卡", color: SkyTheme.Color.Metric.energy)
+                    DetailMetric(label: "负荷", value: countText(Double(workout.sessionLoad))),
+                    DetailMetric(label: "能量", value: countText(workout.energyKilocalories), unit: "千卡")
                 )
             }
-            .padding(.horizontal, SkyTheme.Spacing.cardPadding)
-            .padding(.vertical, 10)
-            .background(SkyTheme.Color.grouped, in: RoundedRectangle(cornerRadius: SkyTheme.Radius.card, style: .continuous))
         }
         .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .padding(.top, SkyTheme.Spacing.screenInset)
+        .padding(.top, avatarLift + SkyTheme.Spacing.related)
         .padding(.bottom, SkyTheme.Spacing.related)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
@@ -305,33 +301,92 @@ struct WorkoutDetailView: View {
             .fill(SkyTheme.Color.background)
             .shadow(color: Color.black.opacity(0.08), radius: 12, y: -2)
         }
-        .padding(.top, overlapsMap ? -SkyTheme.Radius.sheet : 0)
-    }
-
-    /// ~40pt avatar. The nickname uses caption, which is the nearest text style to 11pt.
-    private enum DetailHeroMetrics {
-        static let avatar: CGFloat = 40
-    }
-
-    /// Same face as the home tab-bar avatar, on the trailing edge.
-    /// Logged out keeps that scenic placeholder and omits the nickname.
-    private var profileColumn: some View {
-        VStack(spacing: 4) {
+        .overlay(alignment: .topTrailing) {
             profileAvatar
-            if let name = accountName {
-                Text(name)
-                    .font(SkyTheme.Font.caption)
-                    .foregroundStyle(SkyTheme.Color.nickname)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 88)
+                .shadow(color: Color.black.opacity(0.16), radius: 6, y: 2)
+                .padding(.trailing, SkyTheme.Spacing.screenInset)
+                .offset(y: -avatarLift)
+                .accessibilityHidden(true)
+        }
+        .padding(.top, overlapsMap ? -(SkyTheme.Radius.sheet) : avatarLift)
+        .background {
+            if overlapsMap {
+                GeometryReader { geo in
+                    Color.clear.preference(key: DetailSummaryHeightKey.self, value: geo.size.height)
+                }
             }
         }
-        .frame(minWidth: DetailHeroMetrics.avatar)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accountName ?? "")
-        .accessibilityHidden(accountName == nil)
+        .onPreferenceChange(DetailSummaryHeightKey.self) { height in
+            guard overlapsMap, abs(height - summaryHeight) > 0.5 else { return }
+            summaryHeight = height
+        }
+    }
+
+    /// Left: sport / time / weather. Right under the protruding avatar: name / place,
+    /// aligned with the second and third left rows.
+    private func summaryHeader(_ workout: WorkoutRecord) -> some View {
+        let rowSpacing = DetailHeroMetrics.headerRowSpacing
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: rowSpacing) {
+                HStack(alignment: .firstTextBaseline, spacing: SkyTheme.Spacing.related) {
+                    Text(workout.sport.title)
+                        .font(SkyTheme.Font.title3)
+                        .foregroundStyle(SkyTheme.Color.ink)
+                        .lineLimit(1)
+                    if let badge = originBadge(workout) {
+                        Text(badge)
+                            .font(SkyTheme.Font.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(SkyTheme.Color.primary)
+                            .lineLimit(1)
+                    }
+                }
+                Text(Format.dateSpan(from: workout.start, to: workout.end))
+                    .font(SkyTheme.Font.footnote)
+                    .foregroundStyle(SkyTheme.Color.secondary)
+                    .lineLimit(2)
+                weatherRow(workout)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .trailing, spacing: rowSpacing) {
+                Color.clear
+                    .frame(width: DetailHeroMetrics.avatar, height: DetailHeroMetrics.sportRowHeight)
+                profileNameRow
+                placeRow(workout)
+            }
+            .frame(width: DetailHeroMetrics.trailingColumn)
+        }
+    }
+
+    /// ~40pt avatar. Half sits on the map; name uses caption under it.
+    private enum DetailHeroMetrics {
+        static let avatar: CGFloat = 40
+        static let trailingColumn: CGFloat = 96
+        static let sportRowHeight: CGFloat = 24
+        static let headerRowSpacing: CGFloat = 4
+        /// Peek of the charts under the summary on the first screen.
+        static let chartPeek: CGFloat = 36
+        static let mapFloor: CGFloat = 240
+        static let summaryFallback: CGFloat = 320
+    }
+
+    @ViewBuilder
+    private var profileNameRow: some View {
+        if let name = accountName {
+            Text(name)
+                .font(SkyTheme.Font.caption)
+                .foregroundStyle(SkyTheme.Color.nickname)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .accessibilityLabel(name)
+        } else {
+            Color.clear
+                .frame(height: 16)
+                .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder
@@ -378,24 +433,58 @@ struct WorkoutDetailView: View {
     }
 
     private func placeRow(_ workout: WorkoutRecord) -> some View {
-        let line = Format.startPoint(
-            name: workout.startPlace?.name,
+        let label = Format.placeLabel(name: workout.startPlace?.name)
+        let coords = Format.coordinates(
             latitude: workout.startCoordinate?.latitude,
             longitude: workout.startCoordinate?.longitude
         )
-        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+        return HStack(alignment: .center, spacing: 4) {
             Image(systemName: "mappin.and.ellipse")
                 .font(.system(size: 12, weight: .semibold))
                 .accessibilityHidden(true)
-            Text(line)
+            Text(label)
                 .font(SkyTheme.Font.footnote)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .layoutPriority(0)
+            if let coords {
+                coordinateToggle(coords)
+                    .layoutPriority(1)
+            }
         }
         .foregroundStyle(SkyTheme.Color.secondary)
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("起点 \(line)")
+        .accessibilityLabel(coords.map { "起点 \(label)，坐标 \($0)" } ?? "起点 \(label)")
+    }
+
+    private func coordinateToggle(_ coords: String) -> some View {
+        Button {
+            showsCoordinates = true
+        } label: {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 14, weight: .semibold))
+                .opacity(showsCoordinates ? 0 : 1)
+                .frame(width: 18, height: 18)
+                .overlay(alignment: .trailing) {
+                    if showsCoordinates {
+                        Text(coords)
+                            .font(SkyTheme.Font.caption)
+                            .fontWeight(.medium)
+                            .foregroundStyle(SkyTheme.Color.ink)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(SkyTheme.Color.grouped, in: Capsule())
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showsCoordinates ? "坐标 \(coords)" : "显示坐标")
+        .accessibilityHint("点击任意位置后隐藏")
     }
 
     private func contextItem(system: String, text: String, label: String) -> some View {
@@ -562,7 +651,8 @@ struct WorkoutDetailView: View {
         showShare = false
         defer { exporting = false }
         let width = viewport.width > 1 ? viewport.width : 390
-        let mapHeight = max(220, (viewport.height > 1 ? viewport.height : 844) * 0.56 + topInset)
+        let viewportHeight = viewport.height > 1 ? viewport.height : 844
+        let mapHeight = max(220, firstScreenMapHeight(viewportHeight: viewportHeight, topInset: topInset))
         let summary = DetailShareImage.render(
             summarySheet(workout, overlapsMap: false),
             width: width
@@ -622,39 +712,46 @@ struct WorkoutDetailView: View {
     }
 }
 
-/// Label above the figure. Number and unit share weight and the metric color.
-/// An em dash stays secondary and drops the unit.
+/// Figure above the label. Number and unit share weight in starry gray.
+/// Font is title3 + 2pt (title2). An em dash stays secondary and drops the unit.
 private struct DetailMetric: View {
     var label: String
     var value: String
     var unit: String? = nil
-    var color: Color
 
     private var missing: Bool { value == "—" }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label)
-                .font(SkyTheme.Font.caption)
-                .fontWeight(.medium)
-                .foregroundStyle(SkyTheme.Color.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+        VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value)
                 if let unit, !missing {
                     Text(unit)
                 }
             }
-            .font(SkyTheme.Font.title3)
+            .font(SkyTheme.Font.title2)
             .fontWeight(.bold)
-            .foregroundStyle(missing ? SkyTheme.Color.secondary : color)
+            .foregroundStyle(missing ? SkyTheme.Color.secondary : SkyTheme.Color.starryGray)
             .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.6)
+            Text(label)
+                .font(SkyTheme.Font.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(SkyTheme.Color.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct DetailSummaryHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 
