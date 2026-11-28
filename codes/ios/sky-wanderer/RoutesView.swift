@@ -13,6 +13,9 @@ extension GPXFile {
 }
 
 struct RoutesLibraryView: View {
+    var isActive: Bool = true
+    @Binding var peripheralChromeVisible: Bool
+
     @EnvironmentObject private var app: PhoneAppState
     @EnvironmentObject private var draft: WorkoutDraft
     @State private var importing = false
@@ -20,10 +23,22 @@ struct RoutesLibraryView: View {
     @State private var revealedRouteID: String?
     @State private var searchExpanded = false
     @State private var searchQuery = ""
+    /// Keyboard frame in global coordinates. `.zero` while the keyboard is hidden.
+    @State private var keyboardFrame: CGRect = .zero
     @FocusState private var searchFocused: Bool
     @ObservedObject private var basemapCenter = SkyBasemapCenter.shared
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
+
+    init(
+        embeddedInHome: Bool = false,
+        isActive: Bool = true,
+        peripheralChromeVisible: Binding<Bool> = .constant(true)
+    ) {
+        self.embeddedInHome = embeddedInHome
+        self.isActive = isActive
+        self._peripheralChromeVisible = peripheralChromeVisible
+    }
 
     private var visibleRoutes: [SavedRoute] {
         RouteListSearch.apply(searchQuery, to: app.importedRoutes)
@@ -46,6 +61,8 @@ struct RoutesLibraryView: View {
                 leftToolsChrome(in: geo)
             }
         }
+        // Own the keyboard inset so search chrome can sit 12pt above it.
+        .ignoresSafeArea(.keyboard)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(SkyTheme.Color.grouped.ignoresSafeArea())
         .navigationTitle(embeddedInHome ? "" : "路线")
@@ -69,6 +86,9 @@ struct RoutesLibraryView: View {
             }
         }
         .onChange(of: searchExpanded) { _, open in
+            withAnimation(.easeOut(duration: Double(StartMapChrome.rouletteOpenCompanionFade))) {
+                publishPeripheralChrome()
+            }
             if open {
                 DispatchQueue.main.async {
                     searchFocused = true
@@ -77,6 +97,26 @@ struct RoutesLibraryView: View {
                 searchFocused = false
                 searchQuery = ""
             }
+        }
+        .onChange(of: isActive) { _, active in
+            if !active, searchExpanded {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    searchExpanded = false
+                }
+            }
+            publishPeripheralChrome()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { note in
+            updateKeyboardFrame(from: note)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { note in
+            updateKeyboardFrame(from: note, hidden: true)
+        }
+        .onDisappear {
+            if searchExpanded {
+                searchExpanded = false
+            }
+            publishPeripheralChrome()
         }
         .task(id: RouteListBackfillKey(
             ids: app.importedRoutes.map(\.id),
@@ -87,13 +127,18 @@ struct RoutesLibraryView: View {
     }
 
     /// Search above import. Import top edge stays on the screen midline.
-    /// Search opens a field that slides out to the right and focuses the keyboard.
+    /// Searching hides import and docks the field 12pt above the keyboard.
     private func leftToolsChrome(in geo: GeometryProxy) -> some View {
         let diameter = CGFloat(StartMapChrome.toolDiameter)
         let gap = CGFloat(StartMapChrome.toolGap)
         let leading = CGFloat(StartMapChrome.toolLeading)
         let fieldWidth = max(120, geo.size.width - leading - diameter - gap - 24)
-        let top = geo.size.height / 2 - gap - diameter
+        let overlap = keyboardOverlap(in: geo)
+        let top = CGFloat(StartMapChrome.routeSearchChromeTop(
+            searchExpanded: searchExpanded,
+            screenHeight: ChromeLength(geo.size.height),
+            keyboardOverlap: ChromeLength(overlap)
+        ))
         return VStack(alignment: .leading, spacing: gap) {
             HStack(spacing: gap) {
                 toolCircleButton(
@@ -110,14 +155,48 @@ struct RoutesLibraryView: View {
                     .opacity(searchExpanded ? 1 : 0)
                     .allowsHitTesting(searchExpanded)
             }
-            toolCircleButton(imageName: "RouteImport", label: "导入 GPX") {
-                importing = true
+            if !searchExpanded {
+                toolCircleButton(imageName: "RouteImport", label: "导入 GPX") {
+                    importing = true
+                }
             }
         }
         .padding(.leading, leading)
         .padding(.top, top)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .zIndex(2)
+    }
+
+    /// How much of this geometry the keyboard covers from the bottom.
+    private func keyboardOverlap(in geo: GeometryProxy) -> CGFloat {
+        guard keyboardFrame.height > 1 else { return 0 }
+        let geoFrame = geo.frame(in: .global)
+        return max(0, geoFrame.maxY - keyboardFrame.minY)
+    }
+
+    private func updateKeyboardFrame(from note: Notification, hidden: Bool = false) {
+        let duration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+        let endFrame: CGRect
+        if hidden {
+            endFrame = .zero
+        } else if let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+            // Off-screen end frame means the keyboard is dismissing.
+            let screenMaxY = UIScreen.main.bounds.maxY
+            endFrame = frame.minY >= screenMaxY - 1 ? .zero : frame
+        } else {
+            return
+        }
+        withAnimation(.easeOut(duration: duration)) {
+            keyboardFrame = endFrame
+        }
+    }
+
+    /// Other tabs stay mounted; only tuck the home bar while this tab is searching.
+    private func publishPeripheralChrome() {
+        let next = !isActive || !searchExpanded
+        if peripheralChromeVisible != next {
+            peripheralChromeVisible = next
+        }
     }
 
     private func searchField(width: CGFloat) -> some View {

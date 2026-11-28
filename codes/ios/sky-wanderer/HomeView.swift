@@ -29,6 +29,8 @@ struct SkyHome: View {
     @State private var trainingPeripheralChromeVisible = true
     /// Records filter roulette hides this bar while open (same handoff as training).
     @State private var recordsPeripheralChromeVisible = true
+    /// Routes search hides the avatar and this bar while the field is open.
+    @State private var routesPeripheralChromeVisible = true
 
     private var showsTabBar: Bool {
         switch tab {
@@ -40,7 +42,9 @@ struct SkyHome: View {
     }
 
     private var peripheralChromeVisible: Bool {
-        trainingPeripheralChromeVisible && recordsPeripheralChromeVisible
+        trainingPeripheralChromeVisible
+            && recordsPeripheralChromeVisible
+            && routesPeripheralChromeVisible
     }
 
     /// Records and routes headers are light under the status bar, so the clock and battery stay dark.
@@ -93,7 +97,11 @@ struct SkyHome: View {
 
             stack(path: $routesPath) {
                 tabScreen {
-                    RoutesLibraryView(embeddedInHome: true)
+                    RoutesLibraryView(
+                        embeddedInHome: true,
+                        isActive: tab == .routes,
+                        peripheralChromeVisible: $routesPeripheralChromeVisible
+                    )
                 }
             }
             .opacity(tab == .routes ? 1 : 0)
