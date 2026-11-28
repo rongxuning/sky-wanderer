@@ -87,6 +87,24 @@ let filterArrived = StartMapChrome.filterToolPosition(progress: 1, screenWidth: 
 near(filterArrived.x, screenCenter.x, "filter progress 1 reaches screen center x")
 near(filterArrived.y, screenCenter.y, "filter progress 1 reaches screen center y")
 
+// Route search: docked above import; searching rides 12pt above the keyboard.
+near(StartMapChrome.searchAboveKeyboardGap, 12, "search field clears the keyboard by 12pt")
+near(
+    StartMapChrome.routeSearchChromeTop(searchExpanded: false, screenHeight: 852, keyboardTop: nil),
+    852 / 2 - 8 - 44,
+    "docked search top sits one gap above the screen midline"
+)
+near(
+    StartMapChrome.routeSearchChromeTop(searchExpanded: true, screenHeight: 852, keyboardTop: 516),
+    516 - 12 - 44,
+    "searching top puts the field bottom 12pt above the keyboard top"
+)
+near(
+    StartMapChrome.routeSearchChromeTop(searchExpanded: true, screenHeight: 852, keyboardTop: nil),
+    852 - 12 - 44,
+    "without a keyboard frame, searching rests 12pt above the view bottom"
+)
+
 // MARK: - Start button 16pt above the measured pill
 
 near(StartMapChrome.startDiameter, 72, "Start is a 72pt circle")

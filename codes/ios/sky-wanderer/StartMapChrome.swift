@@ -14,6 +14,8 @@ enum StartMapChrome {
     /// Gap from the bottom edge of Start to the top edge of the glass pill.
     /// An earlier draft used 8; the map needs the extra air.
     static let gapAboveTabBar: ChromeLength = 16
+    /// Gap from the bottom of the route-search field to the top of the keyboard.
+    static let searchAboveKeyboardGap: ChromeLength = 12
 
     static let toolDiameter: ChromeLength = 44
     static let toolGap: ChromeLength = 8
@@ -99,6 +101,22 @@ enum StartMapChrome {
             home.x + (center.x - home.x) * t,
             home.y + (center.y - home.y) * t
         )
+    }
+
+    /// Route-list search chrome. Docked: search sits above import with import's
+    /// top on the screen midline. Searching: the search row’s bottom sits
+    /// 12pt above `keyboardTop`, measured in the same space as `screenHeight`.
+    /// Without a keyboard frame, it rests 12pt above the view’s bottom edge.
+    static func routeSearchChromeTop(
+        searchExpanded: Bool,
+        screenHeight: ChromeLength,
+        keyboardTop: ChromeLength?
+    ) -> ChromeLength {
+        guard searchExpanded else {
+            return screenHeight / 2 - toolGap - toolDiameter
+        }
+        let bottomEdge = keyboardTop ?? screenHeight
+        return bottomEdge - searchAboveKeyboardGap - toolDiameter
     }
 
     /// Hide companions → fly type to center → open roulette.
