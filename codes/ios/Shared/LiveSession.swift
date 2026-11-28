@@ -132,6 +132,9 @@ final class LiveSession: ObservableObject {
     /// map is still better than an empty plate. Outdoor track recording keeps its
     /// own tighter filter in `TrackNoise`.
     private static let indoorPinMaxAccuracyMeters = 3000.0
+    /// Live indoor fixes must be recent. `startUpdatingLocation` can replay an
+    /// hours-old last-known fix first, which would otherwise end the search.
+    private static let indoorLiveFixMaxAge: TimeInterval = 5 * 60
 
     init(sport: SportKind, plannedRoute: [GeoPoint], teammates: [TeammateProfile]) {
         self.sport = sport
@@ -639,7 +642,7 @@ final class LiveSession: ObservableObject {
         // Prefer a fresh fix, but seed from the last known location when it is
         // still usable so a brief gym session is not left without a map.
         if let cached = manager.location,
-           acceptsIndoorPin(cached, maxAge: 30 * 60) {
+           acceptsIndoorPin(cached, maxAge: Self.indoorLiveFixMaxAge) {
             apply(cached)
             if !recordedRoute.isEmpty { return }
         }
@@ -680,7 +683,7 @@ final class LiveSession: ObservableObject {
         guard !sport.usesOutdoorLocation else { return }
         guard recordedRoute.isEmpty else { return }
         guard let cached = location.location,
-              acceptsIndoorPin(cached, maxAge: nil) else { return }
+              acceptsIndoorPin(cached, maxAge: 30 * 60) else { return }
         let fix = GeoPoint(
             latitude: cached.coordinate.latitude,
             longitude: cached.coordinate.longitude,
@@ -814,7 +817,7 @@ final class LiveSession: ObservableObject {
             // Indoor sessions ignore the resume jump filter — one dropped fix would
             // leave 力量 / 综合 without a map after a pause or a late authorization.
             guard recordedRoute.isEmpty else { return }
-            guard acceptsIndoorPin(location, maxAge: nil) else { return }
+            guard acceptsIndoorPin(location, maxAge: Self.indoorLiveFixMaxAge) else { return }
             ignoreNextLocation = false
             userFix = fix
             lastLocation = location

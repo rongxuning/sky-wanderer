@@ -379,7 +379,7 @@ check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
 check(
     RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 100)
-        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v5.jpg",
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v6.jpg",
     "list thumbnails live under record-thumbs with id, basemap, side, and plate version"
 )
 check(RecordListThumbnailFile.plateVersion == "6", "plate version drops blank backdrop captures")
