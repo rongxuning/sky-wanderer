@@ -75,13 +75,18 @@ enum RecordListThumbnailStore {
 }
 
 extension RecordListThumbnailQuality {
-    /// Samples a downscaled bitmap. Failed offscreen MapKit plates are near-black.
+    /// Samples a downscaled bitmap. Failed offscreen MapKit plates are near-black
+    /// or an unpainted light backdrop.
     static func isUsable(_ image: UIImage) -> Bool {
         guard let stats = lumaStats(image) else { return false }
-        return isUsable(meanLuma: stats.meanLuma, darkPixelFraction: stats.darkPixelFraction)
+        return isUsable(
+            meanLuma: stats.meanLuma,
+            darkPixelFraction: stats.darkPixelFraction,
+            lumaSpread: stats.lumaSpread
+        )
     }
 
-    static func lumaStats(_ image: UIImage) -> (meanLuma: Double, darkPixelFraction: Double)? {
+    static func lumaStats(_ image: UIImage) -> (meanLuma: Double, darkPixelFraction: Double, lumaSpread: Double)? {
         guard let cgImage = image.cgImage else { return nil }
         let width = min(cgImage.width, 64)
         let height = min(cgImage.height, 64)

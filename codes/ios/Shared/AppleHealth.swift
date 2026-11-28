@@ -419,8 +419,12 @@ enum AppleHealth {
         let path = RouteStats.distance(points)
         let diameter = TrackNoise.footprintDiameter(points)
         // A real outdoor run is long. Keep a scribble or a short walk to the rack.
-        guard path <= 200 || (path < 400 && diameter <= 80) else { return [] }
-        return [first]
+        // Also keep a compact footprint under 120 m even when the scribbled path
+        // is noisy — Fitness sometimes stamps a dense indoor nest.
+        if path <= 200 || (path < 400 && diameter <= 80) || diameter <= 120 {
+            return [first]
+        }
+        return []
     }
 
     private static func routePoints(

@@ -550,8 +550,19 @@ struct WorkoutRecord: Codable, Hashable, Identifiable {
     }
 
     /// First route point when it is a finite WGS84 coordinate.
+    /// Falls back to the full track file when the in-record summary lost the pin.
     var startCoordinate: GeoPoint? {
-        guard let first = route.first else { return nil }
+        if let first = route.first,
+           let pin = GeoPoint.valid(
+            latitude: first.latitude,
+            longitude: first.longitude,
+            altitude: first.altitude,
+            timestamp: first.timestamp
+           ) {
+            return pin
+        }
+        guard let loaded = WorkoutTrackStore.load(filename: routeTrackFilename) else { return nil }
+        guard let first = loaded.first else { return nil }
         return GeoPoint.valid(
             latitude: first.latitude,
             longitude: first.longitude,
