@@ -54,6 +54,15 @@ enum StartMapChrome {
         )
     }
 
+    /// Records-page filter tool while docked. Top edge sits on the screen
+    /// horizontal midline (`screenHeight / 2`); center is half a diameter below.
+    static func filterToolHomeCenter(screenHeight: ChromeLength) -> (x: ChromeLength, y: ChromeLength) {
+        (
+            toolLeading + toolDiameter / 2,
+            screenHeight / 2 + toolDiameter / 2
+        )
+    }
+
     /// Screen center — where「类型」lands before the roulette opens.
     static func typeToolScreenCenter(
         screenWidth: ChromeLength,
@@ -70,6 +79,21 @@ enum StartMapChrome {
     ) -> (x: ChromeLength, y: ChromeLength) {
         let t = max(0, min(1, progress))
         let home = typeToolHomeCenter(screenHeight: screenHeight)
+        let center = typeToolScreenCenter(screenWidth: screenWidth, screenHeight: screenHeight)
+        return (
+            home.x + (center.x - home.x) * t,
+            home.y + (center.y - home.y) * t
+        )
+    }
+
+    /// Records filter flight: docked with top on the screen midline → screen center.
+    static func filterToolPosition(
+        progress: ChromeLength,
+        screenWidth: ChromeLength,
+        screenHeight: ChromeLength
+    ) -> (x: ChromeLength, y: ChromeLength) {
+        let t = max(0, min(1, progress))
+        let home = filterToolHomeCenter(screenHeight: screenHeight)
         let center = typeToolScreenCenter(screenWidth: screenWidth, screenHeight: screenHeight)
         return (
             home.x + (center.x - home.x) * t,

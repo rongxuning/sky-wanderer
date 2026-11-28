@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 
 /// Records tab. Month title stays fixed at the top. Sport filter is a left
-/// compass tool (same roulette as training), with 全部 prepended.
+/// compass tool (same roulette as training), with 全部 prepended. Docked, the
+/// tool’s top edge sits on the screen horizontal midline.
 struct RecordFeedView: View {
     var isActive: Bool = true
     @Binding var peripheralChromeVisible: Bool
@@ -124,7 +125,9 @@ struct RecordFeedView: View {
     }
 
     private func filterToolChrome(in geo: GeometryProxy) -> some View {
-        let point = StartMapChrome.typeToolPosition(
+        // Docked: top edge on the screen horizontal midline. Flight still ends
+        // at screen center so the roulette arc midline matches.
+        let point = StartMapChrome.filterToolPosition(
             progress: ChromeLength(filterToolFlight),
             screenWidth: ChromeLength(geo.size.width),
             screenHeight: ChromeLength(geo.size.height)

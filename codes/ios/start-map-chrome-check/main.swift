@@ -71,6 +71,22 @@ let arrived = StartMapChrome.typeToolPosition(progress: 1, screenWidth: 393, scr
 near(arrived.x, screenCenter.x, "progress 1 reaches screen center x")
 near(arrived.y, screenCenter.y, "progress 1 reaches screen center y")
 
+// Records filter: top edge on the screen horizontal midline.
+let filterHome = StartMapChrome.filterToolHomeCenter(screenHeight: 852)
+near(filterHome.x, 16 + 22, "filter tool home x matches the left column")
+near(filterHome.y, 426 + 22, "filter tool top sits on the screen midline")
+near(
+    filterHome.y - StartMapChrome.toolDiameter / 2,
+    426,
+    "filter tool top edge is screenHeight / 2"
+)
+let filterDocked = StartMapChrome.filterToolPosition(progress: 0, screenWidth: 393, screenHeight: 852)
+near(filterDocked.x, filterHome.x, "filter progress 0 stays at home x")
+near(filterDocked.y, filterHome.y, "filter progress 0 stays at home y")
+let filterArrived = StartMapChrome.filterToolPosition(progress: 1, screenWidth: 393, screenHeight: 852)
+near(filterArrived.x, screenCenter.x, "filter progress 1 reaches screen center x")
+near(filterArrived.y, screenCenter.y, "filter progress 1 reaches screen center y")
+
 // MARK: - Start button 16pt above the measured pill
 
 near(StartMapChrome.startDiameter, 72, "Start is a 72pt circle")
