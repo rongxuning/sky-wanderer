@@ -18,9 +18,16 @@ struct RoutesLibraryView: View {
     @State private var importing = false
     @State private var importError: String?
     @State private var revealedRouteID: String?
+    @State private var searchExpanded = false
+    @State private var searchQuery = ""
+    @FocusState private var searchFocused: Bool
     @ObservedObject private var basemapCenter = SkyBasemapCenter.shared
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
+
+    private var visibleRoutes: [SavedRoute] {
+        RouteListSearch.apply(searchQuery, to: app.importedRoutes)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -36,7 +43,7 @@ struct RoutesLibraryView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topLeading) {
-                importToolChrome(in: geo)
+                leftToolsChrome(in: geo)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -61,6 +68,16 @@ struct RoutesLibraryView: View {
                 self.revealedRouteID = nil
             }
         }
+        .onChange(of: searchExpanded) { _, open in
+            if open {
+                DispatchQueue.main.async {
+                    searchFocused = true
+                }
+            } else {
+                searchFocused = false
+                searchQuery = ""
+            }
+        }
         .task(id: RouteListBackfillKey(
             ids: app.importedRoutes.map(\.id),
             tianditu: basemapCenter.mode == .tianditu
@@ -69,33 +86,85 @@ struct RoutesLibraryView: View {
         }
     }
 
-    /// Same dock as the records filter tool: top edge on the screen midline,
-    /// starry-gray circle plate.
-    private func importToolChrome(in geo: GeometryProxy) -> some View {
-        let point = StartMapChrome.filterToolHomeCenter(
-            screenHeight: ChromeLength(geo.size.height)
-        )
-        return Button {
-            importing = true
-        } label: {
-            Image("RouteImport")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 22, height: 22)
-                .foregroundStyle(SkyTheme.Color.onStarryGray)
-                .frame(
-                    width: CGFloat(StartMapChrome.toolDiameter),
-                    height: CGFloat(StartMapChrome.toolDiameter)
-                )
-                .background(SkyTheme.Color.starryGray, in: Circle())
-                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
+    /// Search above import. Import top edge stays on the screen midline.
+    /// Search opens a field that slides out to the right and focuses the keyboard.
+    private func leftToolsChrome(in geo: GeometryProxy) -> some View {
+        let diameter = CGFloat(StartMapChrome.toolDiameter)
+        let gap = CGFloat(StartMapChrome.toolGap)
+        let leading = CGFloat(StartMapChrome.toolLeading)
+        let fieldWidth = max(120, geo.size.width - leading - diameter - gap - 24)
+        let top = geo.size.height / 2 - gap - diameter
+        return VStack(alignment: .leading, spacing: gap) {
+            HStack(spacing: gap) {
+                toolCircleButton(
+                    systemName: "magnifyingglass",
+                    label: searchExpanded ? "关闭搜索" : "搜索路线"
+                ) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        searchExpanded.toggle()
+                    }
+                }
+                searchField(width: fieldWidth)
+                    .frame(width: searchExpanded ? fieldWidth : 0, alignment: .leading)
+                    .clipped()
+                    .opacity(searchExpanded ? 1 : 0)
+                    .allowsHitTesting(searchExpanded)
+            }
+            toolCircleButton(imageName: "RouteImport", label: "导入 GPX") {
+                importing = true
+            }
+        }
+        .padding(.leading, leading)
+        .padding(.top, top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .zIndex(2)
+    }
+
+    private func searchField(width: CGFloat) -> some View {
+        TextField("搜索路线", text: $searchQuery)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .submitLabel(.search)
+            .font(SkyTheme.Font.body)
+            .foregroundStyle(SkyTheme.Color.ink)
+            .padding(.horizontal, 14)
+            .frame(width: width, height: CGFloat(StartMapChrome.toolDiameter))
+            .background(SkyTheme.Color.recordCard, in: Capsule())
+            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
+            .focused($searchFocused)
+            .accessibilityLabel("搜索路线名称")
+    }
+
+    private func toolCircleButton(
+        systemName: String? = nil,
+        imageName: String? = nil,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Group {
+                if let imageName {
+                    Image(imageName)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22)
+                } else if let systemName {
+                    Image(systemName: systemName)
+                        .font(.system(size: 17, weight: .semibold))
+                }
+            }
+            .foregroundStyle(SkyTheme.Color.onStarryGray)
+            .frame(
+                width: CGFloat(StartMapChrome.toolDiameter),
+                height: CGFloat(StartMapChrome.toolDiameter)
+            )
+            .background(SkyTheme.Color.starryGray, in: Circle())
+            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
         .contentShape(Circle())
-        .accessibilityLabel("导入 GPX")
-        .position(x: CGFloat(point.x), y: CGFloat(point.y))
-        .zIndex(2)
+        .accessibilityLabel(label)
     }
 
     /// One sentence. The floating import control is the only call to action.
@@ -136,9 +205,16 @@ struct RoutesLibraryView: View {
     }
 
     private var routeList: some View {
-        ScrollView {
+        let routes = visibleRoutes
+        return ScrollView {
             LazyVStack(spacing: SkyTheme.Spacing.related) {
-                ForEach(app.importedRoutes) { route in
+                if routes.isEmpty {
+                    Text("没有匹配的路线")
+                        .font(SkyTheme.Font.footnote)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                ForEach(routes) { route in
                     RouteSwipeCard(
                         route: route,
                         selected: draft.routeID == route.id,
@@ -152,6 +228,7 @@ struct RoutesLibraryView: View {
             .padding(.bottom, SkyTheme.Spacing.screenInset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func delete(_ route: SavedRoute) {

@@ -7,6 +7,7 @@ import Foundation
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/RouteStats.swift \
 //   codes/ios/Shared/RouteGPXStore.swift \
 //   codes/ios/Shared/WorkoutTrackStore.swift \
+//   codes/ios/Shared/RouteListSearch.swift \
 //   codes/ios/sky-wanderer/PlannedRouteProgress.swift \
 //   codes/ios/training-route-check/main.swift \
 //   -o /tmp/training-route-check && /tmp/training-route-check
@@ -218,6 +219,18 @@ near(waiting.remainingMeters, waiting.totalMeters, 0.001, "the full route remain
 
 let freeFix = PlannedRouteProgress.locate(athlete: mid, on: [])
 check(freeFix.totalMeters == 0 && freeFix.progressedMeters == 0 && freeFix.remainingMeters == 0, "自由跑 has no route remaining")
+
+// MARK: - Route name search
+
+let xuhui = SavedRoute(id: "xuhui", name: "徐汇滨江", points: line, kind: .gpx)
+let west = SavedRoute(id: "west", name: "西岸绿道", points: line, kind: .gpx)
+let library = [saved, xuhui, west]
+check(RouteListSearch.apply("", to: library).count == 3, "empty query keeps every route")
+check(RouteListSearch.apply("滨江", to: library).map(\.id) == ["riverside", "xuhui"], "substring matches both 滨江 names")
+check(RouteListSearch.apply("西岸", to: library).map(\.id) == ["west"], "substring isolates one route")
+check(RouteListSearch.matches("徐汇滨江", query: "徐滨"), "fuzzy keeps characters in order")
+check(!RouteListSearch.matches("徐汇滨江", query: "滨徐"), "fuzzy rejects out-of-order characters")
+check(RouteListSearch.apply("没有这条", to: library).isEmpty, "no match returns an empty list")
 
 if failures.isEmpty {
     print("training-route-check: ok")
