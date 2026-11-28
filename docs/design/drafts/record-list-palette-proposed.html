@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>记录页配色提案</title>
+<style>
+  :root {
+    --ink: #1c1c1e;
+    --secondary: #8e8e93;
+    --grouped: #f5f5f7;
+    --card: #ffffff;
+    --heart: #d13924;
+    --pace-icon: #c9a227;
+    --load-icon: #7c3aed;
+    --cadet-gray: #85a6b7;
+    --saffron: #efc100;
+    --walnut: #584e3e;
+    --starry-chip: #6a5f4d;
+    --on-starry: #d9d0be;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #d9d2c4;
+    font-family: "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 28px;
+  }
+  .phone {
+    width: 390px;
+    background: var(--grouped);
+    border-radius: 36px;
+    overflow: hidden;
+    box-shadow: 0 22px 60px rgba(88, 78, 62, 0.22);
+    border: 1px solid rgba(88, 78, 62, 0.18);
+    position: relative;
+  }
+  .status {
+    height: 44px;
+    background: var(--walnut);
+    color: #fff;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 0 22px 8px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .header-bar {
+    background: var(--walnut);
+    padding: 0 0 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .month-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chips { display: flex; gap: 8px; overflow: hidden; padding-right: 16px; }
+  .filter {
+    flex-shrink: 0;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: var(--starry-chip);
+    color: var(--on-starry);
+  }
+  .filter.on { background: var(--cadet-gray); color: #fff; }
+  .scroll { padding: 10px 0 96px; min-height: 640px; }
+  .card {
+    background: var(--card);
+    min-height: 110px;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 10px 14px 10px 10px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--cadet-gray);
+  }
+  .card.energy::before { background: var(--saffron); }
+  .map {
+    width: 84px; height: 84px; border-radius: 4px;
+    background: linear-gradient(135deg, #d7e8f8 0%, #b8cfe4 55%, #9bb8d4 100%);
+    position: relative; overflow: hidden; flex-shrink: 0;
+  }
+  .map.train { background: linear-gradient(135deg, #e8ebe8 0%, #d5dad6 55%, #c4cbc5 100%); }
+  .map .track {
+    position: absolute; inset: 14%;
+    border: 3.5px solid var(--cadet-gray);
+    border-radius: 40% 20% 45% 25% / 30% 40% 25% 45%;
+    border-left-color: transparent;
+    border-bottom-color: transparent;
+    transform: rotate(-20deg);
+  }
+  .map.train .dot {
+    position: absolute; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--saffron); left: 42%; top: 48%;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+  }
+  .metrics { flex: 1; min-width: 0; }
+  .title-row { height: 22px; display: flex; align-items: center; gap: 10px; }
+  .sport-chip {
+    background: var(--cadet-gray); color: #fff;
+    font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 3px; white-space: nowrap;
+  }
+  .card.energy .sport-chip { background: var(--saffron); color: #584e3e; }
+  .date { font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gap-title-mid { height: 12px; }
+  .upper { height: 33px; display: flex; align-items: center; }
+  .upper > div { flex: 1; }
+  .dist {
+    font-size: 28px; font-weight: 700; color: var(--cadet-gray);
+    font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
+  }
+  .card.energy .dist { color: var(--saffron); }
+  .dur {
+    font-size: 22px; font-weight: 400; color: var(--secondary);
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .gap-mid-bot { height: 3px; }
+  .lower { min-height: 28px; display: flex; }
+  .sec { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .sec:nth-child(1) { align-items: flex-start; }
+  .sec:nth-child(2) { align-items: center; }
+  .sec:nth-child(3) { align-items: flex-end; }
+  .sec-val {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 14px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .ico { width: 14px; height: 14px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; }
+  .ico.hr { color: var(--heart); }
+  .ico.pace { color: var(--pace-icon); }
+  .ico.load { color: var(--load-icon); }
+  .sec-unit { font-size: 11px; color: var(--secondary); padding-left: 18px; }
+  .sec:nth-child(2) .sec-unit, .sec:nth-child(3) .sec-unit { padding-left: 0; }
+  .dock {
+    position: absolute; left: 14px; right: 14px; bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .avatar {
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 2.5px solid var(--walnut);
+    background: radial-gradient(circle at 35% 30%, #8ec5ff, #1e88fe 55%, #0b5bb5);
+    flex-shrink: 0; box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+  }
+  .nav {
+    flex: 1; height: 58px; border-radius: 999px; background: var(--walnut);
+    display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; padding: 0 6px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.22);
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    color: rgba(255,255,255,0.72); font-size: 10px; font-weight: 600;
+  }
+  .nav-item .glyph { font-size: 16px; line-height: 1; }
+  .nav-item.on { color: var(--cadet-gray); }
+</style>
+</head>
+<body>
+  <div class="phone" id="phone">
+    <div class="status"><span>9:41</span><span>■■■ ▂</span></div>
+    <div class="header-bar">
+      <div class="month-title">2026年11月</div>
+      <div class="chips">
+        <div class="filter on">全部</div>
+        <div class="filter">户外跑步</div>
+        <div class="filter">室内跑步</div>
+      </div>
+    </div>
+    <div class="scroll">
+      <div class="card">
+        <div class="map"><div class="track"></div></div>
+        <div class="metrics">
+          <div class="title-row"><span class="sport-chip">户外跑步</span><span class="date">2026-11-26 15:47 星期四</span></div>
+          <div class="gap-title-mid"></div>
+          <div class="upper"><div class="dist">10.1 公里</div><div class="dur">01:06:07</div></div>
+          <div class="gap-mid-bot"></div>
+          <div class="lower">
+            <div class="sec"><div class="sec-val"><span class="ico hr">♥</span>152</div><div class="sec-unit">次/分</div></div>
+            <div class="sec"><div class="sec-val"><span class="ico pace">⚡</span>6′32″</div><div class="sec-unit">分/公里</div></div>
+            <div class="sec"><div class="sec-val"><span class="ico load">▲</span>114</div><div class="sec-unit">TL</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card energy">
+        <div class="map train"><div class="dot"></div></div>
+        <div class="metrics">
+          <div class="title-row"><span class="sport-chip">力量训练</span><span class="date">2026-11-25 20:46 星期三</span></div>
+          <div class="gap-title-mid"></div>
+          <div class="upper"><div class="dist">528 千卡</div><div class="dur">01:18:25</div></div>
+          <div class="gap-mid-bot"></div>
+          <div class="lower">
+            <div class="sec"><div class="sec-val"><span class="ico hr">♥</span>122</div><div class="sec-unit">次/分</div></div>
+            <div class="sec"></div>
+            <div class="sec"><div class="sec-val"><span class="ico load">▲</span>92</div><div class="sec-unit">TL</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="map"><div class="track"></div></div>
+        <div class="metrics">
+          <div class="title-row"><span class="sport-chip">户外跑步</span><span class="date">2026-11-25 20:15 星期三</span></div>
+          <div class="gap-title-mid"></div>
+          <div class="upper"><div class="dist">8.0 公里</div><div class="dur">00:53:43</div></div>
+          <div class="gap-mid-bot"></div>
+          <div class="lower">
+            <div class="sec"><div class="sec-val"><span class="ico hr">♥</span>148</div><div class="sec-unit">次/分</div></div>
+            <div class="sec"><div class="sec-val"><span class="ico pace">⚡</span>6′39″</div><div class="sec-unit">分/公里</div></div>
+            <div class="sec"><div class="sec-val"><span class="ico load">▲</span>88</div><div class="sec-unit">TL</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card energy">
+        <div class="map train"><div class="dot"></div></div>
+        <div class="metrics">
+          <div class="title-row"><span class="sport-chip">综合训练</span><span class="date">2026-11-24 20:51 星期二</span></div>
+          <div class="gap-title-mid"></div>
+          <div class="upper"><div class="dist">581 千卡</div><div class="dur">01:26:11</div></div>
+          <div class="gap-mid-bot"></div>
+          <div class="lower">
+            <div class="sec"><div class="sec-val"><span class="ico hr">♥</span>118</div><div class="sec-unit">次/分</div></div>
+            <div class="sec"></div>
+            <div class="sec"><div class="sec-val"><span class="ico load">▲</span>97</div><div class="sec-unit">TL</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="dock">
+      <div class="avatar"></div>
+      <div class="nav">
+        <div class="nav-item on"><span class="glyph">◫</span>记录</div>
+        <div class="nav-item"><span class="glyph">◎</span>分析</div>
+        <div class="nav-item"><span class="glyph">✦</span>训练</div>
+        <div class="nav-item"><span class="glyph">⌖</span>路线</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
