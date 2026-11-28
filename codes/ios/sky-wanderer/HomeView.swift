@@ -470,13 +470,9 @@ private struct SkyGlassTabBar: View {
                 minHeight: SkyTheme.Spacing.touchMin
             )
             .background {
+                // Circle takes the shorter side of the item frame, so it grows with Dynamic Type height.
                 if selected {
-                    Circle()
-                        .fill(SkyTheme.Color.onPrimary)
-                        .frame(
-                            width: SkyTheme.Spacing.touchMin,
-                            height: SkyTheme.Spacing.touchMin
-                        )
+                    Circle().fill(SkyTheme.Color.onPrimary)
                 }
             }
             .contentShape(Rectangle())

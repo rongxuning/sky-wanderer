@@ -96,7 +96,7 @@ fun SkyWandererRoot(navController: NavHostController = rememberNavController()) 
                             label = { Text(label) },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = SkyInk,
-                                selectedTextColor = SkyInk,
+                                selectedTextColor = SkyOnPrimary,
                                 unselectedIconColor = SkyOnStarryGray,
                                 unselectedTextColor = SkyOnStarryGray,
                                 // White pill behind the selected icon (matches iOS circle).
