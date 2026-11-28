@@ -396,6 +396,19 @@ check(ElevationScale.unit(altitude: 100, low: 10, high: 10.2) == 0.5, "flat rout
 check(ElevationScale.unit(altitude: -5, low: 0, high: 10) == 0, "below the route clamps low")
 check(ElevationScale.unit(altitude: 40, low: 0, high: 10) == 1, "above the route clamps high")
 
+check(PaceScale.bounds([]) == nil, "no pace bounds")
+check(PaceScale.bounds([400, 320, 280])?.slow == 400 && PaceScale.bounds([400, 320, 280])?.fast == 280, "pace bounds use this route")
+check(PaceScale.rgb(unit: 0) == .slow, "slow pace is blue")
+check(PaceScale.rgb(unit: 1) == .fast, "fast pace is red")
+check(PaceScale.rgb(unit: 0.5) == PaceRGB.stops[2], "mid unit lands on the threshold stop")
+check(
+    PaceScale.rgb(unit: 0.125) == PaceRGB.slow.mixed(with: .endurance, fraction: 0.5),
+    "pace quarter mixes blue and green"
+)
+check(PaceScale.unit(pace: 300, slow: 400, fast: 398) == 0.5, "flat pace stays the middle color")
+check(PaceScale.unit(pace: 500, slow: 400, fast: 280) == 0, "slower than the route clamps slow")
+check(PaceScale.unit(pace: 200, slow: 400, fast: 280) == 1, "faster than the route clamps fast")
+
 let wave = [point(0, 0, 5), point(0, 0.01, 1), point(0, 0.02, 9), point(0, 0.03, 4)]
 let profile = RouteStats.altitudeProfile(wave, limit: 2)
 check(profile.contains { $0.altitudeMeters == 1 }, "profile keeps the lowest altitude")

@@ -338,6 +338,67 @@ enum ElevationScale {
     }
 }
 
+/// Blue (slow) → green → yellow → orange → red (fast) on this route's own pace range.
+struct PaceRGB: Equatable {
+    var red: Double
+    var green: Double
+    var blue: Double
+
+    /// Zone palette stops, slow → fast. Same hex as `SkyTheme.Color.Zone`.
+    static let slow = PaceRGB(red: 30.0 / 255, green: 136.0 / 255, blue: 254.0 / 255)
+    static let endurance = PaceRGB(red: 27.0 / 255, green: 158.0 / 255, blue: 75.0 / 255)
+    static let threshold = PaceRGB(red: 1, green: 204.0 / 255, blue: 0)
+    static let speed = PaceRGB(red: 1, green: 140.0 / 255, blue: 0)
+    static let fast = PaceRGB(red: 198.0 / 255, green: 40.0 / 255, blue: 40.0 / 255)
+
+    static let stops: [PaceRGB] = [slow, endurance, threshold, speed, fast]
+
+    func mixed(with other: PaceRGB, fraction: Double) -> PaceRGB {
+        let t = min(1, max(0, fraction))
+        return PaceRGB(
+            red: red + (other.red - red) * t,
+            green: green + (other.green - green) * t,
+            blue: blue + (other.blue - blue) * t
+        )
+    }
+}
+
+enum PaceScale {
+    /// A route this flat in pace has no slow-to-fast spread, so every point uses the middle color.
+    static let flatSpanSeconds = 5.0
+
+    /// `slow` is the highest sec/km (slowest), `fast` is the lowest sec/km (fastest).
+    static func bounds(_ paces: [Double]) -> (slow: Double, fast: Double)? {
+        let finite = paces.filter { $0.isFinite && $0 > 0 && $0 < 3_600 }
+        guard let slow = finite.max(), let fast = finite.min() else { return nil }
+        return (slow, fast)
+    }
+
+    /// 0 is this route's slowest pace and 1 is its fastest.
+    static func unit(pace: Double, slow: Double, fast: Double) -> Double {
+        guard pace.isFinite, slow.isFinite, fast.isFinite else { return 0.5 }
+        let span = slow - fast
+        guard span >= flatSpanSeconds else { return 0.5 }
+        return min(1, max(0, (slow - pace) / span))
+    }
+
+    static func rgb(unit: Double) -> PaceRGB {
+        let stops = PaceRGB.stops
+        let last = Double(stops.count - 1)
+        let t = min(1, max(0, unit.isFinite ? unit : 0.5)) * last
+        let index = Int(t.rounded(.down))
+        if index >= stops.count - 1 { return stops[stops.count - 1] }
+        if index < 0 { return stops[0] }
+        let fraction = t - Double(index)
+        if fraction <= 0 { return stops[index] }
+        return stops[index].mixed(with: stops[index + 1], fraction: fraction)
+    }
+
+    static func rgb(pace: Double, slow: Double, fast: Double) -> PaceRGB {
+        rgb(unit: unit(pace: pace, slow: slow, fast: fast))
+    }
+}
+
 struct KilometerMarker: Equatable, Identifiable {
     var kilometer: Int
     var latitude: Double

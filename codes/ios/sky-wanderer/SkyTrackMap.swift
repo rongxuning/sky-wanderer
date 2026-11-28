@@ -32,6 +32,8 @@ struct SkyTrackMap: UIViewRepresentable {
     var userName: String = ""
     var userAvatar: UIImage? = nil
     var showsEndpoints: Bool = false
+    /// Workout detail paints the route by pace. Other screens keep the solid primary stroke.
+    var paintsPace: Bool = false
     var basemapMode: SkyBasemapMode
     var bottomInset: CGFloat = 0
     var obscuredTopFraction: Double = 0
@@ -98,6 +100,7 @@ struct SkyTrackMap: UIViewRepresentable {
         coordinator.userName = userName
         coordinator.userAvatar = userAvatar
         coordinator.showsEndpoints = showsEndpoints
+        coordinator.paintsPace = paintsPace
         coordinator.obscuredTopFraction = obscuredTopFraction
         coordinator.obscuredBottomFraction = obscuredBottomFraction
         coordinator.fitToken = fitToken
@@ -191,6 +194,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     var userName = ""
     var userAvatar: UIImage?
     var showsEndpoints = false
+    var paintsPace = false
     var obscuredTopFraction = 0.0
     var obscuredBottomFraction = 0.0
     var fitToken = 0
@@ -218,6 +222,7 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
     private var appliedKilometers: [KilometerMarker] = []
     private var appliedVertices: [TrackVertex] = []
     private var appliedEndpoints = false
+    private var appliedPaintsPace = false
     private var framedUser = false
     private var didFit = false
     private var lastFitToken = -1
@@ -259,15 +264,18 @@ final class SkyTrackMapCoordinator: NSObject, MKMapViewDelegate {
         let routeDirty = route != appliedRoute
         let plannedDirty = planned != appliedPlanned
         let endpointsDirty = appliedEndpoints != showsEndpoints
+        let paceDirty = appliedPaintsPace != paintsPace
         if modeChanged {
             appliedMode = mode
             didFit = false
             tiles = SkyBasemapInstaller.attach(to: map, mode: mode, removing: tiles)
         }
-        if modeChanged || routeDirty || endpointsDirty {
+        if modeChanged || routeDirty || endpointsDirty || paceDirty {
             appliedRoute = route
             appliedEndpoints = showsEndpoints
-            replace(route, style: .solid(TrackPaint.primary), existing: &routeOverlay, on: map)
+            appliedPaintsPace = paintsPace
+            let style: TrackStyle = paintsPace ? .pace : .solid(TrackPaint.primary)
+            replace(route, style: style, existing: &routeOverlay, on: map)
             replaceEndpoints(route, on: map)
         }
         if modeChanged || plannedDirty {
@@ -842,6 +850,7 @@ final class EndpointMarkerView: MKAnnotationView {
     static let reuseID = "track-endpoint"
 
     private let mark = UIView()
+    private let glyph = UILabel()
 
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -849,6 +858,11 @@ final class EndpointMarkerView: MKAnnotationView {
         mark.layer.borderColor = UIColor.white.cgColor
         mark.layer.borderWidth = 2
         mark.isUserInteractionEnabled = false
+        glyph.font = .systemFont(ofSize: 11, weight: .bold)
+        glyph.textColor = .white
+        glyph.textAlignment = .center
+        glyph.isUserInteractionEnabled = false
+        mark.addSubview(glyph)
         addSubview(mark)
         layer.shadowColor = UIColor.black.cgColor
         layer.shadowOpacity = 0.22
@@ -865,9 +879,11 @@ final class EndpointMarkerView: MKAnnotationView {
     }
 
     func apply(square: Bool) {
-        let side: CGFloat = 14
+        let side: CGFloat = 22
         mark.frame = CGRect(x: 0, y: 0, width: side, height: side)
-        mark.layer.cornerRadius = square ? 3 : side / 2
+        mark.layer.cornerRadius = square ? 5 : side / 2
+        glyph.text = square ? "终" : "起"
+        glyph.frame = mark.bounds
         bounds = mark.bounds
         centerOffset = .zero
         accessibilityLabel = square ? "终点" : "起点"

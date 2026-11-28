@@ -126,7 +126,8 @@ private final class TrackMapSnapshotHost: NSObject, MKMapViewDelegate {
         map.removeAnnotations(map.annotations)
         let shown = TrackDatum.displayed(route, mode: mode)
         if shown.count >= 2 {
-            let style: TrackStyle = thumbnail ? .recordList : .solid(TrackPaint.primary)
+            // Detail share uses pace coloring; list thumbnails keep the solid record-list stroke.
+            let style: TrackStyle = thumbnail ? .recordList : .pace
             map.addOverlay(TrackOverlay(points: shown, style: style))
             if !thumbnail, let first = shown.first?.coordinate {
                 map.addAnnotation(EndpointAnnotation(coordinate: first, square: false))

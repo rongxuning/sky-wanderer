@@ -15,6 +15,7 @@ enum TrackPaint {
     static let recordListInnerPoints: CGFloat = 5
     static let recordListCasingPoints: CGFloat = 0
     static let elevationInnerPoints: CGFloat = 4
+    static let paceInnerPoints: CGFloat = 4.5
 }
 
 enum TrackStyle {
@@ -23,6 +24,8 @@ enum TrackStyle {
     case recordList
     /// Route detail. Green (0.18, 0.78, 0.22) → yellow → red on this route's own altitudes.
     case elevation
+    /// Workout detail. Zone palette on this route's own pace, soft-blended between stops.
+    case pace
 }
 
 struct ElevationTrackRun {
@@ -101,6 +104,125 @@ enum ElevationTrack {
     }
 }
 
+enum PaceTrack {
+    private static let steps = 48
+
+    static func make(points: [GeoPoint]) -> [ElevationTrackRun] {
+        let paces = vertexPaces(points)
+        guard points.count >= 2, paces.count == points.count,
+              let bounds = PaceScale.bounds(paces.compactMap { $0 }) else { return [] }
+        let vertices = coloredVertices(points, paces: paces, bounds: bounds)
+        guard let first = vertices.first else { return [] }
+        var runs: [ElevationTrackRun] = []
+        var coordinates: [CLLocationCoordinate2D] = [first.coordinate]
+        var runBucket = first.bucket
+        func flush() {
+            guard coordinates.count >= 2 else { return }
+            runs.append(ElevationTrackRun(coordinates: coordinates, color: color(for: runBucket)))
+        }
+        for vertex in vertices.dropFirst() {
+            if vertex.bucket != runBucket {
+                flush()
+                coordinates = [coordinates.last ?? vertex.coordinate, vertex.coordinate]
+                runBucket = vertex.bucket
+            } else {
+                coordinates.append(vertex.coordinate)
+            }
+        }
+        flush()
+        return runs
+    }
+
+    /// Pace at each vertex from the adjacent timestamped segment. Missing times stay nil.
+    private static func vertexPaces(_ points: [GeoPoint]) -> [Double?] {
+        guard points.count >= 2 else { return Array(repeating: nil, count: points.count) }
+        var segmentPace: [Double?] = Array(repeating: nil, count: max(points.count - 1, 0))
+        for index in 1..<points.count {
+            guard let start = points[index - 1].timestamp,
+                  let end = points[index].timestamp else { continue }
+            let dt = end.timeIntervalSince(start)
+            let meters = RouteStats.metersBetween(points[index - 1], points[index])
+            guard dt > 0, meters > 1 else { continue }
+            let pace = dt / (meters / 1_000)
+            guard pace.isFinite, pace > 0, pace < 3_600 else { continue }
+            segmentPace[index - 1] = pace
+        }
+        var paces: [Double?] = Array(repeating: nil, count: points.count)
+        for index in points.indices {
+            if index > 0, let pace = segmentPace[index - 1] {
+                paces[index] = pace
+            } else if index < segmentPace.count, let pace = segmentPace[index] {
+                paces[index] = pace
+            }
+        }
+        // Fill gaps from the nearest known pace so the stroke stays continuous.
+        var last: Double?
+        for index in paces.indices {
+            if let pace = paces[index] {
+                last = pace
+            } else if let last {
+                paces[index] = last
+            }
+        }
+        last = nil
+        for index in paces.indices.reversed() {
+            if let pace = paces[index] {
+                last = pace
+            } else if let last {
+                paces[index] = last
+            }
+        }
+        return paces
+    }
+
+    private static func coloredVertices(
+        _ points: [GeoPoint],
+        paces: [Double?],
+        bounds: (slow: Double, fast: Double)
+    ) -> [(coordinate: CLLocationCoordinate2D, bucket: Int)] {
+        var vertices: [(coordinate: CLLocationCoordinate2D, bucket: Int)] = []
+        func pace(at index: Int) -> Double {
+            paces[index] ?? ((bounds.slow + bounds.fast) / 2)
+        }
+        vertices.append((points[0].coordinate, bucket(pace(at: 0), bounds: bounds)))
+        for index in 1..<points.count {
+            let previous = points[index - 1]
+            let point = points[index]
+            let from = bucket(pace(at: index - 1), bounds: bounds)
+            let to = bucket(pace(at: index), bounds: bounds)
+            let gap = abs(to - from)
+            if gap > 1 {
+                for step in 1..<gap {
+                    let fraction = Double(step) / Double(gap)
+                    let blended = pace(at: index - 1) + (pace(at: index) - pace(at: index - 1)) * fraction
+                    vertices.append((interpolate(previous, point, fraction), bucket(blended, bounds: bounds)))
+                }
+            }
+            vertices.append((point.coordinate, to))
+        }
+        return vertices
+    }
+
+    private static func interpolate(_ start: GeoPoint, _ end: GeoPoint, _ fraction: Double) -> CLLocationCoordinate2D {
+        CLLocationCoordinate2D(
+            latitude: start.latitude + (end.latitude - start.latitude) * fraction,
+            longitude: start.longitude + (end.longitude - start.longitude) * fraction
+        )
+    }
+
+    private static func bucket(_ pace: Double, bounds: (slow: Double, fast: Double)) -> Int {
+        let unit = PaceScale.unit(pace: pace, slow: bounds.slow, fast: bounds.fast)
+        let index = Int((unit * Double(steps - 1)).rounded())
+        return min(steps - 1, max(0, index))
+    }
+
+    private static func color(for bucket: Int) -> UIColor {
+        let unit = Double(bucket) / Double(max(steps - 1, 1))
+        let rgb = PaceScale.rgb(unit: unit)
+        return UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+    }
+}
+
 /// White casing plus an inner stroke. MapKit polylines cannot pair those, so every
 /// phone map uses this overlay, including the system-map fallback.
 final class TrackOverlay: NSObject, MKOverlay {
@@ -147,6 +269,18 @@ final class TrackOverlay: NSObject, MKOverlay {
                     ElevationTrackRun(
                         coordinates: source.map(\.coordinate),
                         color: UIColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+                    )
+                ]
+            }
+        case .pace:
+            innerWidth = TrackPaint.paceInnerPoints
+            casingWidth = TrackPaint.casingPoints
+            built = PaceTrack.make(points: source)
+            if built.isEmpty, source.count >= 2 {
+                built = [
+                    ElevationTrackRun(
+                        coordinates: source.map(\.coordinate),
+                        color: TrackPaint.primary
                     )
                 ]
             }
