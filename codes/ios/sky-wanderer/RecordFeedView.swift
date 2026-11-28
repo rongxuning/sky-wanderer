@@ -254,7 +254,7 @@ struct RecordFeedView: View {
         }
     }
 
-    /// Sticky month title on the starry-gray band. Sport filter lives on the left compass tool.
+    /// Sticky month title on the grouped light band. Sport filter lives on the left compass tool.
     private var monthTitleBar: some View {
         HStack(alignment: .center, spacing: CGFloat(RecordListCardLayout.headerGap)) {
             RecordMonthTitle(title: displayedMonthTitle)
@@ -264,7 +264,7 @@ struct RecordFeedView: View {
         .padding(.leading, SkyTheme.Spacing.screenInset)
         .padding(.trailing, SkyTheme.Spacing.screenInset)
         .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
-        .background(SkyTheme.Color.starryGray, ignoresSafeAreaEdges: .top)
+        .background(SkyTheme.Color.grouped, ignoresSafeAreaEdges: .top)
         .zIndex(1)
     }
 
@@ -450,7 +450,7 @@ private struct RecordMonthTitle: View {
     private func line(_ text: String, opacity: Double) -> some View {
         Text(text)
             .font(.system(size: monthSize, weight: .bold))
-            .foregroundStyle(SkyTheme.Color.onPrimary)
+            .foregroundStyle(SkyTheme.Color.ink)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .opacity(text.isEmpty ? 0 : opacity)
@@ -477,7 +477,7 @@ private func feedEntryID(_ row: RecordFeedList.Row, workouts: [WorkoutRecord]) -
 }
 
 /// In-list year-month. One point larger than headline and bold. Sits on the same
-/// starry-gray band as the sticky top date; leading edge matches the card map.
+/// grouped light band as the sticky top date; leading edge matches the card map.
 /// No month probe: the sticky title follows cards only.
 private struct RecordMonthSectionLabel: View {
     var title: String
@@ -486,13 +486,13 @@ private struct RecordMonthSectionLabel: View {
     var body: some View {
         Text(title)
             .font(.system(size: monthSize, weight: .bold))
-            .foregroundStyle(SkyTheme.Color.onPrimary)
+            .foregroundStyle(SkyTheme.Color.ink)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, CGFloat(RecordListCardLayout.monthSectionLeading))
             .padding(.trailing, CGFloat(RecordListCardLayout.monthSectionTrailing))
             .padding(.top, CGFloat(RecordListCardLayout.monthSectionTop))
             .padding(.bottom, CGFloat(RecordListCardLayout.monthSectionBottom))
-            .background(SkyTheme.Color.starryGray)
+            .background(SkyTheme.Color.grouped)
             .accessibilityAddTraits(.isHeader)
     }
 }
