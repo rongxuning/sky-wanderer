@@ -127,6 +127,11 @@ final class LiveSession: ObservableObject {
     private var recordedRoute: [GeoPoint] = []
     /// Indoor pin retries after a location failure while still waiting for a gym fix.
     private var startPinRetries = 0
+    /// Horizontal accuracy ceiling for the gym / indoor list pin.
+    /// Approximate Location and indoor Wi‑Fi often report 500–3000 m; a neighborhood
+    /// map is still better than an empty plate. Outdoor track recording keeps its
+    /// own tighter filter in `TrackNoise`.
+    private static let indoorPinMaxAccuracyMeters = 3000.0
 
     init(sport: SportKind, plannedRoute: [GeoPoint], teammates: [TeammateProfile]) {
         self.sport = sport
@@ -602,7 +607,9 @@ final class LiveSession: ObservableObject {
         } else {
             // Keep listening until the first usable gym pin lands. A single
             // `requestLocation` often times out indoors before Wi‑Fi positioning.
-            location.desiredAccuracy = kCLLocationAccuracyHundredMeters
+            // Best accuracy still helps when Precise Location is on; Approximate
+            // Location answers with a coarse fix that we accept below.
+            location.desiredAccuracy = kCLLocationAccuracyBest
             location.distanceFilter = kCLDistanceFilterNone
             beginIndoorStartPin(location)
         }
@@ -632,13 +639,30 @@ final class LiveSession: ObservableObject {
         // Prefer a fresh fix, but seed from the last known location when it is
         // still usable so a brief gym session is not left without a map.
         if let cached = manager.location,
-           cached.horizontalAccuracy >= 0,
-           cached.horizontalAccuracy < 500,
-           abs(cached.timestamp.timeIntervalSinceNow) < 15 * 60 {
+           acceptsIndoorPin(cached, maxAge: 30 * 60) {
             apply(cached)
             if !recordedRoute.isEmpty { return }
         }
         manager.startUpdatingLocation()
+        // One-shot nudge alongside continuous updates — Wi‑Fi positioning often
+        // answers requestLocation after startUpdatingLocation is already running.
+        manager.requestLocation()
+    }
+
+    private func acceptsIndoorPin(_ location: CLLocation, maxAge: TimeInterval?) -> Bool {
+        guard location.horizontalAccuracy >= 0,
+              location.horizontalAccuracy <= Self.indoorPinMaxAccuracyMeters else {
+            return false
+        }
+        if let maxAge {
+            guard abs(location.timestamp.timeIntervalSinceNow) < maxAge else { return false }
+        }
+        return GeoPoint.valid(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            altitude: location.altitude,
+            timestamp: location.timestamp
+        ) != nil
     }
 
     private func stopLocationUpdates() {
@@ -649,26 +673,20 @@ final class LiveSession: ObservableObject {
         #endif
     }
 
-    /// Last chance before save: if the gym pin never arrived, reuse a fresh
-    /// last-known fix so 力量 / 综合 still get a list map.
+    /// Last chance before save: if the gym pin never arrived, reuse any usable
+    /// last-known fix so 力量 / 综合 still get a list map. Age is not capped here —
+    /// an older coarse fix still beats an empty plate.
     private func seedIndoorStartPinIfNeeded() {
         guard !sport.usesOutdoorLocation else { return }
         guard recordedRoute.isEmpty else { return }
         guard let cached = location.location,
-              cached.horizontalAccuracy >= 0,
-              cached.horizontalAccuracy < 500 else { return }
+              acceptsIndoorPin(cached, maxAge: nil) else { return }
         let fix = GeoPoint(
             latitude: cached.coordinate.latitude,
             longitude: cached.coordinate.longitude,
             altitude: cached.altitude,
             timestamp: cached.timestamp
         )
-        guard GeoPoint.valid(
-            latitude: fix.latitude,
-            longitude: fix.longitude,
-            altitude: fix.altitude,
-            timestamp: fix.timestamp
-        ) != nil else { return }
         recordedRoute = [fix]
         route = Self.displayRoute(recordedRoute)
         userFix = fix
@@ -690,6 +708,14 @@ final class LiveSession: ObservableObject {
         }
         if sampleTick % 5 == 0 {
             captureSample()
+        }
+        // Indoor / strength: keep nudging for a gym pin. Wi‑Fi positioning can
+        // take tens of seconds after authorization.
+        if !sport.usesOutdoorLocation,
+           recordedRoute.isEmpty,
+           !simulating,
+           sampleTick % 10 == 0 {
+            beginIndoorStartPin(location)
         }
         publishLive()
         if let last = route.last {
@@ -788,7 +814,7 @@ final class LiveSession: ObservableObject {
             // Indoor sessions ignore the resume jump filter — one dropped fix would
             // leave 力量 / 综合 without a map after a pause or a late authorization.
             guard recordedRoute.isEmpty else { return }
-            guard location.horizontalAccuracy < 500 else { return }
+            guard acceptsIndoorPin(location, maxAge: nil) else { return }
             ignoreNextLocation = false
             userFix = fix
             lastLocation = location

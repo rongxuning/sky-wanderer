@@ -14,12 +14,25 @@ enum RecordListThumbnailQuality {
     static let darkLumaCeiling = 0.06
     /// A plate that is almost entirely near-black is a failed capture.
     static let maxDarkPixelFraction = 0.90
+    /// Unpainted `SkyBasemapInstaller.backdrop` (~0.94) with almost no contrast.
+    /// Those empty plates used to pass the black check and cover the start pin.
+    static let blankMeanLuma = 0.90
+    /// Minimum max−min luma for a plate that is otherwise near-backdrop bright.
+    static let minimumLumaSpread = 0.06
 
-    static func isUsable(meanLuma: Double, darkPixelFraction: Double) -> Bool {
-        meanLuma.isFinite
-            && darkPixelFraction.isFinite
-            && meanLuma >= minimumMeanLuma
-            && darkPixelFraction <= maxDarkPixelFraction
+    static func isUsable(meanLuma: Double, darkPixelFraction: Double, lumaSpread: Double = 1) -> Bool {
+        guard meanLuma.isFinite,
+              darkPixelFraction.isFinite,
+              lumaSpread.isFinite,
+              meanLuma >= minimumMeanLuma,
+              darkPixelFraction <= maxDarkPixelFraction else {
+            return false
+        }
+        // Reject solid backdrop fills: bright and almost no tonal range.
+        if meanLuma >= blankMeanLuma, lumaSpread < minimumLumaSpread {
+            return false
+        }
+        return true
     }
 
     /// Samples packed RGB/RGBA bytes. `step` skips pixels for large thumbnails.
@@ -29,17 +42,19 @@ enum RecordListThumbnailQuality {
         width: Int,
         height: Int,
         step: Int = 4
-    ) -> (meanLuma: Double, darkPixelFraction: Double) {
+    ) -> (meanLuma: Double, darkPixelFraction: Double, lumaSpread: Double) {
         guard bytesPerPixel >= 3, width > 0, height > 0, step > 0 else {
-            return (0, 1)
+            return (0, 1, 0)
         }
         let row = width * bytesPerPixel
         guard bytes.count >= row * height else {
-            return (0, 1)
+            return (0, 1, 0)
         }
         var sum = 0.0
         var dark = 0
         var count = 0
+        var minLuma = Double.greatestFiniteMagnitude
+        var maxLuma = -Double.greatestFiniteMagnitude
         var y = 0
         while y < height {
             var x = 0
@@ -51,13 +66,15 @@ enum RecordListThumbnailQuality {
                 // Rec. 601 luma.
                 let luma = 0.299 * r + 0.587 * g + 0.114 * b
                 sum += luma
+                minLuma = min(minLuma, luma)
+                maxLuma = max(maxLuma, luma)
                 if luma <= darkLumaCeiling { dark += 1 }
                 count += 1
                 x += step
             }
             y += step
         }
-        guard count > 0 else { return (0, 1) }
-        return (sum / Double(count), Double(dark) / Double(count))
+        guard count > 0 else { return (0, 1, 0) }
+        return (sum / Double(count), Double(dark) / Double(count), maxLuma - minLuma)
     }
 }
