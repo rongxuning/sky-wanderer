@@ -64,8 +64,7 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
 
     /// Legacy sport-specific glass-plate assets. The list card no longer uses
     /// these: no-track / no-location plates draw the full-color
-    /// `RecordEmptyMark` (blue gradient + white mark), and strength / mixed
-    /// training keep the map chrome.
+    /// `RecordEmptyMark` (blue gradient + white mark) for every sport.
     var listThumbnailAsset: String? {
         switch self {
         case .functionalStrength: return "RecordSportStrength"
@@ -92,9 +91,9 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
         }
     }
 
-    /// Strength and mixed training always use the left map plate. With a start
+    /// Strength and mixed training map a start fix on the left plate. With a
     /// fix they draw that pin on a neighborhood map (not a track). Without a
-    /// fix they still keep the map chrome — never the catalog icon image.
+    /// fix they use the same `RecordEmptyMark` plate as other sports.
     var listUsesStartLocationMap: Bool {
         switch self {
         case .functionalStrength, .hiit: return true

@@ -580,7 +580,7 @@ check(
 check(
     SportKind.functionalStrength.listUsesStartLocationMap
         && RecordListThumbnailKind.resolve(routeCount: strengthCard.listThumbnailPointCount) == .swatch,
-    "strength without a fix still opts into the map chrome, not the catalog icon"
+    "strength without a fix stays swatch so the card can draw RecordEmptyMark"
 )
 var strengthFromMetadata = strengthCard
 strengthFromMetadata.route = [

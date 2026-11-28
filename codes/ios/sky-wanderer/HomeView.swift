@@ -112,7 +112,9 @@ struct SkyHome: View {
             if showsTabBar {
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    HStack(spacing: SkyTheme.Spacing.controlGap) {
+                    // Top-align so the avatar plate shares the pill’s top edge
+                    // (屏幕水平线); center would drop the avatar when the pill grows.
+                    HStack(alignment: .top, spacing: SkyTheme.Spacing.controlGap) {
                         AccountAvatarButton {
                             openAccount()
                         }
@@ -416,8 +418,13 @@ private enum SkyTabBarMetrics {
     static let tabCount: CGFloat = 4
     /// Keeps half of the former gap above the touch-target floor.
     static let spacingScale: CGFloat = 0.5
-    /// Pulls the selected white circle in from the 44pt item so it reads smaller.
-    static let selectedCircleInset: CGFloat = 4
+    /// Selected white circle inset from the 44pt item. 3pt → radius 19pt
+    /// (1pt larger than the previous 4pt inset / 18pt radius).
+    static let selectedCircleInset: CGFloat = 3
+    /// Icon and label are two points smaller than the prior 18 / 12 sizes.
+    static let iconSize: CGFloat = 16
+    static let iconFrameHeight: CGFloat = 18
+    static let labelSize: CGFloat = 10
     /// Left/right end radius of the glass pill — same as the selected circle’s radius.
     static var pillCornerRadius: CGFloat {
         (StartMapChrome.tabBarItemMinHeight - selectedCircleInset * 2) / 2
@@ -476,11 +483,10 @@ private struct SkyGlassTabBar: View {
         } label: {
             VStack(spacing: 2) {
                 Image(systemName: selected ? filled(symbol) : symbol)
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(height: 20)
+                    .font(.system(size: SkyTabBarMetrics.iconSize, weight: .semibold))
+                    .frame(height: SkyTabBarMetrics.iconFrameHeight)
                 Text(title)
-                    .font(SkyTheme.Font.caption)
-                    .fontWeight(.medium)
+                    .font(.system(size: SkyTabBarMetrics.labelSize, weight: .medium))
             }
             // Selected: white circle + ink (matches reference capsule nav).
             .foregroundStyle(selected ? SkyTheme.Color.ink : SkyTheme.Color.onStarryGray)

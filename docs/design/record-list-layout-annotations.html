@@ -688,7 +688,7 @@
           <tr><td>删除按钮</td><td class="num">15 Semibold</td><td>onPrimary on danger</td><td class="src">Font.subheadline</td></tr>
           <tr><td>空状态标题</td><td class="num">17 Semibold</td><td>ink</td><td class="src">Font.headline</td></tr>
           <tr><td>空状态说明</td><td class="num">13 Regular</td><td>secondary</td><td class="src">Font.footnote</td></tr>
-          <tr><td>无坐标色板</td><td class="num">满幅 84</td><td>RecordEmptyMark 蓝渐变+白标；力量/综合不用</td><td class="src">RecordSportSwatch</td></tr>
+          <tr><td>无坐标色板</td><td class="num">满幅 84</td><td>RecordEmptyMark 蓝渐变+白标（含力量/综合）</td><td class="src">RecordSportSwatch</td></tr>
         </tbody>
       </table>
       <p class="note">字族：系统 SF Pro（<code>SkyTheme.Font.fontFamily</code>）。主/次指标数字 <code>monospacedDigit()</code>。</p>
@@ -721,7 +721,7 @@
           <tr><td>主指标两列</td><td>距离/消耗 leading · 时长 trailing · 等分半宽</td></tr>
           <tr><td>次指标列</td><td>等分；首 leading、中 center、末 trailing（与时长右缘齐）</td></tr>
           <tr><td>缺值次指标</td><td>不画该列，不显示「—」</td></tr>
-          <tr><td>缩略图</td><td>固定 84×84，等于右侧固定文案块高度。力量训练、综合训练始终用地图色板（有起点画定位圆点，无起点也保留地图底，不用图标图片）</td></tr>
+          <tr><td>缩略图</td><td>固定 84×84，等于右侧固定文案块高度。力量训练、综合训练有起点时画定位圆点地图；无起点与其他类型相同，用 RecordEmptyMark</td></tr>
           <tr><td>左滑删除</td><td>露出 72+8；仅水平手势开始</td></tr>
           <tr><td>粘性月份</td><td>跟视口顶部卡片月份；同位淡入淡出 0.2s</td></tr>
         </tbody>
