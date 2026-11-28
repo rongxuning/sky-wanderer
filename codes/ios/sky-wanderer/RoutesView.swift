@@ -961,10 +961,6 @@ struct RouteDetailView: View {
             switch page.card {
             case .totals:
                 let totals = RouteFacts.displayTotals(route)
-                Text("总数据")
-                    .font(.system(size: title, weight: .bold, design: .rounded))
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    .lineLimit(1)
                 factMetric("导入时间", importTime(route), SkyTheme.Color.ink, label: label, valueSize: value)
                 HStack(alignment: .top, spacing: 10) {
                     factMetric("距离", routeKilometers(totals.distanceMeters), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
