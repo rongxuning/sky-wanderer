@@ -450,7 +450,7 @@ private struct RecordMonthTitle: View {
     private func line(_ text: String, opacity: Double) -> some View {
         Text(text)
             .font(.system(size: monthSize, weight: .bold))
-            .foregroundStyle(SkyTheme.Color.ink)
+            .foregroundStyle(SkyTheme.Color.starryGray)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .opacity(text.isEmpty ? 0 : opacity)
@@ -486,7 +486,7 @@ private struct RecordMonthSectionLabel: View {
     var body: some View {
         Text(title)
             .font(.system(size: monthSize, weight: .bold))
-            .foregroundStyle(SkyTheme.Color.ink)
+            .foregroundStyle(SkyTheme.Color.starryGray)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, CGFloat(RecordListCardLayout.monthSectionLeading))
             .padding(.trailing, CGFloat(RecordListCardLayout.monthSectionTrailing))

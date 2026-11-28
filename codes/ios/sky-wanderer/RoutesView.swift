@@ -22,21 +22,21 @@ struct RoutesLibraryView: View {
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
 
-    /// Same content height as the records header row (14pt type + 7pt vertical padding).
-    private var importBarContentHeight: CGFloat {
-        14 + CGFloat(RecordListCardLayout.filterChipPaddingV) * 2
-    }
-
     var body: some View {
-        VStack(spacing: 0) {
-            importBar
-            if app.importedRoutes.isEmpty {
-                emptyState
-            } else {
-                routeList
+        GeometryReader { geo in
+            Group {
+                if app.importedRoutes.isEmpty {
+                    emptyState
+                } else {
+                    routeList
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) {
+                importToolChrome(in: geo)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(SkyTheme.Color.grouped.ignoresSafeArea())
         .navigationTitle(embeddedInHome ? "" : "路线")
         .navigationBarTitleDisplayMode(.inline)
@@ -66,20 +66,36 @@ struct RoutesLibraryView: View {
         }
     }
 
-    /// Left-aligned import control. Same insets and row height as the records month bar; no dark fill.
-    private var importBar: some View {
-        HStack(alignment: .center, spacing: CGFloat(RecordListCardLayout.headerGap)) {
-            RouteImportButton { importing = true }
-            Spacer(minLength: 0)
+    /// Same dock as the records filter tool: top edge on the screen midline,
+    /// starry-gray circle plate.
+    private func importToolChrome(in geo: GeometryProxy) -> some View {
+        let point = StartMapChrome.filterToolHomeCenter(
+            screenHeight: ChromeLength(geo.size.height)
+        )
+        return Button {
+            importing = true
+        } label: {
+            Image("RouteImport")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+                .foregroundStyle(SkyTheme.Color.onStarryGray)
+                .frame(
+                    width: CGFloat(StartMapChrome.toolDiameter),
+                    height: CGFloat(StartMapChrome.toolDiameter)
+                )
+                .background(SkyTheme.Color.starryGray, in: Circle())
+                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
         }
-        .frame(height: importBarContentHeight)
-        .padding(.leading, SkyTheme.Spacing.screenInset)
-        .padding(.trailing, SkyTheme.Spacing.screenInset)
-        .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
-        .zIndex(1)
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .accessibilityLabel("导入 GPX")
+        .position(x: CGFloat(point.x), y: CGFloat(point.y))
+        .zIndex(2)
     }
 
-    /// One sentence. The import control above is the only call to action.
+    /// One sentence. The floating import control is the only call to action.
     private var emptyState: some View {
         Text("还没有导入的路线")
             .font(SkyTheme.Font.headline)
@@ -163,34 +179,6 @@ struct RoutesLibraryView: View {
                 importError = "这个文件里没有路线点。"
             }
         }
-    }
-}
-
-/// Brand-blue import glyph. Drawn at 22pt; the hit target stays 44pt.
-private struct RouteImportButton: View {
-    var action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image("RouteImport")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 22, height: 22)
-                .foregroundStyle(SkyTheme.Color.primary)
-                .frame(width: 36, height: 36)
-        }
-        .buttonStyle(RouteImportButtonStyle())
-        .accessibilityLabel("导入 GPX")
-    }
-}
-
-private struct RouteImportButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .opacity(configuration.isPressed ? 0.72 : 1)
-            .frame(width: SkyTheme.Spacing.touchMin, height: SkyTheme.Spacing.touchMin, alignment: .leading)
-            .contentShape(Rectangle())
     }
 }
 

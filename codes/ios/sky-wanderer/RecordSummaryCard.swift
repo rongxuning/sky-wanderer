@@ -130,7 +130,7 @@ struct RecordSummaryCard: View {
                 .fixedSize(horizontal: true, vertical: true)
             Text(RecordListCardText.started(workout.start))
                 .font(dateFont)
-                .foregroundStyle(SkyTheme.Color.ink)
+                .foregroundStyle(SkyTheme.Color.starryGray)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity, alignment: .trailing)

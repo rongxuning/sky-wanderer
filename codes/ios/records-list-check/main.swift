@@ -438,6 +438,7 @@ check(
 check(RecordListThumbnailFile.folder == "record-thumbs", "thumbnail folder name is fixed")
 
 check(RecordListChrome.labelHex == 0x1C1C1E, "list sport title and primary figures use ink")
+check(RecordListChrome.dateHex == 0x2C2C2E, "list start time and month titles use starry gray")
 check(RecordListChrome.chipFillHex == 0x3A3A3C, "legacy chip fill hex stays for older checks")
 check(
     RecordListChrome.accentHex(for: .outdoorRunning) == RecordListChrome.labelHex,

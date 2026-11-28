@@ -23,7 +23,8 @@ enum SkyTheme {
         static let nickname = SkyHex.color(0x636366)
         static let tertiary = SkyHex.color(0xC6C6C8)
         static let separator = SkyHex.color(0xC6C6C8)
-        /// 星空灰. Home floating tab capsule, avatar plate, and training-map tool buttons.
+        /// 星空灰. Home floating tab capsule, avatar plate, training-map / list
+        /// tool buttons, and record-list month / start-time text.
         static let starryGray = SkyHex.color(0x2C2C2E)
         /// Slightly lighter plate on `starryGray` (legacy chip fill; kept for token parity).
         static let starryChip = SkyHex.color(0x3A3A3C)

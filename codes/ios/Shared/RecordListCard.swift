@@ -108,10 +108,13 @@ enum RecordListCardLayout {
 }
 
 /// List-card chrome. Duration uses light gray (`secondary`). Sport title,
-/// start time, distance, and energy share `ink` (`labelHex`). Thumbnail tracks
-/// still use `distanceHex`. Legacy chip / energy hexes stay for older checks.
+/// distance, and energy share `ink` (`labelHex`). Start time and month titles
+/// use `starryGray` (`dateHex`). Thumbnail tracks still use `distanceHex`.
+/// Legacy chip / energy hexes stay for older checks.
 enum RecordListChrome {
     static let labelHex: UInt32 = 0x1C1C1E
+    /// Month titles and card start time. Same value as `SkyTheme.Color.starryGray`.
+    static let dateHex: UInt32 = 0x2C2C2E
     /// Legacy dark chip fill. List cards no longer paint a chip background.
     static let chipFillHex: UInt32 = 0x3A3A3C
     /// Training duration on the list card. Same value as `SkyTheme.Color.secondary`.
