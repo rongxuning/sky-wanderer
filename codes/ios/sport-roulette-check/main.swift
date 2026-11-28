@@ -43,12 +43,27 @@ near(
     SportRouletteGeometry.dotDiameter + SportRouletteGeometry.neighborEdgeGap,
     "center distance = diameter + half-diameter gap"
 )
-near(SportRouletteGeometry.angleStep, .pi / 4, "five visible items span a semicircle")
+let semicircleRadius = SportRouletteGeometry.neighborCenterDistance
+    / (2 * ChromeLength(sin(Double(.pi / 4) / 2)))
 near(
     SportRouletteGeometry.radius,
-    SportRouletteGeometry.neighborCenterDistance
-        / (2 * ChromeLength(sin(Double(SportRouletteGeometry.angleStep) / 2))),
-    "radius follows chord and angleStep"
+    semicircleRadius * 1.2,
+    "radius is 20% larger than five-on-semicircle"
+)
+near(
+    SportRouletteGeometry.angleStep,
+    2 * ChromeLength(asin(Double(
+        SportRouletteGeometry.neighborCenterDistance / (2 * SportRouletteGeometry.radius)
+    ))),
+    "angleStep follows chord and enlarged radius"
+)
+check(
+    Double(SportRouletteGeometry.angleStep) * 4 < Double.pi,
+    "five visible items span less than a semicircle"
+)
+check(
+    Double(SportRouletteGeometry.angleStep) < Double.pi / 4,
+    "enlarged radius tightens angleStep below π/4"
 )
 near(SportRouletteGeometry.dragPixelsPerStep, 77, "drag pixels per index step (20% slower than 64)")
 near(SportRouletteGeometry.snapSpringResponse, 0.456, "snap spring is 20% slower than 0.38")
@@ -128,18 +143,17 @@ let below = SportRouletteGeometry.position(
 )
 check(above.y < mid.y, "lower index is above midline")
 check(below.y > mid.y, "higher index is below midline")
-check(above.x < mid.x || abs(Double(above.x - mid.x)) < 1, "semicircle bows so off-center x is not right of center")
-check(below.x < mid.x || abs(Double(below.x - mid.x)) < 1, "lower semicircle side also left of or at center x")
+check(above.x < mid.x || abs(Double(above.x - mid.x)) < 1, "arc bows so off-center x is not right of center")
+check(below.x < mid.x || abs(Double(below.x - mid.x)) < 1, "lower arc side also left of or at center x")
 let neighborChord = ChromeLength(
     (Double(above.x - mid.x) * Double(above.x - mid.x) + Double(above.y - mid.y) * Double(above.y - mid.y)).squareRoot()
 )
 near(neighborChord, SportRouletteGeometry.neighborCenterDistance, "on-screen neighbor chord matches geometry")
 
-// Neighbors at ±angleStep sit near ±45° on the semicircle.
 let expectedNeighborX = SportRouletteGeometry.centerX(screenWidth: screenWidth)
     + SportRouletteGeometry.radius * ChromeLength(cos(Double(SportRouletteGeometry.angleStep)))
-near(above.x, expectedNeighborX, "upper neighbor follows semicircle x")
-near(below.x, expectedNeighborX, "lower neighbor follows semicircle x")
+near(above.x, expectedNeighborX, "upper neighbor follows arc x")
+near(below.x, expectedNeighborX, "lower neighbor follows arc x")
 
 near(
     SportRouletteGeometry.projectedScrollOffsetOnRelease(
