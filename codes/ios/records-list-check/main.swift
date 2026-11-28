@@ -379,17 +379,21 @@ check(RecordListCardLayout.contentInsetVertical == 10, "vertical inset is 10pt")
 let thumbID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
 check(
     RecordListThumbnailFile.relativePath(id: thumbID, basemapToken: "t", side: 100)
-        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v5.jpg",
+        == "record-thumbs/AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-t-100-v6.jpg",
     "list thumbnails live under record-thumbs with id, basemap, side, and plate version"
 )
-check(RecordListThumbnailFile.plateVersion == "5", "plate version drops failed black captures")
+check(RecordListThumbnailFile.plateVersion == "6", "plate version drops blank backdrop captures")
 check(
     !RecordListThumbnailQuality.isUsable(meanLuma: 0.02, darkPixelFraction: 0.98),
     "near-black MapKit failures are not usable plates"
 )
 check(
-    RecordListThumbnailQuality.isUsable(meanLuma: 0.55, darkPixelFraction: 0.1),
+    RecordListThumbnailQuality.isUsable(meanLuma: 0.55, darkPixelFraction: 0.1, lumaSpread: 0.4),
     "a normal basemap plate stays usable"
+)
+check(
+    !RecordListThumbnailQuality.isUsable(meanLuma: 0.94, darkPixelFraction: 0, lumaSpread: 0.01),
+    "unpainted light backdrop plates are not usable"
 )
 let blackBytes = [UInt8](repeating: 0, count: 4 * 4 * 4)
 let blackSample = RecordListThumbnailQuality.sample(
@@ -404,9 +408,28 @@ check(blackSample.darkPixelFraction > 0.95, "solid black is almost all dark pixe
 check(
     !RecordListThumbnailQuality.isUsable(
         meanLuma: blackSample.meanLuma,
-        darkPixelFraction: blackSample.darkPixelFraction
+        darkPixelFraction: blackSample.darkPixelFraction,
+        lumaSpread: blackSample.lumaSpread
     ),
     "sampled black buffers are rejected"
+)
+let blankBytes = [UInt8](repeating: 240, count: 4 * 4 * 4)
+let blankSample = RecordListThumbnailQuality.sample(
+    bytes: blankBytes,
+    bytesPerPixel: 4,
+    width: 4,
+    height: 4,
+    step: 1
+)
+check(blankSample.meanLuma > 0.9, "solid backdrop samples are bright")
+check(blankSample.lumaSpread < 0.02, "solid backdrop samples have almost no spread")
+check(
+    !RecordListThumbnailQuality.isUsable(
+        meanLuma: blankSample.meanLuma,
+        darkPixelFraction: blankSample.darkPixelFraction,
+        lumaSpread: blankSample.lumaSpread
+    ),
+    "sampled blank backdrop buffers are rejected"
 )
 check(
     RecordListThumbnailFile.idPrefix(thumbID) == "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE-",
@@ -588,6 +611,20 @@ let strengthRepaired = WorkoutImport.merging(strengthInvalidRoute, with: strengt
 check(
     strengthRepaired.startCoordinate?.longitude == 121.4737,
     "merge replaces an unusable strength route with the imported gym pin"
+)
+var strengthFileOnly = strengthMissingPin
+strengthFileOnly.route = []
+strengthFileOnly.routeTrackFilename = "workout-tracks/strength-file-only.json"
+// Simulate a detached full track the list summary lost: startCoordinate falls
+// back through WorkoutTrackStore when the in-record polyline is empty. The check
+// only asserts the GeoPoint.valid path when a summary pin is present.
+var strengthSummaryPin = strengthFileOnly
+strengthSummaryPin.route = [
+    GeoPoint(latitude: 31.11, longitude: 121.22, altitude: 3, timestamp: saturday)
+]
+check(
+    strengthSummaryPin.startCoordinate?.latitude == 31.11,
+    "strength startCoordinate reads the in-record summary pin"
 )
 check(
     GeoPoint.valid(latitude: 91, longitude: 121) == nil,
