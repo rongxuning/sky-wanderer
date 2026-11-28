@@ -25,7 +25,9 @@ struct RoutesLibraryView: View {
     @State private var searchQuery = ""
     /// Keyboard frame in global coordinates. `.zero` while the keyboard is hidden.
     @State private var keyboardFrame: CGRect = .zero
-    @FocusState private var searchFocused: Bool
+    /// Drives the UIKit search field’s first responder. Not `@FocusState` —
+    /// clipping the field to zero width leaves the system keyboard up otherwise.
+    @State private var searchFocused = false
     @ObservedObject private var basemapCenter = SkyBasemapCenter.shared
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
@@ -94,7 +96,7 @@ struct RoutesLibraryView: View {
                     searchFocused = true
                 }
             } else {
-                searchFocused = false
+                dismissSearchKeyboard()
                 searchQuery = ""
             }
         }
@@ -103,6 +105,8 @@ struct RoutesLibraryView: View {
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                     searchExpanded = false
                 }
+            } else if !active {
+                dismissSearchKeyboard()
             }
             publishPeripheralChrome()
         }
@@ -116,6 +120,7 @@ struct RoutesLibraryView: View {
             if searchExpanded {
                 searchExpanded = false
             }
+            dismissSearchKeyboard()
             publishPeripheralChrome()
         }
         .task(id: RouteListBackfillKey(
@@ -145,6 +150,9 @@ struct RoutesLibraryView: View {
                     systemName: "magnifyingglass",
                     label: searchExpanded ? "关闭搜索" : "搜索路线"
                 ) {
+                    if searchExpanded {
+                        dismissSearchKeyboard()
+                    }
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                         searchExpanded.toggle()
                     }
@@ -199,19 +207,28 @@ struct RoutesLibraryView: View {
         }
     }
 
+    /// Clears the UIKit field’s first responder and endEditing as a backstop.
+    private func dismissSearchKeyboard() {
+        searchFocused = false
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                window.endEditing(true)
+            }
+        }
+    }
+
     private func searchField(width: CGFloat) -> some View {
-        TextField("搜索路线", text: $searchQuery)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .submitLabel(.search)
-            .font(SkyTheme.Font.body)
-            .foregroundStyle(SkyTheme.Color.ink)
-            .padding(.horizontal, 14)
-            .frame(width: width, height: CGFloat(StartMapChrome.toolDiameter))
-            .background(SkyTheme.Color.recordCard, in: Capsule())
-            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
-            .focused($searchFocused)
-            .accessibilityLabel("搜索路线名称")
+        RouteListSearchField(
+            text: $searchQuery,
+            isFocused: $searchFocused,
+            onDismissKeyboard: dismissSearchKeyboard
+        )
+        .padding(.horizontal, 14)
+        .frame(width: width, height: CGFloat(StartMapChrome.toolDiameter))
+        .background(SkyTheme.Color.recordCard, in: Capsule())
+        .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
+        .accessibilityLabel("搜索路线名称")
     }
 
     private func toolCircleButton(
@@ -367,6 +384,113 @@ struct RoutesLibraryView: View {
             if identifiers.isEmpty {
                 importError = "这个文件里没有路线点。"
             }
+        }
+    }
+}
+
+/// UIKit field so resign + keyboard accessory stay reliable. SwiftUI `TextField`
+/// often keeps the system keyboard after the chrome collapses to zero width.
+private struct RouteListSearchField: UIViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    var onDismissKeyboard: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, isFocused: $isFocused, onDismissKeyboard: onDismissKeyboard)
+    }
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.borderStyle = .none
+        field.placeholder = "搜索路线"
+        field.font = UIFont.preferredFont(forTextStyle: .body)
+        field.textColor = UIColor(SkyTheme.Color.ink)
+        field.returnKeyType = .search
+        field.autocorrectionType = .no
+        field.autocapitalizationType = .none
+        field.clearButtonMode = .whileEditing
+        field.delegate = context.coordinator
+        field.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.editingChanged(_:)),
+            for: .editingChanged
+        )
+        field.inputAccessoryView = context.coordinator.makeAccessory()
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.accessibilityLabel = "搜索路线名称"
+        return field
+    }
+
+    func updateUIView(_ field: UITextField, context: Context) {
+        context.coordinator.text = $text
+        context.coordinator.isFocused = $isFocused
+        context.coordinator.onDismissKeyboard = onDismissKeyboard
+        if field.text != text {
+            field.text = text
+        }
+        if isFocused {
+            if !field.isFirstResponder {
+                DispatchQueue.main.async {
+                    // Focus may have been cleared before this runs (close search).
+                    guard context.coordinator.isFocused.wrappedValue else { return }
+                    _ = field.becomeFirstResponder()
+                }
+            }
+        } else if field.isFirstResponder {
+            field.resignFirstResponder()
+        }
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var text: Binding<String>
+        var isFocused: Binding<Bool>
+        var onDismissKeyboard: () -> Void
+
+        init(
+            text: Binding<String>,
+            isFocused: Binding<Bool>,
+            onDismissKeyboard: @escaping () -> Void
+        ) {
+            self.text = text
+            self.isFocused = isFocused
+            self.onDismissKeyboard = onDismissKeyboard
+        }
+
+        func makeAccessory() -> UIToolbar {
+            let bar = UIToolbar()
+            bar.sizeToFit()
+            let flex = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+            let dismiss = UIBarButtonItem(
+                title: "收起",
+                style: .done,
+                target: self,
+                action: #selector(tapDismiss)
+            )
+            dismiss.accessibilityLabel = "收起键盘"
+            bar.items = [flex, dismiss]
+            return bar
+        }
+
+        @objc func editingChanged(_ field: UITextField) {
+            text.wrappedValue = field.text ?? ""
+        }
+
+        @objc func tapDismiss() {
+            onDismissKeyboard()
+        }
+
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            isFocused.wrappedValue = true
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            isFocused.wrappedValue = false
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            textField.resignFirstResponder()
+            isFocused.wrappedValue = false
+            return true
         }
     }
 }
