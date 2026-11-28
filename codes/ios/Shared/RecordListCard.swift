@@ -2,10 +2,11 @@ import Foundation
 
 /// Records-list sport menu.
 ///
-/// The log has no stored filter. The chip bar is 全部 plus each `SportKind` that
-/// actually appears in the loaded workouts, in `SportKind.allCases` order.
-/// `apply` returns a new array for the rows on screen. It does not insert,
-/// delete, or rewrite workout data, and it does not change distance, pace, or load.
+/// The log has no stored filter. The left compass roulette is 全部 plus each
+/// `SportKind` that actually appears in the loaded workouts, in
+/// `SportKind.allCases` order. `apply` returns a new array for the rows on
+/// screen. It does not insert, delete, or rewrite workout data, and it does not
+/// change distance, pace, or load.
 enum RecordListFilter {
     static func sports(in workouts: [WorkoutRecord]) -> [SportKind] {
         let present = Set(workouts.map(\.sport))
@@ -35,7 +36,7 @@ enum RecordListCardLayout {
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
     static let titleToMiddle = 12.0
-    /// Fits the 28pt distance / energy figure beside the 84pt map.
+    /// Fits the 27pt distance / energy figure beside the 84pt map.
     static let upperLine = 33.0
     /// Gap between the distance row and the secondary metrics.
     static let middleToBottom = 3.0
@@ -44,12 +45,12 @@ enum RecordListCardLayout {
     static let mapToContent = 14.0
     static let contentTrailing = 10.0
     static let informationWidth = 220.0
-    /// Horizontal gap between the sticky month title and the sport chips.
+    /// Horizontal gap reserved beside the sticky month title.
     /// Same value as `SkyTheme.Spacing.related`.
     static let headerGap = 8.0
     /// Space under the header row before the list starts.
     static let filterBarBottom = 10.0
-    /// Horizontal gap between sport filter capsules.
+    /// Legacy chip metrics — kept for routes header height math.
     static let filterChipGap = 8.0
     static let filterChipPaddingH = 12.0
     static let filterChipPaddingV = 7.0

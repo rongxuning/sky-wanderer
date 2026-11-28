@@ -13,9 +13,12 @@ struct RecordSummaryCard: View {
 
     @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
     @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 28
-    @ScaledMetric(relativeTo: .title3) private var durationSize: CGFloat = 22
+    /// One point smaller than the previous 28pt primary figure.
+    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 27
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
+
+    /// Always one point larger than the date/time on the title row.
+    private var durationSize: CGFloat { dateSize + 1 }
 
     private var secondaryMetrics: [RecordListSecondaryMetric] {
         RecordListSecondaryMetric.visible(in: workout)

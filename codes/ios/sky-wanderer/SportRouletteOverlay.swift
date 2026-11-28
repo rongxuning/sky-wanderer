@@ -1,8 +1,26 @@
 import SwiftUI
 
+/// One node on the sport-type roulette. Training uses every `SportKind`;
+/// the records filter prepends ``all``.
+struct SportRouletteItem: Identifiable, Equatable, Hashable {
+    var id: String
+    var title: String
+    var symbol: String
+
+    static let all = SportRouletteItem(
+        id: "all",
+        title: "全部",
+        symbol: "square.grid.2x2"
+    )
+
+    static func sport(_ kind: SportKind) -> SportRouletteItem {
+        SportRouletteItem(id: kind.id, title: kind.title, symbol: kind.symbol)
+    }
+}
+
 struct SportRouletteOverlay: View {
-    var sports: [SportKind] = Array(SportKind.allCases)
-    @Binding var selection: SportKind
+    var items: [SportRouletteItem]
+    @Binding var selectionID: String
     var screenWidth: CGFloat
     var screenHeight: CGFloat
     var onDismiss: () -> Void
@@ -13,7 +31,67 @@ struct SportRouletteOverlay: View {
     @State private var pendingTapIndex: Int?
 
     private var springResponse: Double { Double(SportRouletteGeometry.snapSpringResponse) }
-    private var itemCount: Int { sports.count }
+    private var itemCount: Int { items.count }
+
+    /// Training start map: every sport, selection is `SportKind`.
+    init(
+        selection: Binding<SportKind>,
+        sports: [SportKind] = Array(SportKind.allCases),
+        screenWidth: CGFloat,
+        screenHeight: CGFloat,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.items = sports.map(SportRouletteItem.sport)
+        self._selectionID = Binding(
+            get: { selection.wrappedValue.id },
+            set: { id in
+                if let sport = sports.first(where: { $0.id == id }) {
+                    selection.wrappedValue = sport
+                }
+            }
+        )
+        self.screenWidth = screenWidth
+        self.screenHeight = screenHeight
+        self.onDismiss = onDismiss
+    }
+
+    /// Records filter: ``SportRouletteItem/all`` plus the sports that appear in the log.
+    init(
+        filter: Binding<SportKind?>,
+        sports: [SportKind],
+        screenWidth: CGFloat,
+        screenHeight: CGFloat,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.items = [SportRouletteItem.all] + sports.map(SportRouletteItem.sport)
+        self._selectionID = Binding(
+            get: { filter.wrappedValue?.id ?? SportRouletteItem.all.id },
+            set: { id in
+                if id == SportRouletteItem.all.id {
+                    filter.wrappedValue = nil
+                } else {
+                    filter.wrappedValue = sports.first(where: { $0.id == id })
+                }
+            }
+        )
+        self.screenWidth = screenWidth
+        self.screenHeight = screenHeight
+        self.onDismiss = onDismiss
+    }
+
+    init(
+        items: [SportRouletteItem],
+        selectionID: Binding<String>,
+        screenWidth: CGFloat,
+        screenHeight: CGFloat,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.items = items
+        self._selectionID = selectionID
+        self.screenWidth = screenWidth
+        self.screenHeight = screenHeight
+        self.onDismiss = onDismiss
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -22,12 +100,12 @@ struct SportRouletteOverlay: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onDismiss)
 
-            ForEach(Array(sports.enumerated()).filter { index, _ in isRendered(index) }, id: \.element.id) { index, sport in
-                item(sport: sport, index: index)
+            ForEach(Array(items.enumerated()).filter { index, _ in isRendered(index) }, id: \.element.id) { index, item in
+                row(item: item, index: index)
             }
         }
         .onAppear {
-            if let idx = sports.firstIndex(of: selection) {
+            if let idx = items.firstIndex(where: { $0.id == selectionID }) {
                 scrollOffset = CGFloat(SportRouletteGeometry.scrollOffset(centering: idx))
             }
         }
@@ -41,7 +119,7 @@ struct SportRouletteOverlay: View {
     }
 
     @ViewBuilder
-    private func item(sport: SportKind, index: Int) -> some View {
+    private func row(item: SportRouletteItem, index: Int) -> some View {
         let angle = SportRouletteGeometry.angle(forIndex: index, scrollOffset: ChromeLength(scrollOffset))
         let point = SportRouletteGeometry.position(
             index: index,
@@ -61,12 +139,12 @@ struct SportRouletteOverlay: View {
                 Circle()
                     .fill(SkyTheme.Color.starryGray)
                     .frame(width: dot, height: dot)
-                Image(systemName: sport.symbol)
+                Image(systemName: item.symbol)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(SkyTheme.Color.onStarryGray)
             }
             .overlay(alignment: .leading) {
-                Text(sport.title)
+                Text(item.title)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(SkyTheme.Color.onPrimary)
                     .fixedSize()
@@ -150,7 +228,7 @@ struct SportRouletteOverlay: View {
     }
 
     private func commit(_ index: Int) {
-        guard sports.indices.contains(index) else { return }
-        selection = sports[index]
+        guard items.indices.contains(index) else { return }
+        selectionID = items[index].id
     }
 }

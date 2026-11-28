@@ -1,8 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// Records tab. The month and the sport filter chips share one fixed row. Cards scroll only below that bar.
+/// Records tab. Month title stays fixed at the top. Sport filter is a left
+/// compass tool (same roulette as training), with 全部 prepended.
 struct RecordFeedView: View {
+    var isActive: Bool = true
+    @Binding var peripheralChromeVisible: Bool
+
     @EnvironmentObject private var app: PhoneAppState
     @State private var revealedWorkoutID: UUID?
     @State private var pendingDeleteID: UUID?
@@ -11,53 +15,202 @@ struct RecordFeedView: View {
     /// Nil is 全部. Applied to the rows on screen; `app.workouts` is left as stored.
     @State private var sportFilter: SportKind?
     @State private var showsMetricHelp = false
-    @ScaledMetric(relativeTo: .subheadline) private var filterSize: CGFloat = 14
+    @State private var showSportRoulette = false
+    @State private var filterToolFlight: CGFloat = 0
+    @State private var rouletteTransitionTask: Task<Void, Never>?
     @ObservedObject private var basemapCenter = SkyBasemapCenter.shared
 
+    init(
+        isActive: Bool = true,
+        peripheralChromeVisible: Binding<Bool> = .constant(true)
+    ) {
+        self.isActive = isActive
+        self._peripheralChromeVisible = peripheralChromeVisible
+    }
+
     var body: some View {
-        feed
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SkyTheme.Color.grouped.ignoresSafeArea())
-            .task {
-                await app.importFromApple()
-            }
-            .task(id: PlateBackfillKey(ids: app.workouts.map(\.id), tianditu: basemapCenter.mode == .tianditu)) {
-                // List cells only read disk/memory plates. Missing ones fill in
-                // slowly here so cold launch never opens an MKMapView per card.
-                let mapped = app.workouts.filter {
-                    RecordListThumbnailKind.resolve(routeCount: $0.listThumbnailPointCount) != .swatch
-                }
-                await RecordMapThumbnails.shared.backfill(
-                    workouts: mapped,
-                    side: CGFloat(RecordListCardLayout.mapSide)
-                )
-            }
-            .alert(
-                "删除这条训练记录？",
-                isPresented: deleteAlertPresented,
-                presenting: pendingDeleteID
-            ) { id in
-                Button("取消", role: .cancel) {}
-                Button("删除", role: .destructive) {
-                    if revealedWorkoutID == id {
-                        revealedWorkoutID = nil
+        GeometryReader { geo in
+            feed
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .topLeading) {
+                    if !app.workouts.isEmpty {
+                        filterToolChrome(in: geo)
                     }
-                    app.deleteWorkout(id: id)
                 }
-            } message: { _ in
-                EmptyView()
-            }
-            .sheet(isPresented: $showsMetricHelp) {
-                RecordMetricHelpSheet()
-                    .preferredColorScheme(.light)
-            }
-            .onChange(of: app.workouts.map(\.sport)) { _, sports in
-                // Stays mounted when the list is replaced by the empty state, so a
-                // cleared log cannot keep a sport that is no longer loaded.
-                if let sportFilter, !sports.contains(sportFilter) {
-                    self.sportFilter = nil
+                .overlay {
+                    if showSportRoulette {
+                        SportRouletteOverlay(
+                            filter: $sportFilter,
+                            sports: RecordListFilter.sports(in: app.workouts),
+                            screenWidth: geo.size.width,
+                            screenHeight: geo.size.height,
+                            onDismiss: { closeSportRoulette(animated: true) }
+                        )
+                        .transition(.opacity)
+                    }
                 }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(SkyTheme.Color.grouped.ignoresSafeArea())
+        .task {
+            await app.importFromApple()
+        }
+        .task(id: PlateBackfillKey(ids: app.workouts.map(\.id), tianditu: basemapCenter.mode == .tianditu)) {
+            // List cells only read disk/memory plates. Missing ones fill in
+            // slowly here so cold launch never opens an MKMapView per card.
+            let mapped = app.workouts.filter {
+                RecordListThumbnailKind.resolve(routeCount: $0.listThumbnailPointCount) != .swatch
             }
+            await RecordMapThumbnails.shared.backfill(
+                workouts: mapped,
+                side: CGFloat(RecordListCardLayout.mapSide)
+            )
+        }
+        .alert(
+            "删除这条训练记录？",
+            isPresented: deleteAlertPresented,
+            presenting: pendingDeleteID
+        ) { id in
+            Button("取消", role: .cancel) {}
+            Button("删除", role: .destructive) {
+                if revealedWorkoutID == id {
+                    revealedWorkoutID = nil
+                }
+                app.deleteWorkout(id: id)
+            }
+        } message: { _ in
+            EmptyView()
+        }
+        .sheet(isPresented: $showsMetricHelp) {
+            RecordMetricHelpSheet()
+                .preferredColorScheme(.light)
+        }
+        .onChange(of: app.workouts.map(\.sport)) { _, sports in
+            // Stays mounted when the list is replaced by the empty state, so a
+            // cleared log cannot keep a sport that is no longer loaded.
+            if let sportFilter, !sports.contains(sportFilter) {
+                self.sportFilter = nil
+            }
+        }
+        .onChange(of: app.workouts.isEmpty) { _, empty in
+            if empty {
+                closeSportRoulette(animated: false)
+            }
+        }
+        .onChange(of: isActive) { _, active in
+            if !active {
+                closeSportRoulette(animated: false)
+            }
+            publishPeripheralChrome()
+        }
+        .onChange(of: showSportRoulette) { _, _ in
+            publishPeripheralChrome()
+        }
+        .onDisappear {
+            rouletteTransitionTask?.cancel()
+            rouletteTransitionTask = nil
+            showSportRoulette = false
+            filterToolFlight = 0
+            publishPeripheralChrome()
+        }
+    }
+
+    private var filterSymbol: String {
+        sportFilter?.symbol ?? SportRouletteItem.all.symbol
+    }
+
+    private var filterAccessibilityLabel: String {
+        sportFilter?.title ?? SportRouletteItem.all.title
+    }
+
+    private func filterToolChrome(in geo: GeometryProxy) -> some View {
+        let point = StartMapChrome.typeToolPosition(
+            progress: ChromeLength(filterToolFlight),
+            screenWidth: ChromeLength(geo.size.width),
+            screenHeight: ChromeLength(geo.size.height)
+        )
+        return Button {
+            if showSportRoulette || filterToolFlight > 0.01 {
+                closeSportRoulette(animated: true)
+            } else {
+                openSportRoulette()
+            }
+        } label: {
+            Image(systemName: filterSymbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(SkyTheme.Color.onStarryGray)
+                .frame(
+                    width: CGFloat(StartMapChrome.toolDiameter),
+                    height: CGFloat(StartMapChrome.toolDiameter)
+                )
+                .background(SkyTheme.Color.starryGray, in: Circle())
+                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Circle())
+        .accessibilityLabel(filterAccessibilityLabel)
+        .accessibilityHint("筛选运动类型")
+        .scaleEffect(1 + CGFloat(SportRouletteGeometry.centerScale - 1) * filterToolFlight)
+        .opacity(showSportRoulette ? 0 : 1)
+        .position(x: CGFloat(point.x), y: CGFloat(point.y))
+        .zIndex(2)
+    }
+
+    private func publishPeripheralChrome() {
+        let next = !isActive || (!showSportRoulette && filterToolFlight < 0.01)
+        if peripheralChromeVisible != next {
+            peripheralChromeVisible = next
+        }
+    }
+
+    private func openSportRoulette() {
+        rouletteTransitionTask?.cancel()
+        rouletteTransitionTask = Task { @MainActor in
+            withAnimation(.easeOut(duration: Double(StartMapChrome.rouletteOpenCompanionFade))) {
+                peripheralChromeVisible = false
+            }
+            withAnimation(.spring(
+                response: Double(StartMapChrome.rouletteOpenFly),
+                dampingFraction: 0.86
+            )) {
+                filterToolFlight = 1
+            }
+            let flyNs = UInt64(Double(StartMapChrome.rouletteOpenFly) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: flyNs)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.2)) {
+                showSportRoulette = true
+            }
+        }
+    }
+
+    private func closeSportRoulette(animated: Bool) {
+        rouletteTransitionTask?.cancel()
+        if !animated {
+            showSportRoulette = false
+            filterToolFlight = 0
+            publishPeripheralChrome()
+            return
+        }
+        rouletteTransitionTask = Task { @MainActor in
+            withAnimation(.easeOut(duration: Double(StartMapChrome.rouletteCloseFade))) {
+                showSportRoulette = false
+            }
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(
+                response: Double(StartMapChrome.rouletteCloseFly),
+                dampingFraction: 0.86
+            )) {
+                filterToolFlight = 0
+            }
+            let flyNs = UInt64(Double(StartMapChrome.rouletteCloseFly) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: flyNs)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: Double(StartMapChrome.rouletteOpenCompanionFade))) {
+                peripheralChromeVisible = isActive
+            }
+        }
     }
 
     private var deleteAlertPresented: Binding<Bool> {
@@ -98,57 +251,18 @@ struct RecordFeedView: View {
         }
     }
 
-    /// Header from the top of the screen through the month and sport chips, in the tab bar's color.
-    /// Month on the leading edge; Apple-style horizontal pills to its right on the same row.
+    /// Sticky month title on the starry-gray band. Sport filter lives on the left compass tool.
     private var monthTitleBar: some View {
         HStack(alignment: .center, spacing: CGFloat(RecordListCardLayout.headerGap)) {
             RecordMonthTitle(title: displayedMonthTitle)
                 .layoutPriority(1)
-            sportFilterBar
+            Spacer(minLength: 0)
         }
         .padding(.leading, SkyTheme.Spacing.screenInset)
+        .padding(.trailing, SkyTheme.Spacing.screenInset)
         .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
         .background(SkyTheme.Color.starryGray, ignoresSafeAreaEdges: .top)
         .zIndex(1)
-    }
-
-    /// 全部, then each sport that is actually in the loaded log. Horizontal scroll of capsules.
-    private var sportFilterBar: some View {
-        let sports = RecordListFilter.sports(in: app.workouts)
-        let selection = sportFilter?.title ?? "全部"
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: CGFloat(RecordListCardLayout.filterChipGap)) {
-                sportChip(title: "全部", selected: sportFilter == nil) {
-                    sportFilter = nil
-                }
-                ForEach(sports) { sport in
-                    sportChip(title: sport.title, selected: sportFilter == sport) {
-                        sportFilter = sport
-                    }
-                }
-            }
-            .padding(.trailing, SkyTheme.Spacing.screenInset)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("运动类型")
-        .accessibilityValue(selection)
-    }
-
-    private func sportChip(title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: filterSize, weight: .semibold))
-                .foregroundStyle(selected ? SkyTheme.Color.onPrimary : SkyTheme.Color.onStarryGray)
-                .lineLimit(1)
-                .padding(.horizontal, CGFloat(RecordListCardLayout.filterChipPaddingH))
-                .padding(.vertical, CGFloat(RecordListCardLayout.filterChipPaddingV))
-                .background(
-                    selected ? SkyTheme.Color.primary : SkyTheme.Color.starryChip,
-                    in: Capsule()
-                )
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     private var recordScroll: some View {

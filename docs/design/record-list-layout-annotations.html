@@ -532,7 +532,7 @@
 
           <!-- fonts -->
           <div class="anno tag" style="left:140px;top:18px;">12 Sb + 13 Reg · title 22h</div>
-          <div class="anno tag" style="left:140px;top:58px;">28 Bold 距离 · 22 Reg 时长 · 33h</div>
+          <div class="anno tag" style="left:140px;top:58px;">27 Bold 距离 · 14 Reg 时长 · 33h</div>
           <div class="anno tag" style="left:140px;top:96px;">14 Med + 11 Reg · lowerBlock 28</div>
 
           <!-- card bottom related -->
@@ -609,7 +609,7 @@
       <div class="tree">RecordFeedView
 ├─ monthTitleBar（固定，不进滚动）
 │  ├─ RecordMonthTitle          20 Bold / onPrimary
-│  └─ sportFilterBar            横向胶囊 ScrollView
+│  └─ filter compass tool       左侧罗盘（全部 + 已有运动类型）
 │     └─ sportChip × N          14 Semibold Capsule
 └─ recordScroll
    └─ LazyVStack spacing 0
@@ -628,10 +628,10 @@
         <thead><tr><th>位置</th><th>值 (pt)</th><th>来源</th></tr></thead>
         <tbody>
           <tr><td>顶栏左侧内边距</td><td class="num">16</td><td class="src">SkyTheme.Spacing.screenInset</td></tr>
-          <tr><td>月份 ↔ 筛选胶囊</td><td class="num">8</td><td class="src">RecordListCardLayout.headerGap</td></tr>
+          <tr><td>月份标题行内间距</td><td class="num">8</td><td class="src">RecordListCardLayout.headerGap</td></tr>
           <tr><td>顶栏底边距（列表之上）</td><td class="num">10</td><td class="src">filterBarBottom</td></tr>
-          <tr><td>胶囊间距</td><td class="num">8</td><td class="src">filterChipGap</td></tr>
-          <tr><td>胶囊内边距</td><td class="num">7 × 12</td><td class="src">filterChipPaddingV / H</td></tr>
+          <tr><td>筛选入口</td><td class="num">44</td><td class="src">左侧罗盘工具 · StartMapChrome.toolDiameter</td></tr>
+          <tr><td>筛选选项</td><td class="num">—</td><td class="src">全部 + RecordListFilter.sports（同训练页罗盘）</td></tr>
           <tr><td>滚动区首卡顶距</td><td class="num">10</td><td class="src">firstCardGap</td></tr>
           <tr><td>卡片间距（卡底）</td><td class="num">8</td><td class="src">SkyTheme.Spacing.related</td></tr>
           <tr><td>滚动区底边距</td><td class="num">8</td><td class="src">Spacing.related</td></tr>
@@ -677,12 +677,11 @@
         <thead><tr><th>元素</th><th>字号 / 字重</th><th>颜色</th><th>代码</th></tr></thead>
         <tbody>
           <tr><td>粘性月份</td><td class="num">20 Bold</td><td><span class="swatch" style="background:#fff"></span>onPrimary</td><td class="src">@ScaledMetric · title3</td></tr>
-          <tr><td>筛选胶囊</td><td class="num">14 Semibold</td><td>选中 onPrimary / 未选 onStarryGray</td><td class="src">@ScaledMetric · subheadline</td></tr>
           <tr><td>列表月分段</td><td class="num">18 Bold</td><td>onPrimary on starryGray</td><td class="src">@ScaledMetric · headline</td></tr>
           <tr><td>运动类型标题</td><td class="num">12 Semibold</td><td>ink · 无底色</td><td class="src">sportSize</td></tr>
           <tr><td>开始时间</td><td class="num">13 Regular</td><td>ink</td><td class="src">dateSize · footnote</td></tr>
-          <tr><td>距离 / 消耗</td><td class="num">28 Bold</td><td>ink</td><td class="src">distanceSize · title</td></tr>
-          <tr><td>训练时长</td><td class="num">22 Regular</td><td>secondary</td><td class="src">durationSize · title3</td></tr>
+          <tr><td>距离 / 消耗</td><td class="num">27 Bold</td><td>ink</td><td class="src">distanceSize · title</td></tr>
+          <tr><td>训练时长</td><td class="num">14 Regular</td><td>secondary</td><td class="src">durationSize = dateSize + 1</td></tr>
           <tr><td>次指标数值</td><td class="num">14 Medium</td><td>ink</td><td class="src">lowerSize · subheadline</td></tr>
           <tr><td>次指标单位</td><td class="num">11 Regular</td><td>secondary</td><td class="src">unitSize · caption2</td></tr>
           <tr><td>次指标图标</td><td class="num">12 Semibold · 14×14</td><td>按列色</td><td class="src">RecordListMetricIcon</td></tr>
@@ -700,9 +699,8 @@
       <table>
         <thead><tr><th>Token</th><th>Hex</th><th>用途</th></tr></thead>
         <tbody>
-          <tr><td><span class="swatch" style="background:#2c2c2e"></span>starryGray</td><td class="num">#2C2C2E</td><td>顶栏底、列表月分段条</td></tr>
-          <tr><td><span class="swatch" style="background:#3a3a3c"></span>starryChip</td><td class="num">#3A3A3C</td><td>未选中胶囊</td></tr>
-          <tr><td><span class="swatch" style="background:#1e88fe"></span>primary</td><td class="num">#1E88FE</td><td>选中胶囊</td></tr>
+          <tr><td><span class="swatch" style="background:#2c2c2e"></span>starryGray</td><td class="num">#2C2C2E</td><td>顶栏底、列表月分段条、左侧筛选工具圆钮</td></tr>
+          <tr><td><span class="swatch" style="background:#1e88fe"></span>primary</td><td class="num">#1E88FE</td><td>品牌色（本页筛选不再用胶囊）</td></tr>
           <tr><td><span class="swatch" style="background:#f5f5f7"></span>grouped</td><td class="num">#F5F5F7</td><td>列表底</td></tr>
           <tr><td><span class="swatch" style="background:#ffffff"></span>card</td><td class="num">#FFFFFF</td><td>卡片底（代码用 card，非 recordCard）</td></tr>
           <tr><td><span class="swatch" style="background:#1c1c1e"></span>ink</td><td class="num">#1C1C1E</td><td>运动类型、日期、距离/消耗、次指标值</td></tr>
