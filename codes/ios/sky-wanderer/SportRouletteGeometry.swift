@@ -1,13 +1,13 @@
 import Foundation
 
-/// Semicircle layout for the sport-type roulette on the start map.
+/// Arc layout for the sport-type roulette on the start map.
 /// Uses `ChromeLength` from `StartMapChrome.swift` (same `#if canImport(CoreGraphics)` pattern).
 ///
 /// Convention: the selected (midline) item sits at the **screen center**. The arc
-/// center is to its left so the visible span is a right-facing semicircle `)`.
+/// center is to its left so the visible span is a right-facing bow `)`.
 /// - `θ = (index - scrollOffset) * angleStep`
-/// - Five visible steps span `π` (`angleStep = π/4`)
-/// - Neighbor edge gap = half `dotDiameter`; radius follows that chord
+/// - Neighbor edge gap = half `dotDiameter`; chord stays diameter + gap
+/// - Radius is 20% larger than a five-on-semicircle fit, so five nodes span less than `π`
 /// - `x = arcCenterX + radius * cos(θ)` with `arcCenterX = screenCenterX - radius`
 /// - `y = screenCenterY + radius * sin(θ)`
 enum SportRouletteGeometry {
@@ -15,12 +15,15 @@ enum SportRouletteGeometry {
     static let dotDiameter: ChromeLength = 44
     /// Clear gap between neighboring unscaled dots (edge to edge) = half a circular icon.
     static let neighborEdgeGap: ChromeLength = dotDiameter / 2
-    /// Four steps between five visible items cover a semicircle.
-    static let angleStep: ChromeLength = .pi / 4
     /// Chord between adjacent centers = diameter + edge gap.
-    /// `radius = chord / (2 · sin(angleStep / 2))` keeps five items on a semicircle.
-    static let radius: ChromeLength = (dotDiameter + neighborEdgeGap)
-        / (2 * ChromeLength(sin(Double(angleStep) / 2)))
+    static let neighborCenterDistance: ChromeLength = dotDiameter + neighborEdgeGap
+    /// 20% larger than the five-on-semicircle radius so the visible bow is deeper.
+    static let radius: ChromeLength = neighborCenterDistance
+        / (2 * ChromeLength(sin(Double(.pi / 4) / 2))) * 1.2
+    /// From chord + enlarged radius — five visible items no longer fill a semicircle.
+    static let angleStep: ChromeLength = 2 * ChromeLength(
+        asin(Double(neighborCenterDistance / (2 * radius)))
+    )
     /// Unwrapped angle past which items are not drawn. Keeps far items from wrapping onto the visible arc.
     static let hiddenBeyondAngle: ChromeLength = angleStep * 2.5
     static let centerScale: ChromeLength = 1.2
@@ -31,11 +34,6 @@ enum SportRouletteGeometry {
     static let dragPixelsPerStep: ChromeLength = 77
     /// Snap / tap-to-center spring. 20% slower than the previous 0.38s response.
     static let snapSpringResponse: ChromeLength = 0.456
-
-    /// Chord length between adjacent item centers on the arc.
-    static var neighborCenterDistance: ChromeLength {
-        2 * radius * ChromeLength(sin(Double(angleStep) / 2))
-    }
 
     /// Vertical center of the selected item — screen midline.
     static func centerY(screenHeight: ChromeLength) -> ChromeLength {

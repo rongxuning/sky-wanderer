@@ -17,7 +17,7 @@ struct SportRouletteOverlay: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black.opacity(0.55)
+            Color.black.opacity(0.72)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onDismiss)
@@ -67,8 +67,8 @@ struct SportRouletteOverlay: View {
             }
             .overlay(alignment: .leading) {
                 Text(sport.title)
-                    .font(.system(size: 16, weight: onMidline ? .semibold : .regular))
-                    .foregroundStyle(SkyTheme.Color.ink)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(SkyTheme.Color.onPrimary)
                     .fixedSize()
                     .padding(.leading, dot + SkyTheme.Spacing.related)
             }
