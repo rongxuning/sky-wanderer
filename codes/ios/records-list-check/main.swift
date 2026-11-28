@@ -335,7 +335,7 @@ check(RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock, "m
 check(RecordListCardLayout.mapSide == 84, "map side is the approved 84pt square")
 check(RecordListCardLayout.titleLine == 22, "the sport title and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 12, "distance sits 12pt under the title row")
-check(RecordListCardLayout.upperLine == 33, "the distance line is 33pt for the 27pt figure")
+check(RecordListCardLayout.upperLine == 33, "the distance line is 33pt for the 25pt figure")
 check(RecordListCardLayout.middleToBottom == 3, "middle to bottom row is half of the previous 6pt")
 check(RecordListChrome.durationHex == 0x8E8E93, "list duration uses light gray")
 check(RecordListChrome.distanceHex == 0x1E7DD6, "list distance and track share #1E7DD6")

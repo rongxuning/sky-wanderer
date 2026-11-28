@@ -36,7 +36,7 @@ enum RecordListCardLayout {
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
     static let titleToMiddle = 12.0
-    /// Fits the 27pt distance / energy figure beside the 84pt map.
+    /// Fits the 25pt distance / energy figure beside the 84pt map.
     static let upperLine = 33.0
     /// Gap between the distance row and the secondary metrics.
     static let middleToBottom = 3.0
