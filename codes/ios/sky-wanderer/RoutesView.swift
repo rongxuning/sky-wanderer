@@ -978,16 +978,20 @@ struct RouteDetailView: View {
                 }
                 factMetric("创建人", route.creatorLabel, SkyTheme.Color.ink, label: label, valueSize: value)
             case .waypoint(let progress):
+                let shown = RouteFacts.displayWaypoint(progress, route: route)
                 checkpointFacts(
-                    RouteFacts.displayWaypoint(progress, route: route),
+                    shown,
+                    timeText: RouteFacts.timeLabel(for: progress, cutoff: shown.cutoff),
                     title: title,
                     label: label,
                     value: value,
                     spacing: spacing
                 )
             case .finish(let finish):
+                let shown = RouteFacts.displayFinish(finish, route: route)
                 checkpointFacts(
-                    RouteFacts.displayFinish(finish, route: route),
+                    shown,
+                    timeText: RouteFacts.cutoffLabel(shown.cutoff),
                     title: title,
                     label: label,
                     value: value,
@@ -1001,6 +1005,7 @@ struct RouteDetailView: View {
     /// Shared body of a waypoint card and the finish card. The title is the display name; 终点 does not rename.
     private func checkpointFacts(
         _ shown: RouteFacts.Waypoint,
+        timeText: String,
         title: CGFloat,
         label: CGFloat,
         value: CGFloat,
@@ -1014,7 +1019,7 @@ struct RouteDetailView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
-                Text(RouteFacts.cutoffLabel(shown.cutoff))
+                Text(timeText)
                     .font(.system(size: value, weight: .bold, design: .rounded))
                     .foregroundStyle(SkyTheme.Color.ink)
                     .lineLimit(1)
