@@ -395,11 +395,49 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
 
     private func commitFit(on map: MKMapView) {
         guard map.bounds.width > 40, map.bounds.height > 40 else { return }
-        guard let camera = makeCamera(for: map) else { return }
         if sameInputs(as: map), fitted != nil { return }
         let hadFit = fitted != nil
-        fitted = camera
-        fittedInputs = FitInputs(
+        // A pinch or pan owns the picture. Refresh the 1× baseline without snapping back.
+        if userAdjusted {
+            guard let baseline = bandBaseline(for: map) else { return }
+            fitted = baseline
+            fittedInputs = currentFitInputs(map: map)
+            if hadFit {
+                apply(multiplier: appliedMultiplier, map: map, fromTool: false)
+            } else {
+                let next = RouteZoomBaseline.publishedMultiplier(
+                    fittedLatitude: baseline.span.latitudeDelta,
+                    displayedLatitude: map.region.span.latitudeDelta,
+                    userGesture: true,
+                    programmatic: false
+                ) ?? 1
+                appliedMultiplier = next
+                onZoomChanged?(next)
+            }
+            return
+        }
+        guard var track = trackMapRect() else { return }
+        // Modest pad around the bbox so the track is not flush against the chrome.
+        let padX = max(track.size.width * ((RouteBandFit.contentSpanScale - 1) / 2), 1)
+        let padY = max(track.size.height * ((RouteBandFit.contentSpanScale - 1) / 2), 1)
+        track = track.insetBy(dx: -padX, dy: -padY)
+        let edge = UIEdgeInsets(
+            top: max(topInset, 0) + 8,
+            left: 16,
+            bottom: max(bottomInset, 0) + 8,
+            right: 16
+        )
+        applyingCamera = true
+        map.setVisibleMapRect(track, edgePadding: edge, animated: false)
+        // MapKit can bias the first fit; pin the bbox mid-point to the band center.
+        recenterTrackInBand(track, on: map, edge: edge)
+        fitted = map.region
+        fittedInputs = currentFitInputs(map: map)
+        appliedMultiplier = 1
+    }
+
+    private func currentFitInputs(map: MKMapView) -> FitInputs {
+        FitInputs(
             routeID: routeID,
             width: map.bounds.width,
             height: map.bounds.height,
@@ -407,30 +445,10 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
             bottom: bottomInset,
             mode: mode
         )
-        if userAdjusted, hadFit {
-            apply(multiplier: appliedMultiplier, map: map, fromTool: false)
-            return
-        }
-        if userAdjusted {
-            // They moved the map before the band fit existed. Keep that picture
-            // and read the multiplier off it, instead of snapping back to 1×.
-            let next = RouteZoomBaseline.publishedMultiplier(
-                fittedLatitude: camera.span.latitudeDelta,
-                displayedLatitude: map.region.span.latitudeDelta,
-                userGesture: true,
-                programmatic: false
-            ) ?? 1
-            appliedMultiplier = next
-            onZoomChanged?(next)
-            return
-        }
-        appliedMultiplier = 1
-        if regionClose(map.region, to: camera) { return }
-        applyingCamera = true
-        map.setRegion(camera, animated: false)
     }
 
-    private func makeCamera(for map: MKMapView) -> MKCoordinateRegion? {
+    /// 1× region from the title↔card band math. Used when a gesture owns the camera.
+    private func bandBaseline(for map: MKMapView) -> MKCoordinateRegion? {
         let shown = TrackDatum.displayed(routePoints, mode: mode)
         var latitudes = shown.map(\.latitude)
         var longitudes = shown.map(\.longitude)
@@ -454,6 +472,49 @@ final class OfflineRouteMapCoordinator: NSObject, MKMapViewDelegate {
             center: CLLocationCoordinate2D(latitude: framed.centerLatitude, longitude: framed.centerLongitude),
             span: MKCoordinateSpan(latitudeDelta: framed.latitudeDelta, longitudeDelta: framed.longitudeDelta)
         )
+    }
+
+    /// Track + checkpoint dots as one map rect — the “quadrilateral” 1× frames.
+    private func trackMapRect() -> MKMapRect? {
+        let shown = TrackDatum.displayed(routePoints, mode: mode)
+        var rect = MKMapRect.null
+        for point in shown {
+            let coordinate = point.coordinate
+            guard CLLocationCoordinate2DIsValid(coordinate) else { continue }
+            let mapPoint = MKMapPoint(coordinate)
+            rect = rect.union(MKMapRect(origin: mapPoint, size: MKMapSize(width: 0, height: 0)))
+        }
+        for note in checkpointAnnotations {
+            guard CLLocationCoordinate2DIsValid(note.coordinate) else { continue }
+            let mapPoint = MKMapPoint(note.coordinate)
+            rect = rect.union(MKMapRect(origin: mapPoint, size: MKMapSize(width: 0, height: 0)))
+        }
+        guard !rect.isNull else { return nil }
+        if rect.size.width < 1 { rect = rect.insetBy(dx: -0.5, dy: 0) }
+        if rect.size.height < 1 { rect = rect.insetBy(dx: 0, dy: -0.5) }
+        return rect
+    }
+
+    /// Pan so the track bbox center sits in the middle of the title↔card band.
+    private func recenterTrackInBand(_ track: MKMapRect, on map: MKMapView, edge: UIEdgeInsets) {
+        let topLeft = MKMapPoint(x: track.minX, y: track.minY).coordinate
+        let bottomRight = MKMapPoint(x: track.maxX, y: track.maxY).coordinate
+        guard CLLocationCoordinate2DIsValid(topLeft),
+              CLLocationCoordinate2DIsValid(bottomRight) else { return }
+        let a = map.convert(topLeft, toPointTo: map)
+        let b = map.convert(bottomRight, toPointTo: map)
+        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        let bandTop = edge.top
+        let bandBottom = map.bounds.height - edge.bottom
+        let target = CGPoint(x: map.bounds.midX, y: (bandTop + bandBottom) / 2)
+        let dx = mid.x - target.x
+        let dy = mid.y - target.y
+        guard abs(dx) > 0.5 || abs(dy) > 0.5 else { return }
+        let centerPt = map.convert(map.centerCoordinate, toPointTo: map)
+        let shifted = CGPoint(x: centerPt.x + dx, y: centerPt.y + dy)
+        let coordinate = map.convert(shifted, toCoordinateFrom: map)
+        guard CLLocationCoordinate2DIsValid(coordinate) else { return }
+        map.setCenter(coordinate, animated: false)
     }
 
     private func sameInputs(as map: MKMapView) -> Bool {

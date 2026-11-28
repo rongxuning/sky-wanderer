@@ -580,8 +580,8 @@ struct RouteDetailView: View {
     @State private var editingTitle = false
     @State private var titleDraft = ""
     @State private var editTarget: RouteFactEditTarget?
-    /// Height of the floating card, including the home-indicator padding, so the tools sit above it.
-    @State private var chromeHeight: CGFloat = 220
+    /// Height of the floating card, including the home-indicator padding, so the map legal inset matches.
+    @State private var chromeHeight: CGFloat = 252
     /// Title bar height from the top of the map. 1× starts below it.
     @State private var titleHeight: CGFloat = 0
     /// UIKit's latest title string. A class so keystrokes do not re-render the field and move the caret.
@@ -694,36 +694,66 @@ struct RouteDetailView: View {
         // Measured title height includes the status bar. Until that arrives, leave room
         // for the back row and the gaps so the first camera is already 1×.
         let bandTop = titleHeight > 1 ? titleHeight : topInset + 56
-        return ZStack {
-            OfflineRouteMap(
-                routeID: route.id,
-                points: route.points,
-                checkpoints: layout.marks,
-                showsKilometerMarkers: showsKilometerMarkers,
-                zoomMultiplier: multiplier,
-                zoomArmed: zoomArmed,
-                basemapMode: basemap.mode,
-                topContentInset: bandTop,
-                legalBottomInset: legalBottomInset,
-                onZoomChanged: { value in
-                    guard !zoomArmed else { return }
-                    multiplier = value
-                },
-                onZoomDrag: { phase in
-                    handleZoomDrag(phase)
-                }
-            )
-            .clipped()
+        return GeometryReader { geo in
+            ZStack {
+                OfflineRouteMap(
+                    routeID: route.id,
+                    points: route.points,
+                    checkpoints: layout.marks,
+                    showsKilometerMarkers: showsKilometerMarkers,
+                    zoomMultiplier: multiplier,
+                    zoomArmed: zoomArmed,
+                    basemapMode: basemap.mode,
+                    topContentInset: bandTop,
+                    legalBottomInset: legalBottomInset,
+                    onZoomChanged: { value in
+                        guard !zoomArmed else { return }
+                        multiplier = value
+                    },
+                    onZoomDrag: { phase in
+                        handleZoomDrag(phase)
+                    }
+                )
+                .clipped()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) {
+                titleBar(route, topInset: topInset)
+            }
+            // Same left, mid-screen dock as the training start tools.
+            .overlay(alignment: .topLeading) {
+                toolColumn(markerCount: markerCount)
+                    .padding(.leading, CGFloat(StartMapChrome.toolLeading))
+                    .padding(.top, toolColumnTop(
+                        screenHeight: geo.size.height,
+                        topBand: bandTop,
+                        legalBottomInset: legalBottomInset,
+                        markerCount: markerCount
+                    ))
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .top) {
-            titleBar(route, topInset: topInset)
+    }
+
+    /// Centers the tool stack in the map band between the title and the bottom card.
+    private func toolColumnTop(
+        screenHeight: CGFloat,
+        topBand: CGFloat,
+        legalBottomInset: CGFloat,
+        markerCount: Int
+    ) -> CGFloat {
+        let count = ChromeLength(3)
+        var columnHeight =
+            count * StartMapChrome.toolDiameter + (count - 1) * StartMapChrome.toolGap
+        if zoomArmed {
+            columnHeight += 128 + StartMapChrome.toolGap
         }
-        .overlay(alignment: .bottomTrailing) {
-            toolColumn(markerCount: markerCount)
-                .padding(.trailing, 12)
-                .padding(.bottom, legalBottomInset + 8)
+        if showsKilometerMarkers, markerCount == 0 {
+            columnHeight += 22 + StartMapChrome.toolGap
         }
+        let visibleTop = ChromeLength(topBand)
+        let visibleBottom = ChromeLength(screenHeight - legalBottomInset)
+        let centered = (visibleTop + visibleBottom - columnHeight) / 2
+        return CGFloat(max(visibleTop, centered))
     }
 
     private func titleBar(_ route: SavedRoute, topInset: CGFloat) -> some View {
@@ -827,23 +857,22 @@ struct RouteDetailView: View {
         app.renameRoute(id: routeID, name: trimmed)
     }
 
-    /// Glass card over the map. The altitude chart takes the same slot as the fact pager.
+    /// Glass card over the map. Data and elevation share one fixed body height so the map inset stays put.
     private func floatingChrome(_ route: SavedRoute, bottomInset: CGFloat) -> some View {
         Group {
             if showsChart {
                 ElevationProfileChart(route: route)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .routeGlassCard()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 routeFactPager(route)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
+        .frame(height: RouteDetailChrome.cardBodyHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .routeGlassCard()
         .padding(.horizontal, 12)
         .padding(.bottom, bottomInset + 8)
-        .fixedSize(horizontal: false, vertical: true)
         .background {
             GeometryReader { geo in
                 Color.clear.preference(key: RouteChromeHeightKey.self, value: geo.size.height)
@@ -861,9 +890,9 @@ struct RouteDetailView: View {
     private func routeFactPager(_ route: SavedRoute) -> some View {
         let pages = factPages(route)
         let showsIndicator = pages.count > 1
-        return VStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: 6) {
             ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
+                LazyHStack(alignment: .top, spacing: 0) {
                     ForEach(pages) { page in
                         factCard(page, route: route)
                             .containerRelativeFrame(.horizontal)
@@ -878,16 +907,20 @@ struct RouteDetailView: View {
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .contentMargins(.horizontal, 0, for: .scrollContent)
             .scrollEdgeEffectHidden(true, for: .horizontal)
-            .frame(height: 172)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityHint(showsIndicator ? "左右滑动查看各点" : "")
-            if showsIndicator {
-                factPageIndicator(count: pages.count)
+            Group {
+                if showsIndicator {
+                    factPageIndicator(count: pages.count)
+                } else {
+                    Color.clear
+                }
             }
+            // Fixed slot so single-page and multi-page cards share the same body height.
+            .frame(height: 14)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
-        .routeGlassCard()
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func factCard(_ page: RouteFactPage, route: SavedRoute) -> some View {
@@ -896,7 +929,7 @@ struct RouteDetailView: View {
             factStack(page, route: route, title: 13, label: 11, value: 13, spacing: 1)
         }
         .padding(.horizontal, 2)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { openEditor(page) })
         .accessibilityAddTraits(.isButton)
@@ -927,10 +960,6 @@ struct RouteDetailView: View {
             switch page.card {
             case .totals:
                 let totals = RouteFacts.displayTotals(route)
-                Text("总数据")
-                    .font(.system(size: title, weight: .bold, design: .rounded))
-                    .foregroundStyle(SkyTheme.Color.ink)
-                    .lineLimit(1)
                 factMetric("导入时间", importTime(route), SkyTheme.Color.ink, label: label, valueSize: value)
                 HStack(alignment: .top, spacing: 10) {
                     factMetric("距离", routeKilometers(totals.distanceMeters), SkyTheme.Color.Metric.distance, label: label, valueSize: value)
@@ -948,16 +977,20 @@ struct RouteDetailView: View {
                 }
                 factMetric("创建人", route.creatorLabel, SkyTheme.Color.ink, label: label, valueSize: value)
             case .waypoint(let progress):
+                let shown = RouteFacts.displayWaypoint(progress, route: route)
                 checkpointFacts(
-                    RouteFacts.displayWaypoint(progress, route: route),
+                    shown,
+                    timeText: RouteFacts.timeLabel(for: progress, cutoff: shown.cutoff),
                     title: title,
                     label: label,
                     value: value,
                     spacing: spacing
                 )
             case .finish(let finish):
+                let shown = RouteFacts.displayFinish(finish, route: route)
                 checkpointFacts(
-                    RouteFacts.displayFinish(finish, route: route),
+                    shown,
+                    timeText: RouteFacts.cutoffLabel(shown.cutoff),
                     title: title,
                     label: label,
                     value: value,
@@ -971,6 +1004,7 @@ struct RouteDetailView: View {
     /// Shared body of a waypoint card and the finish card. The title is the display name; 终点 does not rename.
     private func checkpointFacts(
         _ shown: RouteFacts.Waypoint,
+        timeText: String,
         title: CGFloat,
         label: CGFloat,
         value: CGFloat,
@@ -984,7 +1018,7 @@ struct RouteDetailView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
-                Text(RouteFacts.cutoffLabel(shown.cutoff))
+                Text(timeText)
                     .font(.system(size: value, weight: .bold, design: .rounded))
                     .foregroundStyle(SkyTheme.Color.ink)
                     .lineLimit(1)
@@ -1055,15 +1089,16 @@ struct RouteDetailView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Word joiner keeps the digits and × on one line. The armed label may draw wider than the 42pt column.
+    /// Word joiner keeps the digits and × on one line. The armed label may draw wider than the tool column.
     private var zoomScaleText: String {
         String(format: "%.1f", multiplier) + "\u{2060}×"
     }
 
     /// Vertical drag handle shown only while the magnifier is armed. Same scale math as the map drag.
-    /// The column stays 42×128. The label sizes to the text, so a tight width cannot wrap × onto a second line.
+    /// The column matches `StartMapChrome.toolDiameter`. The label sizes to the text so × stays on one line.
     private var zoomScaleLine: some View {
-        ZStack {
+        let diameter = CGFloat(StartMapChrome.toolDiameter)
+        return ZStack {
             Capsule()
                 .fill(SkyTheme.Color.primary)
                 .frame(width: 2, height: 128)
@@ -1072,13 +1107,13 @@ struct RouteDetailView: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: true)
-                .foregroundStyle(SkyTheme.Color.ink)
+                .foregroundStyle(SkyTheme.Color.onStarryGray)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 3)
-                .background(SkyTheme.Color.card.opacity(0.94), in: Capsule())
+                .background(SkyTheme.Color.starryGray.opacity(0.94), in: Capsule())
                 .fixedSize(horizontal: true, vertical: true)
         }
-        .frame(width: 42, height: 128)
+        .frame(width: diameter, height: 128)
         .contentShape(Rectangle())
         .gesture(zoomSlide)
         .accessibilityElement(children: .ignore)
@@ -1111,17 +1146,17 @@ struct RouteDetailView: View {
     }
 
     private func toolColumn(markerCount: Int) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: CGFloat(StartMapChrome.toolGap)) {
             if zoomArmed {
                 zoomScaleLine
             }
             if showsKilometerMarkers, markerCount == 0 {
                 Text("不足 1 公里，没有路程点")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Color.omniInk)
+                    .foregroundStyle(SkyTheme.Color.onStarryGray)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.92), in: Capsule())
+                    .background(SkyTheme.Color.starryGray.opacity(0.94), in: Capsule())
                     .fixedSize(horizontal: true, vertical: false)
             }
             toolButton(
@@ -1139,8 +1174,7 @@ struct RouteDetailView: View {
                 system: "chart.xyaxis.line",
                 label: "海拔分析",
                 hint: "在轨迹数据和海拔剖面之间切换",
-                active: showsChart,
-                tinted: true
+                active: showsChart
             ) {
                 showsChart.toggle()
             }
@@ -1149,8 +1183,7 @@ struct RouteDetailView: View {
                 system: showsKilometerMarkers ? "smallcircle.filled.circle.fill" : "smallcircle.filled.circle",
                 label: "路程点",
                 hint: "沿路线显示每公里的标记",
-                active: showsKilometerMarkers,
-                tinted: true
+                active: showsKilometerMarkers
             ) {
                 showsKilometerMarkers.toggle()
             }
@@ -1169,12 +1202,12 @@ struct RouteDetailView: View {
         label: String,
         hint: String,
         active: Bool,
-        tinted: Bool = false,
         title: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        let foreground = active ? (tinted ? SkyTheme.Color.primary : Color.white) : Color.omniInk
-        let fill = active ? (tinted ? SkyTheme.Color.recordCard : Color.omniCobalt) : Color.white
+        let diameter = CGFloat(StartMapChrome.toolDiameter)
+        let foreground = active ? SkyTheme.Color.onPrimary : SkyTheme.Color.onStarryGray
+        let fill = active ? SkyTheme.Color.primary : SkyTheme.Color.starryGray
         return Button(action: action) {
             Group {
                 if let title {
@@ -1187,15 +1220,16 @@ struct RouteDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Image(systemName: system)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                 }
             }
             .foregroundStyle(foreground)
-            .frame(width: 42, height: 42)
-            .background(fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
+            .frame(width: diameter, height: diameter)
+            .background(fill, in: Circle())
+            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
+        .contentShape(Circle())
         .accessibilityLabel(label)
         .accessibilityHint(hint)
         .accessibilityAddTraits(active ? .isSelected : [])
@@ -1323,6 +1357,12 @@ private struct RouteTitleIconButton: UIViewRepresentable {
     }
 }
 
+/// Shared sizes for the route-detail map chrome.
+private enum RouteDetailChrome {
+    /// Fixed glass-card body. Tall enough for totals + page dots; elevation fills the same slot.
+    static let cardBodyHeight: CGFloat = 210
+}
+
 private struct RouteChromeHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
 
@@ -1367,9 +1407,9 @@ private struct ElevationProfileChart: View {
     var route: SavedRoute
     @State private var plotWidth: CGFloat = 0
 
-    private static let yAxisWidth: CGFloat = 44
-    private static let canvasHeight: CGFloat = 110
+    private static let yAxisWidth: CGFloat = 36
     private static let axisSpacing: CGFloat = 4
+    private static let tickBandHeight: CGFloat = 7
     private static let axisTextRowHeight: CGFloat = 16
 
     private var points: [GeoPoint] { route.points }
@@ -1387,32 +1427,15 @@ private struct ElevationProfileChart: View {
         ElevationScale.bounds(points)
     }
 
-    private var flat: Bool {
-        guard let bounds else { return true }
-        return bounds.high - bounds.low < ElevationScale.flatSpanMeters
-    }
-
     private var totalKilometers: Double {
         samples.last?.distanceKilometers ?? 0
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("海拔")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniInk)
-                Spacer(minLength: 8)
-                if let bounds {
-                    Text("\(meterText(bounds.low))–\(meterText(bounds.high)) 米")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                        .lineLimit(1)
-                }
-            }
-            Text(flat ? "海拔几乎没有变化" : "低处绿色，高处红色")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniMuted)
+            Text("海拔")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.omniInk)
             if samples.count < 2 || bounds == nil {
                 Text("点数不够，画不出曲线")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -1420,41 +1443,45 @@ private struct ElevationProfileChart: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let bounds {
                 scrollableProfile(low: bounds.low, high: bounds.high)
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(accessibilityText)
             }
         }
-        .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .padding(.top, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .frame(height: chartHeight)
+        // Title, Y labels, and the plot all sit 10pt inside the glass card.
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// Y labels stay pinned on the leading edge. The curve and distance ticks scroll under long routes.
+    /// Canvas height fills the leftover space inside the fixed glass card.
     private func scrollableProfile(low: Double, high: Double) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            yAxis(low: low, high: high)
-                .frame(width: Self.yAxisWidth, height: Self.canvasHeight, alignment: .trailing)
-            GeometryReader { geo in
-                let contentWidth = plotContentWidth(viewport: geo.size.width)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: Self.axisSpacing) {
-                        Canvas { context, size in
-                            draw(context: context, size: size, low: low, high: high)
+        GeometryReader { outer in
+            let axisHeight = Self.axisSpacing + distanceAxisHeight
+            let canvasHeight = max(64, outer.size.height - axisHeight)
+            HStack(alignment: .top, spacing: 4) {
+                yAxis(low: low, high: high)
+                    .frame(width: Self.yAxisWidth, height: canvasHeight, alignment: .trailing)
+                GeometryReader { geo in
+                    let contentWidth = plotContentWidth(viewport: geo.size.width)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: Self.axisSpacing) {
+                            Canvas { context, size in
+                                draw(context: context, size: size, low: low, high: high)
+                            }
+                            .frame(width: contentWidth, height: canvasHeight)
+                            distanceAxis
+                                .frame(width: contentWidth)
                         }
-                        .frame(width: contentWidth, height: Self.canvasHeight)
-                        distanceAxis
-                            .frame(width: contentWidth)
                     }
+                    .scrollDisabled(contentWidth <= geo.size.width + 0.5)
+                    .background {
+                        Color.clear.preference(key: PlotWidthKey.self, value: contentWidth)
+                    }
+                    .onPreferenceChange(PlotWidthKey.self) { plotWidth = $0 }
                 }
-                .scrollDisabled(contentWidth <= geo.size.width + 0.5)
-                .background {
-                    Color.clear.preference(key: PlotWidthKey.self, value: contentWidth)
-                }
-                .onPreferenceChange(PlotWidthKey.self) { plotWidth = $0 }
+                .frame(height: canvasHeight + axisHeight)
             }
-            .frame(height: Self.canvasHeight + Self.axisSpacing + distanceAxisHeight)
         }
     }
 
@@ -1470,47 +1497,46 @@ private struct ElevationProfileChart: View {
         .foregroundStyle(Color.omniMuted)
     }
 
-    /// Kilometer ticks sit under the curve, on the same distance scale, and leave 0 / total in place.
+    /// Ticks, checkpoint kilometers, and 0 / total share one text row so labels never wrap under each other.
     private var distanceAxis: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            if !axisMarks.isEmpty {
-                tickBand
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("0")
-                Spacer(minLength: 8)
-                Text("\(distanceLabel) 公里")
-                    .lineLimit(1)
-                    .multilineTextAlignment(.trailing)
-            }
-        }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
-        .foregroundStyle(Color.omniMuted)
-        .accessibilityHidden(true)
-    }
-
-    private var tickBand: some View {
         Canvas { context, size in
             let placed = placedLabels(plotWidth: size.width)
+            let font: Font = .system(size: 10, weight: .semibold, design: .rounded)
+            let textY: CGFloat = Self.tickBandHeight + Self.axisTextRowHeight / 2
             for item in placed {
                 let tickX = axisX(item.tickFraction, width: size.width)
                 var tick = Path()
                 tick.move(to: CGPoint(x: tickX, y: 0))
                 tick.addLine(to: CGPoint(x: tickX, y: 5))
                 context.stroke(tick, with: .color(Color.omniMuted), style: StrokeStyle(lineWidth: 1))
+            }
+            let zero = Text("0").font(font).foregroundStyle(Color.omniMuted)
+            context.draw(context.resolve(zero), at: CGPoint(x: 0, y: textY), anchor: .leading)
+            let total = Text("\(distanceLabel) 公里")
+                .font(font)
+                .foregroundStyle(Color.omniMuted)
+                .lineLimit(1)
+            context.draw(
+                context.resolve(total),
+                at: CGPoint(x: size.width, y: textY),
+                anchor: .trailing
+            )
+            for item in placed {
                 let label = Text(item.name)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(font)
                     .foregroundStyle(Color.omniMuted)
-                let resolved = context.resolve(label)
+                    .lineLimit(1)
                 let center = axisX(item.labelFraction, width: size.width)
+                // Always the same baseline as 0 / total, even when the placer used another lane.
                 context.draw(
-                    resolved,
-                    at: CGPoint(x: center, y: 7 + CGFloat(item.lane) * 14 + 6),
+                    context.resolve(label),
+                    at: CGPoint(x: center, y: textY),
                     anchor: .center
                 )
             }
         }
-        .frame(height: tickBandHeight)
+        .frame(height: distanceAxisHeight)
+        .accessibilityHidden(true)
     }
 
     private func plotContentWidth(viewport: CGFloat) -> CGFloat {
@@ -1520,31 +1546,9 @@ private struct ElevationProfileChart: View {
         ))
     }
 
-    private var chartHeight: CGFloat {
-        let axis = (samples.count >= 2 && bounds != nil) ? Self.axisSpacing + distanceAxisHeight : 0
-        return 52 + Self.canvasHeight + axis
-    }
-
-    /// Tick band plus one 10pt text row. The row is taller than its font size, so reserve the full line.
+    /// Tick stubs plus one text row. Reserved even without ticks so the 0 / total labels are never clipped.
     private var distanceAxisHeight: CGFloat {
-        let ticks = axisMarks.isEmpty ? 0 : tickBandHeight + 1
-        return ticks + Self.axisTextRowHeight
-    }
-
-    private var tickBandHeight: CGFloat {
-        guard !axisMarks.isEmpty else { return 0 }
-        return 7 + CGFloat(laneCount) * 14
-    }
-
-    private var laneCount: Int {
-        guard !axisMarks.isEmpty else { return 0 }
-        let width = max(
-            plotWidth,
-            CGFloat(ElevationProfileLayout.contentWidth(totalKilometers: totalKilometers, viewport: 1)),
-            1
-        )
-        let placed = placedLabels(plotWidth: width)
-        return (placed.map(\.lane).max() ?? 0) + 1
+        Self.tickBandHeight + Self.axisTextRowHeight
     }
 
     private func placedLabels(plotWidth: CGFloat) -> [ElevationAxisLabel] {

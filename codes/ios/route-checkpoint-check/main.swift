@@ -1054,7 +1054,7 @@ func cardTitles(_ route: SavedRoute) -> [String] {
         case .totals:
             return "总数据"
         case .waypoint(let row):
-            return row.name
+            return RouteFacts.displayWaypoint(row, route: route).name
         case .finish:
             return "终点"
         }
@@ -1234,6 +1234,185 @@ if let startOnlyFinish {
     near(startOnlyFinish.distanceMeters, wholeDistance, 0.01, "start-only finish cumulative is the whole track")
     check(cardTitles(startOnly) == ["总数据", "起", "终点"], "start-only cards \(cardTitles(startOnly))")
 }
+
+check(RouteCheckpoints.isCombinedStartFinish(name: "起终点：神仙居北门"), "起终点 name is combined")
+check(RouteCheckpoints.isCombinedStartFinish(name: "起终点"), "bare 起终点 is combined")
+check(!RouteCheckpoints.isCombinedStartFinish(name: "起点"), "plain 起点 is not combined")
+check(
+    RouteCheckpoints.startDisplayName(from: "起终点：神仙居北门停车场") == "起点：神仙居北门停车场",
+    "combined title becomes 起点"
+)
+check(RouteCheckpoints.startDisplayName(from: "起终点") == "起点", "bare combined becomes 起点")
+
+// Loop: start and end share coordinates. One 起终点 waypoint must still yield 起点 + 终点 cards.
+let loopLine = [
+    point(0, 0, 100),
+    point(0, 0.01, 160),
+    point(0, 0.02, 140),
+    point(0, 0.01, 120),
+    point(0, 0, 100)
+]
+let loopDistance = RouteStats.distance(loopLine)
+let loopAscent = RouteStats.ascent(loopLine)
+let loopDescent = RouteStats.descent(loopLine)
+var loopStart = SavedRoute(
+    id: "loop-start",
+    name: "环线起终点在起点",
+    points: loopLine,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "起终点：北门", latitude: 0, longitude: 0, elevation: nil, cutoff: "07:00"),
+        RouteWaypoint(name: "CP1", latitude: 0, longitude: 0.01, elevation: nil, cutoff: "10:00"),
+        RouteWaypoint(name: "CP2", latitude: 0, longitude: 0.02, elevation: nil)
+    ]
+)
+check(
+    cardTitles(loopStart) == ["总数据", "起点：北门", "CP1", "CP2", "终点"],
+    "loop 起终点 on the start splits into 起点 and 终点 \(cardTitles(loopStart))"
+)
+let loopStartCards = RouteFacts.cards(for: loopStart)
+if case .waypoint(let startCard) = loopStartCards[1] {
+    let shownStart = RouteFacts.displayWaypoint(startCard, route: loopStart)
+    check(shownStart.name == "起点：北门", "start card renames 起终点")
+    check(shownStart.cutoff == "07:00", "start card keeps 起点时间")
+    near(shownStart.segmentDistanceMeters, 0, 0.001, "start card segment is empty")
+    near(shownStart.cumulativeDistanceMeters, 0, 0.001, "start card cumulative is empty")
+    check(
+        RouteFacts.timeLabel(for: startCard, cutoff: shownStart.cutoff) == "07:00",
+        "start time label uses the waypoint time"
+    )
+} else {
+    check(false, "second card is the split start")
+}
+if case .finish(let loopFinish) = loopStartCards.last {
+    let shownFinish = RouteFacts.displayFinish(loopFinish, route: loopStart)
+    near(shownFinish.cumulativeDistanceMeters, loopDistance, 0.01, "finish card cumulative is the loop")
+    near(shownFinish.cumulativeAscentMeters, loopAscent, 0.001, "finish card climb is the loop")
+    near(shownFinish.cumulativeDescentMeters, loopDescent, 0.001, "finish card descent is the loop")
+    check(RouteFacts.cutoffLabel(shownFinish.cutoff) == "暂无关门时间", "finish 关门时间 starts empty")
+} else {
+    check(false, "loop cards end with 终点")
+}
+
+// 起终点 parked on the last track point (no synthetic 终点 pin). Still split.
+var combinedOnEnd = SavedRoute(
+    id: "combined-on-end",
+    name: "起终点在终点坐标",
+    points: finishLine,
+    kind: .gpx,
+    waypoints: [
+        RouteWaypoint(name: "CP1", latitude: 0, longitude: 0.01, elevation: nil),
+        RouteWaypoint(name: "起终点：北门", latitude: 0, longitude: 0.03, elevation: nil, cutoff: "07:00")
+    ]
+)
+let combinedOnEndRows = RouteCheckpoints.progress(
+    waypoints: combinedOnEnd.waypoints,
+    points: combinedOnEnd.points
+)
+check(combinedOnEndRows.last?.name.contains("起终点") == true, "combined waypoint can snap to the track end")
+check(
+    RouteCheckpoints.finish(waypoints: combinedOnEnd.waypoints, points: combinedOnEnd.points) != nil,
+    "combined 起终点 on the track end still gets a finish card"
+)
+check(
+    cardTitles(combinedOnEnd) == ["总数据", "起点：北门", "CP1", "终点"],
+    "combined on the end still puts 起点 first and 终点 last \(cardTitles(combinedOnEnd))"
+)
+let combinedOnEndCards = RouteFacts.cards(for: combinedOnEnd)
+guard case .waypoint(let endStart) = combinedOnEndCards[1] else {
+    check(false, "combined-on-end cards start with 起点")
+    fatalError("combined-on-end start card")
+}
+let shownCombinedStart = RouteFacts.displayWaypoint(endStart, route: combinedOnEnd)
+near(shownCombinedStart.cumulativeDistanceMeters, 0, 0.001, "split start stays at zero even when the GPX point snapped to the end")
+check(shownCombinedStart.cutoff == "07:00", "split start keeps 起点时间 when snapped to the end")
+guard case .finish(let endFinish) = combinedOnEndCards.last else {
+    check(false, "combined-on-end cards end with 终点")
+    fatalError("combined-on-end finish card")
+}
+let shownCombinedFinish = RouteFacts.displayFinish(endFinish, route: combinedOnEnd)
+near(shownCombinedFinish.cumulativeDistanceMeters, wholeDistance, 0.01, "combined-on-end finish cumulative is the whole track")
+RouteFacts.applyFinish(
+    &combinedOnEnd,
+    cutoff: .set("18:30"),
+    segmentDistance: .clear,
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(
+    RouteFacts.displayFinish(endFinish, route: combinedOnEnd).cutoff == "18:30",
+    "finish 关门时间 can be edited on its own"
+)
+check(
+    RouteFacts.displayWaypoint(endStart, route: combinedOnEnd).cutoff == "07:00",
+    "editing finish 关门时间 does not clear 起点时间"
+)
+
+// The editor must open the same zeroed card the pager shows, not the snapped full-track row.
+guard let editorStart = RouteFacts.waypointCard(id: endStart.id, route: combinedOnEnd) else {
+    check(false, "editor can resolve the split start card")
+    fatalError("editor start card")
+}
+near(editorStart.distanceMeters, 0, 0.001, "editor start card is zeroed even when the GPX point snapped to the end")
+near(editorStart.segmentDistanceMeters, 0, 0.001, "editor start segment is zeroed")
+let rawEndRows = RouteCheckpoints.progress(waypoints: combinedOnEnd.waypoints, points: combinedOnEnd.points)
+let rawEndDistance = rawEndRows.first(where: { $0.id == endStart.id })?.distanceMeters ?? 0
+check(rawEndDistance > 1, "the raw progress row for that id still carries full-track figures")
+let editorDisplay = RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd)
+check(editorDisplay.name == "起点：北门", "editor pre-fills the 起点 title")
+// Saving the pre-filled values unchanged must not store a rename or figures.
+RouteFacts.applyWaypoint(
+    &combinedOnEnd,
+    progress: editorStart,
+    name: RouteFacts.parseLabel(editorDisplay.name),
+    cutoff: RouteFacts.parseLabel(editorDisplay.cutoff ?? ""),
+    segmentDistance: RouteFacts.parseMeters(Format.kilometers(editorDisplay.segmentDistanceMeters), kilometers: true),
+    segmentAscent: RouteFacts.parseMeters(String(Int(editorDisplay.segmentAscentMeters.rounded())), kilometers: false),
+    segmentDescent: RouteFacts.parseMeters(String(Int(editorDisplay.segmentDescentMeters.rounded())), kilometers: false),
+    cumulativeDistance: RouteFacts.parseMeters(Format.kilometers(editorDisplay.cumulativeDistanceMeters), kilometers: true),
+    cumulativeAscent: RouteFacts.parseMeters(String(Int(editorDisplay.cumulativeAscentMeters.rounded())), kilometers: false),
+    cumulativeDescent: RouteFacts.parseMeters(String(Int(editorDisplay.cumulativeDescentMeters.rounded())), kilometers: false)
+)
+let afterNoopSave = RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd)
+check(afterNoopSave.name == "起点：北门", "a no-op save keeps the place name")
+near(afterNoopSave.cumulativeDistanceMeters, 0, 0.001, "a no-op save keeps zero mileage on the start card")
+
+// A real rename survives. The stored title is shown as typed, not re-converted.
+RouteFacts.applyWaypoint(
+    &combinedOnEnd,
+    progress: editorStart,
+    name: .set("起点：南门"),
+    cutoff: .clear,
+    segmentDistance: .clear,
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(
+    RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd).name == "起点：南门",
+    "a renamed start card keeps its place name"
+)
+RouteFacts.applyWaypoint(
+    &combinedOnEnd,
+    progress: editorStart,
+    name: .set("起终点：东门"),
+    cutoff: .clear,
+    segmentDistance: .clear,
+    segmentAscent: .clear,
+    segmentDescent: .clear,
+    cumulativeDistance: .clear,
+    cumulativeAscent: .clear,
+    cumulativeDescent: .clear
+)
+check(
+    RouteFacts.displayWaypoint(editorStart, route: combinedOnEnd).name == "起终点：东门",
+    "a stored title is shown as typed"
+)
 
 let finishGPX = """
 <gpx><wpt lat="0" lon="0.01"><name>CP1</name><cmt>关门 09:00</cmt></wpt>

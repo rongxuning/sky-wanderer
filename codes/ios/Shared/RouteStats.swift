@@ -542,6 +542,8 @@ enum RouteCheckpoints {
     /// Last real waypoint → track end, when that stretch is not already the last waypoint card.
     /// Nil when there is no real waypoint, or the last one already snaps to the final track point
     /// (the same rule `layout` uses before it adds a synthetic 终点 pin).
+    /// A combined 起终点 waypoint still gets a finish card even when it snaps to the track end,
+    /// so the pager can show 起点 and 终点 as two pages.
     /// Segment figures are that last snapped point to the track end.
     /// Cumulative figures are the whole track from `RouteStats`, not the totals card.
     static func finish(waypoints: [RouteWaypoint], points: [GeoPoint]) -> RouteFinishProgress? {
@@ -549,18 +551,43 @@ enum RouteCheckpoints {
         let rows = progress(waypoints: waypoints, points: points)
         guard let last = rows.last else { return nil }
         let drawn = layout(waypoints: waypoints, points: points)
-        guard let end = drawn.marks.last, end.synthetic, end.id == "end" else { return nil }
+        let syntheticEnd = drawn.marks.last.map { $0.synthetic && $0.id == "end" } ?? false
+        let combinedOnEnd = isCombinedStartFinish(name: last.name)
+        guard syntheticEnd || combinedOnEnd else { return nil }
         let distance = RouteStats.distance(points)
         let ascent = RouteStats.ascent(points)
         let descent = RouteStats.descent(points)
+        // Combined 起终点 on the end already owns the full cumulative; the finish segment
+        // starts after the previous real card (or the route start when it is alone).
+        let prior = combinedOnEnd ? rows.dropLast().last : last
+        let priorDistance = prior?.distanceMeters ?? 0
+        let priorAscent = prior?.ascentMeters ?? 0
+        let priorDescent = prior?.descentMeters ?? 0
         return RouteFinishProgress(
-            segmentDistanceMeters: distance - last.distanceMeters,
-            segmentAscentMeters: ascent - last.ascentMeters,
-            segmentDescentMeters: descent - last.descentMeters,
+            segmentDistanceMeters: distance - priorDistance,
+            segmentAscentMeters: ascent - priorAscent,
+            segmentDescentMeters: descent - priorDescent,
             distanceMeters: distance,
             ascentMeters: ascent,
             descentMeters: descent
         )
+    }
+
+    /// One GPX point stands for both ends — common on loop races named 起终点.
+    static func isCombinedStartFinish(name: String) -> Bool {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).contains("起终点")
+    }
+
+    /// `起终点：神仙居北门` → `起点：神仙居北门`. Plain `起终点` → `起点`.
+    static func startDisplayName(from combined: String) -> String {
+        let trimmed = combined.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = trimmed.range(of: "起终点") else { return "起点" }
+        var rest = trimmed[range.upperBound...]
+        if rest.hasPrefix("：") || rest.hasPrefix(":") {
+            return "起点" + rest
+        }
+        let place = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+        return place.isEmpty ? "起点" : "起点：" + place
     }
 
     /// Real checkpoints, plus 起点 / 终点 when those ends are not already waypoints.
@@ -815,15 +842,60 @@ enum RouteFacts {
         return trimmed.isEmpty ? missingCutoffLabel : trimmed
     }
 
-    /// Totals, then each real waypoint, then 终点 when the last waypoint does not land on the track end.
+    /// Totals, then each real waypoint, then 终点 when needed.
+    /// A combined 起终点 becomes a 起点 card (start metrics) plus a final 终点 card
+    /// with race totals, so loop races never share one page for both ends.
     static func cards(for route: SavedRoute) -> [RouteDetailCard] {
         var cards: [RouteDetailCard] = [.totals]
         let rows = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
-        cards.append(contentsOf: rows.map { .waypoint($0) })
+        if let combined = rows.first(where: { RouteCheckpoints.isCombinedStartFinish(name: $0.name) }) {
+            cards.append(.waypoint(startProgress(from: combined)))
+            for row in rows where row.id != combined.id {
+                cards.append(.waypoint(row))
+            }
+        } else {
+            cards.append(contentsOf: rows.map { .waypoint($0) })
+        }
         if let finish = RouteCheckpoints.finish(waypoints: route.waypoints, points: route.points) {
             cards.append(.finish(finish))
         }
         return cards
+    }
+
+    /// The waypoint row the pager shows for `id`. A combined 起终点 is the zeroed 起点 card, so the
+    /// editor and `applyWaypoint` compare against the same figures the card paints.
+    static func waypointCard(id: Int, route: SavedRoute) -> RouteWaypointProgress? {
+        let rows = RouteCheckpoints.progress(waypoints: route.waypoints, points: route.points)
+        guard let row = rows.first(where: { $0.id == id }) else { return nil }
+        if RouteCheckpoints.isCombinedStartFinish(name: row.name) {
+            return startProgress(from: row)
+        }
+        return row
+    }
+
+    /// Title when the card has no stored rename. A combined 起终点 reads 起点…, other cards keep the GPX name.
+    static func defaultWaypointName(_ progress: RouteWaypointProgress) -> String {
+        RouteCheckpoints.isCombinedStartFinish(name: progress.name)
+            ? RouteCheckpoints.startDisplayName(from: progress.name)
+            : progress.name
+    }
+
+    /// 起点 page for a combined 起终点. Always start-of-race figures, even when the
+    /// GPX point snapped to the track end on a loop. Keeps the waypoint time as 起点时间.
+    private static func startProgress(from combined: RouteWaypointProgress) -> RouteWaypointProgress {
+        RouteWaypointProgress(
+            id: combined.id,
+            name: combined.name,
+            cutoff: combined.cutoff,
+            distanceMeters: 0,
+            ascentMeters: 0,
+            descentMeters: 0,
+            segmentDistanceMeters: 0,
+            segmentAscentMeters: 0,
+            segmentDescentMeters: 0,
+            latitude: combined.latitude,
+            longitude: combined.longitude
+        )
     }
 
     static func displayTotals(_ route: SavedRoute) -> Totals {
@@ -839,7 +911,7 @@ enum RouteFacts {
     static func displayWaypoint(_ progress: RouteWaypointProgress, route: SavedRoute) -> Waypoint {
         let stored = storedWaypoint(route, progress: progress)
         return Waypoint(
-            name: stored?.name ?? progress.name,
+            name: stored?.name ?? defaultWaypointName(progress),
             cutoff: stored?.cutoff ?? progress.cutoff,
             segmentDistanceMeters: stored?.segmentDistanceMeters ?? progress.segmentDistanceMeters,
             segmentAscentMeters: stored?.segmentAscentMeters ?? progress.segmentAscentMeters,
@@ -851,6 +923,7 @@ enum RouteFacts {
     }
 
     /// The finish card. The title is always 终点. Numbers fall back to the track, never to the totals override.
+    /// Combined 起终点 keeps its GPX time on the 起点 card as 起点时间; edit the finish card for 关门时间.
     static func displayFinish(_ finish: RouteFinishProgress, route: SavedRoute) -> Waypoint {
         let stored = route.factOverrides?.finish
         return Waypoint(
@@ -863,6 +936,17 @@ enum RouteFacts {
             cumulativeAscentMeters: stored?.cumulativeAscentMeters ?? finish.ascentMeters,
             cumulativeDescentMeters: stored?.cumulativeDescentMeters ?? finish.descentMeters
         )
+    }
+
+    /// Title-side time when the start card has no 起点时间 yet.
+    static let missingStartTimeLabel = "暂无起点时间"
+
+    static func timeLabel(for progress: RouteWaypointProgress, cutoff: String?) -> String {
+        if RouteCheckpoints.isCombinedStartFinish(name: progress.name) {
+            let trimmed = cutoff?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? missingStartTimeLabel : trimmed
+        }
+        return cutoffLabel(cutoff)
     }
 
     /// Pin label. A renamed card uses the override. 起点 / 终点 stay as drawn.
@@ -920,7 +1004,7 @@ enum RouteFacts {
                 sourceName: progress.name
             )
         }
-        assign(name, computed: progress.name, to: &row.name)
+        assign(name, computed: defaultWaypointName(progress), to: &row.name)
         assign(cutoff, computed: progress.cutoff, to: &row.cutoff)
         assign(segmentDistance, computed: progress.segmentDistanceMeters, kilometers: true, to: &row.segmentDistanceMeters)
         assign(segmentAscent, computed: progress.segmentAscentMeters, kilometers: false, to: &row.segmentAscentMeters)
