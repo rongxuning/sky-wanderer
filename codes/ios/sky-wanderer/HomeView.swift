@@ -112,9 +112,7 @@ struct SkyHome: View {
             if showsTabBar {
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    // Top-align so the avatar plate shares the pill’s top edge
-                    // (屏幕水平线); center would drop the avatar when the pill grows.
-                    HStack(alignment: .top, spacing: SkyTheme.Spacing.controlGap) {
+                    HStack(spacing: SkyTheme.Spacing.controlGap) {
                         AccountAvatarButton {
                             openAccount()
                         }
