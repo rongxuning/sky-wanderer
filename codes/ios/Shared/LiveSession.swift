@@ -683,7 +683,7 @@ final class LiveSession: ObservableObject {
         guard !sport.usesOutdoorLocation else { return }
         guard recordedRoute.isEmpty else { return }
         guard let cached = location.location,
-              acceptsIndoorPin(cached, maxAge: 30 * 60) else { return }
+              acceptsIndoorPin(cached, maxAge: nil) else { return }
         let fix = GeoPoint(
             latitude: cached.coordinate.latitude,
             longitude: cached.coordinate.longitude,
