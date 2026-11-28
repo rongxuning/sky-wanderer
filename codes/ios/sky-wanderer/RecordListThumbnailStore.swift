@@ -7,12 +7,12 @@ import UIKit
 /// Solid-black failed captures are never stored; a bad file on disk is deleted
 /// on load so backfill can warm again.
 enum RecordListThumbnailStore {
-    static func exists(id: UUID, basemapToken: String, side: Int) -> Bool {
-        load(id: id, basemapToken: basemapToken, side: side) != nil
+    static func exists(id: UUID, basemapToken: String, sizeToken: String) -> Bool {
+        load(id: id, basemapToken: basemapToken, sizeToken: sizeToken) != nil
     }
 
-    static func load(id: UUID, basemapToken: String, side: Int) -> UIImage? {
-        guard let url = try? url(id: id, basemapToken: basemapToken, side: side),
+    static func load(id: UUID, basemapToken: String, sizeToken: String) -> UIImage? {
+        guard let url = try? url(id: id, basemapToken: basemapToken, sizeToken: sizeToken),
               let data = try? Data(contentsOf: url),
               let image = UIImage(data: data) else {
             return nil
@@ -24,23 +24,23 @@ enum RecordListThumbnailStore {
         return image
     }
 
-    static func loadAsync(id: UUID, basemapToken: String, side: Int) async -> UIImage? {
+    static func loadAsync(id: UUID, basemapToken: String, sizeToken: String) async -> UIImage? {
         await Task.detached(priority: .utility) {
-            load(id: id, basemapToken: basemapToken, side: side)
+            load(id: id, basemapToken: basemapToken, sizeToken: sizeToken)
         }.value
     }
 
-    static func existsAsync(id: UUID, basemapToken: String, side: Int) async -> Bool {
+    static func existsAsync(id: UUID, basemapToken: String, sizeToken: String) async -> Bool {
         await Task.detached(priority: .utility) {
-            exists(id: id, basemapToken: basemapToken, side: side)
+            exists(id: id, basemapToken: basemapToken, sizeToken: sizeToken)
         }.value
     }
 
     @discardableResult
-    static func save(_ image: UIImage, id: UUID, basemapToken: String, side: Int) -> Bool {
+    static func save(_ image: UIImage, id: UUID, basemapToken: String, sizeToken: String) -> Bool {
         guard RecordListThumbnailQuality.isUsable(image) else { return false }
         guard let data = image.jpegData(compressionQuality: 0.82) else { return false }
-        guard let url = try? url(id: id, basemapToken: basemapToken, side: side) else { return false }
+        guard let url = try? url(id: id, basemapToken: basemapToken, sizeToken: sizeToken) else { return false }
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -67,9 +67,9 @@ enum RecordListThumbnailStore {
         }
     }
 
-    private static func url(id: UUID, basemapToken: String, side: Int) throws -> URL {
+    private static func url(id: UUID, basemapToken: String, sizeToken: String) throws -> URL {
         try AppFiles.file(
-            RecordListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, side: side)
+            RecordListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, sizeToken: sizeToken)
         )
     }
 }

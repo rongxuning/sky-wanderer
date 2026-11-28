@@ -302,20 +302,23 @@ check(
     "two secondary cells are leading and trailing"
 )
 
-check(RecordListCardLayout.standardTextBlock == 84, "standard text block matches the map side")
-check(RecordListCardLayout.standardMapBlock == 84, "map side equals the metrics stack height")
+check(RecordListCardLayout.standardTextBlock == 82, "standard text block matches the map height")
+check(RecordListCardLayout.standardMapBlock == 82, "map height equals the metrics stack height")
 check(
     RecordListCardLayout.standardHeight
         == RecordListCardLayout.contentInsetVertical * 2
             + RecordListCardLayout.standardTextBlock,
-    "card height is vertical insets plus the matched text / map side"
+    "card height is vertical insets plus the matched text / map height"
 )
+check(RecordListCardLayout.standardHeight == 102, "card height is the approved 102pt")
+check(RecordListCardLayout.mapWidth == 88, "map width is the approved 88pt")
+check(RecordListCardLayout.mapHeight == 82, "map height is the approved 82pt")
 check(
     RecordListCardLayout.informationWidth(cardWidth: 393) == 220,
     "a 393pt phone keeps the 220pt information track"
 )
 check(
-    RecordListCardLayout.informationWidth(cardWidth: 320) == 202,
+    RecordListCardLayout.informationWidth(cardWidth: 320) == 198,
     "a 320pt phone shrinks the information track instead of covering the map"
 )
 check(RecordListCardLayout.headerGap == 8, "month header keeps an 8pt trailing gap")
@@ -331,11 +334,12 @@ check(
     "in-list month leading matches the card map"
 )
 check(RecordListCardLayout.accentBarWidth == 0, "card accent bar is retired")
-check(RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock, "map side equals the fixed metrics height")
-check(RecordListCardLayout.mapSide == 84, "map side is the approved 84pt square")
+check(RecordListCardLayout.mapHeight == RecordListCardLayout.standardTextBlock, "map height equals the fixed metrics height")
+check(RecordListCardLayout.mapSide == RecordListCardLayout.mapHeight, "mapSide aliases the map height")
+check(RecordListCardLayout.mapSizeToken == "88x82", "map size token encodes width times height")
 check(RecordListCardLayout.titleLine == 22, "the sport title and date share a 22pt line")
 check(RecordListCardLayout.titleToMiddle == 12, "distance sits 12pt under the title row")
-check(RecordListCardLayout.upperLine == 33, "the distance line is 33pt for the 27pt figure")
+check(RecordListCardLayout.upperLine == 31, "the distance line is 31pt for the 25pt figure")
 check(RecordListCardLayout.middleToBottom == 3, "middle to bottom row is half of the previous 6pt")
 check(RecordListChrome.durationHex == 0x8E8E93, "list duration uses light gray")
 check(RecordListChrome.distanceHex == 0x1E7DD6, "list distance and track share #1E7DD6")
@@ -356,8 +360,8 @@ check(
     "edge pad covers the canvas end dot"
 )
 check(
-    abs(RecordListCardLayout.mapTrackInsetFraction - RecordListCardLayout.mapTrackEdgePad / RecordListCardLayout.mapSide) < 0.0001,
-    "inset fraction is edge pad over the thumbnail side"
+    abs(RecordListCardLayout.mapTrackInsetFraction - RecordListCardLayout.mapTrackEdgePad / RecordListCardLayout.mapHeight) < 0.0001,
+    "inset fraction is edge pad over the thumbnail height"
 )
 let inset = RecordListCardLayout.mapTrackInsetFraction
 let squareTrack = RecordThumbnailFit.normalizedFrame(width: 100, height: 100)
@@ -459,13 +463,13 @@ check(RecordListThumbnailKind.resolve(routeCount: 40) == .track, "longer routes 
 check(WorkoutTrackStore.summaryLimit == 64, "list cards keep at most 64 summary points in phone.json")
 check(WorkoutTrackStore.folder == "workout-tracks", "full tracks live under workout-tracks")
 let cameraScale = RecordThumbnailFit.visibleMapScale(
-    side: RecordListCardLayout.mapSide,
+    side: RecordListCardLayout.mapHeight,
     edgePad: RecordListCardLayout.mapTrackEdgePad
 )
 check(cameraScale > 1, "visible map scale grows past the stroke pad")
 check(
-    abs(cameraScale - RecordListCardLayout.mapSide / (RecordListCardLayout.mapSide - RecordListCardLayout.mapTrackEdgePad * 2)) < 0.0001,
-    "visible map scale is side over the inner box"
+    abs(cameraScale - RecordListCardLayout.mapHeight / (RecordListCardLayout.mapHeight - RecordListCardLayout.mapTrackEdgePad * 2)) < 0.0001,
+    "visible map scale is height over the inner box"
 )
 
 let help = [

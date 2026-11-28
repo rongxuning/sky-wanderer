@@ -18,9 +18,16 @@ struct RoutesLibraryView: View {
     @State private var importing = false
     @State private var importError: String?
     @State private var revealedRouteID: String?
+    @State private var searchExpanded = false
+    @State private var searchQuery = ""
+    @FocusState private var searchFocused: Bool
     @ObservedObject private var basemapCenter = SkyBasemapCenter.shared
     /// Home tab keeps this list and drops the navigation title.
     var embeddedInHome: Bool = false
+
+    private var visibleRoutes: [SavedRoute] {
+        RouteListSearch.apply(searchQuery, to: app.importedRoutes)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -28,12 +35,15 @@ struct RoutesLibraryView: View {
                 if app.importedRoutes.isEmpty {
                     emptyState
                 } else {
-                    routeList
+                    VStack(spacing: 0) {
+                        routeStatsBar
+                        routeList
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topLeading) {
-                importToolChrome(in: geo)
+                leftToolsChrome(in: geo)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -58,6 +68,16 @@ struct RoutesLibraryView: View {
                 self.revealedRouteID = nil
             }
         }
+        .onChange(of: searchExpanded) { _, open in
+            if open {
+                DispatchQueue.main.async {
+                    searchFocused = true
+                }
+            } else {
+                searchFocused = false
+                searchQuery = ""
+            }
+        }
         .task(id: RouteListBackfillKey(
             ids: app.importedRoutes.map(\.id),
             tianditu: basemapCenter.mode == .tianditu
@@ -66,33 +86,85 @@ struct RoutesLibraryView: View {
         }
     }
 
-    /// Same dock as the records filter tool: top edge on the screen midline,
-    /// starry-gray circle plate.
-    private func importToolChrome(in geo: GeometryProxy) -> some View {
-        let point = StartMapChrome.filterToolHomeCenter(
-            screenHeight: ChromeLength(geo.size.height)
-        )
-        return Button {
-            importing = true
-        } label: {
-            Image("RouteImport")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 22, height: 22)
-                .foregroundStyle(SkyTheme.Color.onStarryGray)
-                .frame(
-                    width: CGFloat(StartMapChrome.toolDiameter),
-                    height: CGFloat(StartMapChrome.toolDiameter)
-                )
-                .background(SkyTheme.Color.starryGray, in: Circle())
-                .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
+    /// Search above import. Import top edge stays on the screen midline.
+    /// Search opens a field that slides out to the right and focuses the keyboard.
+    private func leftToolsChrome(in geo: GeometryProxy) -> some View {
+        let diameter = CGFloat(StartMapChrome.toolDiameter)
+        let gap = CGFloat(StartMapChrome.toolGap)
+        let leading = CGFloat(StartMapChrome.toolLeading)
+        let fieldWidth = max(120, geo.size.width - leading - diameter - gap - 24)
+        let top = geo.size.height / 2 - gap - diameter
+        return VStack(alignment: .leading, spacing: gap) {
+            HStack(spacing: gap) {
+                toolCircleButton(
+                    systemName: "magnifyingglass",
+                    label: searchExpanded ? "关闭搜索" : "搜索路线"
+                ) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                        searchExpanded.toggle()
+                    }
+                }
+                searchField(width: fieldWidth)
+                    .frame(width: searchExpanded ? fieldWidth : 0, alignment: .leading)
+                    .clipped()
+                    .opacity(searchExpanded ? 1 : 0)
+                    .allowsHitTesting(searchExpanded)
+            }
+            toolCircleButton(imageName: "RouteImport", label: "导入 GPX") {
+                importing = true
+            }
+        }
+        .padding(.leading, leading)
+        .padding(.top, top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .zIndex(2)
+    }
+
+    private func searchField(width: CGFloat) -> some View {
+        TextField("搜索路线", text: $searchQuery)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .submitLabel(.search)
+            .font(SkyTheme.Font.body)
+            .foregroundStyle(SkyTheme.Color.ink)
+            .padding(.horizontal, 14)
+            .frame(width: width, height: CGFloat(StartMapChrome.toolDiameter))
+            .background(SkyTheme.Color.recordCard, in: Capsule())
+            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
+            .focused($searchFocused)
+            .accessibilityLabel("搜索路线名称")
+    }
+
+    private func toolCircleButton(
+        systemName: String? = nil,
+        imageName: String? = nil,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Group {
+                if let imageName {
+                    Image(imageName)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22)
+                } else if let systemName {
+                    Image(systemName: systemName)
+                        .font(.system(size: 17, weight: .semibold))
+                }
+            }
+            .foregroundStyle(SkyTheme.Color.onStarryGray)
+            .frame(
+                width: CGFloat(StartMapChrome.toolDiameter),
+                height: CGFloat(StartMapChrome.toolDiameter)
+            )
+            .background(SkyTheme.Color.starryGray, in: Circle())
+            .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
         }
         .buttonStyle(.plain)
         .contentShape(Circle())
-        .accessibilityLabel("导入 GPX")
-        .position(x: CGFloat(point.x), y: CGFloat(point.y))
-        .zIndex(2)
+        .accessibilityLabel(label)
     }
 
     /// One sentence. The floating import control is the only call to action.
@@ -105,10 +177,44 @@ struct RoutesLibraryView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Sticky counts above the list. Not the records month title.
+    private var routeStatsBar: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text("\(app.importedRoutes.count) 条路线")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text("\(TrainingRouteDraft.usageCount(in: app.workouts)) 次使用")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(SkyTheme.Color.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, SkyTheme.Spacing.screenInset)
+        .padding(.trailing, SkyTheme.Spacing.screenInset)
+        .padding(.bottom, CGFloat(RecordListCardLayout.filterBarBottom))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SkyTheme.Color.grouped, ignoresSafeAreaEdges: .top)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(app.importedRoutes.count) 条路线，\(TrainingRouteDraft.usageCount(in: app.workouts)) 次使用"
+        )
+        .zIndex(1)
+    }
+
     private var routeList: some View {
-        ScrollView {
+        let routes = visibleRoutes
+        return ScrollView {
             LazyVStack(spacing: SkyTheme.Spacing.related) {
-                ForEach(app.importedRoutes) { route in
+                if routes.isEmpty {
+                    Text("没有匹配的路线")
+                        .font(SkyTheme.Font.footnote)
+                        .foregroundStyle(SkyTheme.Color.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                ForEach(routes) { route in
                     RouteSwipeCard(
                         route: route,
                         selected: draft.routeID == route.id,
@@ -122,6 +228,7 @@ struct RoutesLibraryView: View {
             .padding(.bottom, SkyTheme.Spacing.screenInset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func delete(_ route: SavedRoute) {
@@ -154,7 +261,10 @@ struct RoutesLibraryView: View {
         }
         await RouteMapThumbnails.shared.backfill(
             routes: app.importedRoutes,
-            side: RouteCardLayout.track
+            size: CGSize(
+                width: RouteCardLayout.trackWidth,
+                height: RouteCardLayout.trackHeight
+            )
         )
     }
 
@@ -345,13 +455,18 @@ private struct RouteSwipeCard: View {
 
 /// Same measurements as a record card. The track sits in that box and does not add height.
 enum RouteCardLayout {
-    static let track: CGFloat = 84
+    static let trackWidth: CGFloat = 88
+    static let trackHeight: CGFloat = 82
+    /// Card height: vertical insets plus the track height.
+    static var height: CGFloat { verticalInset * 2 + trackHeight }
     static let corner: CGFloat = 20
     /// Gap from the card to the left and right screen edges.
     static let listHorizontalInset: CGFloat = 10
     /// Padding inside every card edge. Matches the records list inset.
     static let horizontalInset: CGFloat = 10
     static let verticalInset: CGFloat = 10
+    /// Space between the left track thumbnail and the text stack.
+    static let trackToContent: CGFloat = 20
     static let rowSpacing: CGFloat = 4
 }
 
@@ -374,43 +489,44 @@ struct RouteSummaryCard: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
+        HStack(alignment: .center, spacing: RouteCardLayout.trackToContent) {
+            if route.points.count >= 2 {
+                RouteTrackThumbnail(
+                    routeID: route.id,
+                    points: route.points,
+                    width: RouteCardLayout.trackWidth,
+                    height: RouteCardLayout.trackHeight
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+
             VStack(alignment: .leading, spacing: RouteCardLayout.rowSpacing) {
                 nameRow
                 Text(RouteCardText.imported(route))
                     .font(SkyTheme.Font.footnote)
                     .foregroundStyle(SkyTheme.Color.secondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     metric(RouteCardText.distance(route.points), SkyTheme.Color.Metric.distance)
                     metric(RouteCardText.climb(route.points), SkyTheme.Color.Metric.elevation)
                 }
-                Text(RouteCardText.creator(route))
-                    .font(SkyTheme.Font.footnote)
-                    .foregroundStyle(SkyTheme.Color.secondary)
-                    .lineLimit(1)
                 if let startPlaceLabel {
                     Text(startPlaceLabel)
                         .font(SkyTheme.Font.footnote)
                         .foregroundStyle(SkyTheme.Color.secondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if route.points.count >= 2 {
-                RouteTrackThumbnail(
-                    routeID: route.id,
-                    points: route.points,
-                    side: RouteCardLayout.track
-                )
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
+            .frame(maxWidth: .infinity, maxHeight: RouteCardLayout.trackHeight, alignment: .leading)
         }
         .padding(.horizontal, RouteCardLayout.horizontalInset)
         .padding(.vertical, RouteCardLayout.verticalInset)
-        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .frame(maxWidth: .infinity, minHeight: RouteCardLayout.height, maxHeight: RouteCardLayout.height, alignment: .leading)
+        .clipped()
+        .background(SkyTheme.Color.card, in: cardShape)
         .clipShape(cardShape)
         .overlay {
             if selected {
@@ -434,6 +550,7 @@ struct RouteSummaryCard: View {
                 .fontWeight(.bold)
                 .foregroundStyle(SkyTheme.Color.ink)
                 .lineLimit(1)
+                .truncationMode(.tail)
             if selected {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -450,6 +567,7 @@ struct RouteSummaryCard: View {
             .foregroundStyle(color)
             .monospacedDigit()
             .lineLimit(1)
+            .truncationMode(.tail)
     }
 
     private var accessibilitySummary: String {
@@ -457,8 +575,7 @@ struct RouteSummaryCard: View {
             route.name,
             RouteCardText.imported(route),
             "距离 \(RouteCardText.distance(route.points))",
-            "爬升 \(RouteCardText.climb(route.points))",
-            RouteCardText.creator(route)
+            "爬升 \(RouteCardText.climb(route.points))"
         ]
         if let startPlaceLabel {
             parts.append(startPlaceLabel)
@@ -486,6 +603,7 @@ struct FreeRunSummaryCard: View {
                     .fontWeight(.bold)
                     .foregroundStyle(SkyTheme.Color.ink)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -497,11 +615,13 @@ struct FreeRunSummaryCard: View {
                 .font(SkyTheme.Font.footnote)
                 .foregroundStyle(SkyTheme.Color.secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
         .padding(.horizontal, RouteCardLayout.horizontalInset)
         .padding(.vertical, RouteCardLayout.verticalInset)
-        .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.listRowMin, alignment: .leading)
-        .background(SkyTheme.Color.recordCard, in: cardShape)
+        .frame(maxWidth: .infinity, minHeight: RouteCardLayout.height, maxHeight: RouteCardLayout.height, alignment: .leading)
+        .clipped()
+        .background(SkyTheme.Color.card, in: cardShape)
         .clipShape(cardShape)
         .overlay {
             if selected {
@@ -545,10 +665,6 @@ private enum RouteCardText {
 
     static func climb(_ points: [GeoPoint]) -> String {
         "\(Int(RouteStats.ascent(points).rounded()))米"
-    }
-
-    static func creator(_ route: SavedRoute) -> String {
-        "创建人 \(route.creatorLabel)"
     }
 }
 

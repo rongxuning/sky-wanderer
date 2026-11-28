@@ -7,6 +7,7 @@ import Foundation
 //   codes/ios/Shared/Formatting.swift codes/ios/Shared/RouteStats.swift \
 //   codes/ios/Shared/RouteGPXStore.swift \
 //   codes/ios/Shared/WorkoutTrackStore.swift \
+//   codes/ios/Shared/RouteListSearch.swift \
 //   codes/ios/sky-wanderer/PlannedRouteProgress.swift \
 //   codes/ios/training-route-check/main.swift \
 //   -o /tmp/training-route-check && /tmp/training-route-check
@@ -67,6 +68,19 @@ check(freed.points.isEmpty, "自由跑 has no planned points")
 let unknown = TrainingRouteDraft.planned(routeID: "missing", saved: [saved], workouts: [])
 check(unknown == PlannedRoute.free, "an unknown id is a free run")
 
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: saved.id, saved: [saved]) == saved.id,
+    "a library route id is stamped for usage"
+)
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: freeID, saved: [saved]) == nil,
+    "自由跑 does not stamp a planned route id"
+)
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: "missing", saved: [saved]) == nil,
+    "an unknown draft id does not stamp a planned route id"
+)
+
 let workoutID = UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!
 let workoutRoute = [start, end]
 let workout = WorkoutRecord(
@@ -93,6 +107,17 @@ let workout = WorkoutRecord(
 let fromWorkout = TrainingRouteDraft.planned(routeID: workoutID.uuidString, saved: [], workouts: [workout])
 check(fromWorkout.points == workoutRoute, "a saved workout id still supplies its track")
 check(fromWorkout.id == workoutID.uuidString, "the workout id stays on the planned route")
+check(
+    TrainingRouteDraft.libraryRouteID(routeID: workoutID.uuidString, saved: [saved]) == nil,
+    "a past workout track is not a library route use"
+)
+
+var used = workout
+used.plannedRouteID = saved.id
+var freeRun = workout
+freeRun.plannedRouteID = nil
+check(TrainingRouteDraft.usageCount(in: [used, freeRun, used]) == 2, "usage counts stamped library routes")
+check(TrainingRouteDraft.usageCount(in: [freeRun]) == 0, "workouts without a planned route do not count")
 
 let importedWins = TrainingRouteDraft.planned(routeID: saved.id, saved: [saved], workouts: [workout])
 check(importedWins.points == line, "an imported route wins over a workout with another id")
@@ -194,6 +219,18 @@ near(waiting.remainingMeters, waiting.totalMeters, 0.001, "the full route remain
 
 let freeFix = PlannedRouteProgress.locate(athlete: mid, on: [])
 check(freeFix.totalMeters == 0 && freeFix.progressedMeters == 0 && freeFix.remainingMeters == 0, "自由跑 has no route remaining")
+
+// MARK: - Route name search
+
+let xuhui = SavedRoute(id: "xuhui", name: "徐汇滨江", points: line, kind: .gpx)
+let west = SavedRoute(id: "west", name: "西岸绿道", points: line, kind: .gpx)
+let library = [saved, xuhui, west]
+check(RouteListSearch.apply("", to: library).count == 3, "empty query keeps every route")
+check(RouteListSearch.apply("滨江", to: library).map(\.id) == ["riverside", "xuhui"], "substring matches both 滨江 names")
+check(RouteListSearch.apply("西岸", to: library).map(\.id) == ["west"], "substring isolates one route")
+check(RouteListSearch.matches("徐汇滨江", query: "徐滨"), "fuzzy keeps characters in order")
+check(!RouteListSearch.matches("徐汇滨江", query: "滨徐"), "fuzzy rejects out-of-order characters")
+check(RouteListSearch.apply("没有这条", to: library).isEmpty, "no match returns an empty list")
 
 if failures.isEmpty {
     print("training-route-check: ok")

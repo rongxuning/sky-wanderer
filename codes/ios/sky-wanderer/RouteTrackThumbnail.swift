@@ -9,13 +9,18 @@ import UIKit
 struct RouteTrackThumbnail: View {
     var routeID: String
     var points: [GeoPoint]
-    var side: CGFloat
+    var width: CGFloat
+    var height: CGFloat
     @ObservedObject private var basemap = SkyBasemapCenter.shared
     @ObservedObject private var thumbs = RouteMapThumbnails.shared
     @State private var mapImage: UIImage?
 
     private var loadKey: String {
         "\(routeID)-\(points.count)-\(basemap.mode == .tianditu ? "t" : "s")-\(thumbs.revision)-\(RouteListThumbnailFile.plateVersion)"
+    }
+
+    private var plateSize: CGSize {
+        CGSize(width: width, height: height)
     }
 
     var body: some View {
@@ -26,18 +31,18 @@ struct RouteTrackThumbnail: View {
                 Image(uiImage: mapImage)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: side, height: side)
+                    .frame(width: width, height: height)
                     .clipped()
                     .transition(.opacity)
             }
         }
-        .frame(width: side, height: side)
+        .frame(width: width, height: height)
         .clipShape(
             RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
         )
         .task(id: loadKey) {
             guard points.count >= 2 else { return }
-            let image = await RouteMapThumbnails.shared.cachedImage(for: routeID, side: side)
+            let image = await RouteMapThumbnails.shared.cachedImage(for: routeID, size: plateSize)
             guard !Task.isCancelled else { return }
             if mapImage !== image {
                 if image != nil {
@@ -71,13 +76,13 @@ final class RouteMapThumbnails: ObservableObject {
     }
 
     /// Memory or disk only. Never opens MapKit.
-    func cachedImage(for id: String, side: CGFloat) async -> UIImage? {
+    func cachedImage(for id: String, size: CGSize) async -> UIImage? {
         let token = Self.basemapToken
-        let sideKey = Int(side.rounded())
-        let key = Self.key(id: id, basemapToken: token, side: sideKey)
+        let sizeToken = Self.sizeToken(size)
+        let key = Self.key(id: id, basemapToken: token, sizeToken: sizeToken)
         if let hit = cache.object(forKey: key) { return hit }
         let disk = await Task.detached(priority: .utility) {
-            RouteListThumbnailStore.load(id: id, basemapToken: token, side: sideKey)
+            RouteListThumbnailStore.load(id: id, basemapToken: token, sizeToken: sizeToken)
         }.value
         if let disk {
             cache.setObject(disk, forKey: key)
@@ -86,60 +91,60 @@ final class RouteMapThumbnails: ObservableObject {
     }
 
     /// Fire-and-forget warm after a route is imported. Skips if already queued.
-    func enqueueWarm(for id: String, points: [GeoPoint], side: CGFloat) {
+    func enqueueWarm(for id: String, points: [GeoPoint], size: CGSize) {
         guard points.count >= 2 else { return }
-        let sideKey = Int(side.rounded())
+        let sizeToken = Self.sizeToken(size)
         let token = Self.basemapToken
-        let stamp = Self.warmStamp(id: id, basemapToken: token, side: sideKey)
+        let stamp = Self.warmStamp(id: id, basemapToken: token, sizeToken: sizeToken)
         guard !warming.contains(stamp) else { return }
         warming.insert(stamp)
         Task { @MainActor in
             defer { self.warming.remove(stamp) }
-            _ = await self.warm(for: id, points: points, side: side)
+            _ = await self.warm(for: id, points: points, size: size)
         }
     }
 
     /// One MapKit render, then disk + memory. Serialized across the process.
     @discardableResult
-    func warm(for id: String, points: [GeoPoint], side: CGFloat) async -> UIImage? {
+    func warm(for id: String, points: [GeoPoint], size: CGSize) async -> UIImage? {
         guard points.count >= 2 else { return nil }
-        if let hit = await cachedImage(for: id, side: side) { return hit }
+        if let hit = await cachedImage(for: id, size: size) { return hit }
         await acquire()
         defer { release() }
         guard !Task.isCancelled else { return nil }
-        let sideKey = Int(side.rounded())
+        let sizeToken = Self.sizeToken(size)
         let token = Self.basemapToken
-        let key = Self.key(id: id, basemapToken: token, side: sideKey)
+        let key = Self.key(id: id, basemapToken: token, sizeToken: sizeToken)
         if let hit = cache.object(forKey: key) { return hit }
-        if let disk = await RouteListThumbnailStore.loadAsync(id: id, basemapToken: token, side: sideKey) {
+        if let disk = await RouteListThumbnailStore.loadAsync(id: id, basemapToken: token, sizeToken: sizeToken) {
             cache.setObject(disk, forKey: key)
             return disk
         }
         let image = await TrackMapImage.render(
             route: points,
-            size: CGSize(width: side, height: side),
+            size: size,
             overlap: 0,
             thumbnail: true
         )
         guard let image, Self.basemapToken == token else { return nil }
         cache.setObject(image, forKey: key)
-        RouteListThumbnailStore.save(image, id: id, basemapToken: token, side: sideKey)
+        RouteListThumbnailStore.save(image, id: id, basemapToken: token, sizeToken: sizeToken)
         revision &+= 1
         return image
     }
 
     /// Fills missing plates slowly. The caller restarts this when the route ids
     /// or the basemap mode change. Sleeps between renders.
-    func backfill(routes: [SavedRoute], side: CGFloat) async {
-        let sideKey = Int(side.rounded())
+    func backfill(routes: [SavedRoute], size: CGSize) async {
+        let sizeToken = Self.sizeToken(size)
         let token = Self.basemapToken
         for route in routes {
             guard !Task.isCancelled else { return }
             guard route.points.count >= 2 else { continue }
-            if await RouteListThumbnailStore.existsAsync(id: route.id, basemapToken: token, side: sideKey) {
+            if await RouteListThumbnailStore.existsAsync(id: route.id, basemapToken: token, sizeToken: sizeToken) {
                 continue
             }
-            _ = await warm(for: route.id, points: route.points, side: side)
+            _ = await warm(for: route.id, points: route.points, size: size)
             guard !Task.isCancelled else { return }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
@@ -155,12 +160,16 @@ final class RouteMapThumbnails: ObservableObject {
         SkyBasemapCenter.shared.mode == .tianditu ? "t" : "s"
     }
 
-    private static func key(id: String, basemapToken: String, side: Int) -> NSString {
-        RouteListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, side: side) as NSString
+    private static func sizeToken(_ size: CGSize) -> String {
+        "\(Int(size.width.rounded()))x\(Int(size.height.rounded()))"
     }
 
-    private static func warmStamp(id: String, basemapToken: String, side: Int) -> String {
-        "\(id)-\(basemapToken)-\(side)"
+    private static func key(id: String, basemapToken: String, sizeToken: String) -> NSString {
+        RouteListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, sizeToken: sizeToken) as NSString
+    }
+
+    private static func warmStamp(id: String, basemapToken: String, sizeToken: String) -> String {
+        "\(id)-\(basemapToken)-\(sizeToken)"
     }
 
     private func acquire() async {

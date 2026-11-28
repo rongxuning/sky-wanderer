@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Full-width record card. Fixed map square on the left — track, start pin, or
+/// Full-width record card. Fixed map plate on the left — track, start pin, or
 /// the full-color Sky empty mark when there is no coordinate. 力量训练 /
 /// 综合训练 still map a start fix when one exists; without a fix they use the
 /// same empty mark as other sports. The metrics stack keeps the same fixed
-/// height as the map (`RecordListCardLayout.mapSide`). Date sits on the right
+/// height as the map (`RecordListCardLayout.mapHeight`). Date sits on the right
 /// of the title row. Secondary metrics are the value only; load appends TL.
-/// Missing values are omitted.
+/// Missing values are omitted. Overflowing copy truncates with an ellipsis.
 struct RecordSummaryCard: View {
     var workout: WorkoutRecord
     var explainSpace: String
@@ -14,8 +14,8 @@ struct RecordSummaryCard: View {
 
     @ScaledMetric(relativeTo: .callout) private var sportSize: CGFloat = 12
     @ScaledMetric(relativeTo: .footnote) private var dateSize: CGFloat = 13
-    /// One point smaller than the previous 28pt primary figure.
-    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 27
+    /// Two points smaller than the previous 27pt primary figure.
+    @ScaledMetric(relativeTo: .title) private var distanceSize: CGFloat = 25
     @ScaledMetric(relativeTo: .subheadline) private var lowerSize: CGFloat = 14
 
     /// Always one point larger than the date/time on the title row.
@@ -25,17 +25,18 @@ struct RecordSummaryCard: View {
         RecordListSecondaryMetric.visible(in: workout)
     }
 
-    private var mapSide: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
+    private var mapWidth: CGFloat { CGFloat(RecordListCardLayout.mapWidth) }
+    private var mapHeight: CGFloat { CGFloat(RecordListCardLayout.mapHeight) }
 
     var body: some View {
         HStack(alignment: .top, spacing: CGFloat(RecordListCardLayout.mapToContent)) {
             visual
-                .frame(width: mapSide, height: mapSide)
+                .frame(width: mapWidth, height: mapHeight)
             metrics
                 .frame(
                     maxWidth: .infinity,
-                    minHeight: mapSide,
-                    maxHeight: mapSide,
+                    minHeight: mapHeight,
+                    maxHeight: mapHeight,
                     alignment: .topLeading
                 )
         }
@@ -43,7 +44,12 @@ struct RecordSummaryCard: View {
         .padding(.trailing, CGFloat(RecordListCardLayout.contentTrailing))
         .padding(.vertical, CGFloat(RecordListCardLayout.contentInsetVertical))
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .top)
+        .frame(
+            minHeight: CGFloat(RecordListCardLayout.standardHeight),
+            maxHeight: CGFloat(RecordListCardLayout.standardHeight),
+            alignment: .top
+        )
+        .clipped()
         .background(SkyTheme.Color.card)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
@@ -59,13 +65,13 @@ struct RecordSummaryCard: View {
         // No usable coordinate — full-color Sky empty mark for every sport,
         // including 力量 / 综合 that would otherwise keep a blank map plate.
         if kind == .swatch {
-            RecordSportSwatch(side: mapSide)
+            RecordSportSwatch(width: mapWidth, height: mapHeight)
         } else {
             RecordRouteThumbnail(
                 workoutID: workout.id,
                 route: workout.listThumbnailRoute,
-                width: mapSide,
-                height: mapSide,
+                width: mapWidth,
+                height: mapHeight,
                 routePointCount: workout.listThumbnailPointCount
             )
         }
@@ -127,12 +133,12 @@ struct RecordSummaryCard: View {
                 .font(sportFont)
                 .foregroundStyle(SkyTheme.Color.ink)
                 .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: true)
+                .truncationMode(.tail)
             Text(RecordListCardText.started(workout.start))
                 .font(dateFont)
                 .foregroundStyle(SkyTheme.Color.starryGray)
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -150,7 +156,7 @@ struct RecordSummaryCard: View {
             .foregroundStyle(figureColor(text, color))
             .monospacedDigit()
             .lineLimit(1)
-            .minimumScaleFactor(0.6)
+            .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: alignment)
     }
 
@@ -172,12 +178,13 @@ struct RecordSummaryCard: View {
                     .foregroundStyle(SkyTheme.Color.ink)
                     .monospacedDigit()
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .truncationMode(.tail)
                 if item.column == .load {
                     Text(item.unit)
                         .font(lowerFont)
                         .foregroundStyle(SkyTheme.Color.ink)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
         }

@@ -26,6 +26,25 @@ enum TrainingRouteDraft {
         }
         return .free
     }
+
+    /// Library route id to stamp on a finished workout. Nil for free run,
+    /// unknown ids, or when the draft points at a past workout track.
+    static func libraryRouteID(routeID: String, saved: [SavedRoute]) -> String? {
+        guard saved.contains(where: { $0.id == routeID }) else { return nil }
+        return routeID
+    }
+
+    /// Workouts that finished with a library route selected.
+    static func usageCount(in workouts: [WorkoutRecord]) -> Int {
+        workouts.reduce(0) { total, workout in
+            guard let id = workout.plannedRouteID,
+                  !id.isEmpty,
+                  id != PlannedRoute.free.id else {
+                return total
+            }
+            return total + 1
+        }
+    }
 }
 
 /// Projects the athlete onto a planned route and builds that route's elevation profile.

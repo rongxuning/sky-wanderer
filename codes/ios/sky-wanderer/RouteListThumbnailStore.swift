@@ -5,13 +5,13 @@ import UIKit
 /// Write once when a route is imported or when a gentle backfill runs. The list
 /// only reads these (plus an in-memory cache). It does not open MapKit per card.
 enum RouteListThumbnailStore {
-    static func exists(id: String, basemapToken: String, side: Int) -> Bool {
-        guard let url = try? url(id: id, basemapToken: basemapToken, side: side) else { return false }
+    static func exists(id: String, basemapToken: String, sizeToken: String) -> Bool {
+        guard let url = try? url(id: id, basemapToken: basemapToken, sizeToken: sizeToken) else { return false }
         return FileManager.default.fileExists(atPath: url.path)
     }
 
-    static func load(id: String, basemapToken: String, side: Int) -> UIImage? {
-        guard let url = try? url(id: id, basemapToken: basemapToken, side: side),
+    static func load(id: String, basemapToken: String, sizeToken: String) -> UIImage? {
+        guard let url = try? url(id: id, basemapToken: basemapToken, sizeToken: sizeToken),
               let data = try? Data(contentsOf: url),
               let image = UIImage(data: data) else {
             return nil
@@ -19,22 +19,22 @@ enum RouteListThumbnailStore {
         return image
     }
 
-    static func loadAsync(id: String, basemapToken: String, side: Int) async -> UIImage? {
+    static func loadAsync(id: String, basemapToken: String, sizeToken: String) async -> UIImage? {
         await Task.detached(priority: .utility) {
-            load(id: id, basemapToken: basemapToken, side: side)
+            load(id: id, basemapToken: basemapToken, sizeToken: sizeToken)
         }.value
     }
 
-    static func existsAsync(id: String, basemapToken: String, side: Int) async -> Bool {
+    static func existsAsync(id: String, basemapToken: String, sizeToken: String) async -> Bool {
         await Task.detached(priority: .utility) {
-            exists(id: id, basemapToken: basemapToken, side: side)
+            exists(id: id, basemapToken: basemapToken, sizeToken: sizeToken)
         }.value
     }
 
     @discardableResult
-    static func save(_ image: UIImage, id: String, basemapToken: String, side: Int) -> Bool {
+    static func save(_ image: UIImage, id: String, basemapToken: String, sizeToken: String) -> Bool {
         guard let data = image.jpegData(compressionQuality: 0.82) else { return false }
-        guard let url = try? url(id: id, basemapToken: basemapToken, side: side) else { return false }
+        guard let url = try? url(id: id, basemapToken: basemapToken, sizeToken: sizeToken) else { return false }
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(),
@@ -61,9 +61,9 @@ enum RouteListThumbnailStore {
         }
     }
 
-    private static func url(id: String, basemapToken: String, side: Int) throws -> URL {
+    private static func url(id: String, basemapToken: String, sizeToken: String) throws -> URL {
         try AppFiles.file(
-            RouteListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, side: side)
+            RouteListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, sizeToken: sizeToken)
         )
     }
 }
