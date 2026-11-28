@@ -330,7 +330,7 @@ check(
     RecordListCardLayout.monthSectionLeading == RecordListCardLayout.mapLeading,
     "in-list month leading matches the card map"
 )
-check(RecordListCardLayout.accentBarWidth == 2, "card accent bar is 2pt")
+check(RecordListCardLayout.accentBarWidth == 0, "card accent bar is retired")
 check(RecordListCardLayout.mapSide == RecordListCardLayout.standardTextBlock, "map side equals the fixed metrics height")
 check(RecordListCardLayout.mapSide == 84, "map side is the approved 84pt square")
 check(RecordListCardLayout.titleLine == 22, "the sport chip and date share a 22pt line")
@@ -414,19 +414,19 @@ check(
 )
 check(RecordListThumbnailFile.folder == "record-thumbs", "thumbnail folder name is fixed")
 
-check(RecordListChrome.labelHex == 0x1C1C1E, "list duration stays on ink")
+check(RecordListChrome.labelHex == 0x1C1C1E, "list sport title and primary figures use ink")
 check(RecordListChrome.chipFillHex == 0x3A3A3C, "legacy chip fill hex stays for older checks")
 check(
-    RecordListChrome.accentHex(for: .outdoorRunning) == RecordListChrome.distanceHex,
-    "running chip and accent follow the distance figure"
+    RecordListChrome.accentHex(for: .outdoorRunning) == RecordListChrome.labelHex,
+    "running list title and figures use ink"
 )
 check(
-    RecordListChrome.accentHex(for: .functionalStrength) == RecordListChrome.energyHex,
-    "strength chip and accent follow the energy figure"
+    RecordListChrome.accentHex(for: .functionalStrength) == RecordListChrome.labelHex,
+    "strength list title and figures use ink"
 )
 check(
-    RecordListChrome.accentHex(for: .hiit) == RecordListChrome.energyHex,
-    "mixed training chip and accent follow the energy figure"
+    RecordListChrome.accentHex(for: .hiit) == RecordListChrome.labelHex,
+    "mixed training list title and figures use ink"
 )
 check(RecordListThumbnailKind.resolve(routeCount: 0) == .swatch, "no points keep the glass plate")
 check(RecordListThumbnailKind.resolve(routeCount: 1) == .startPoint, "one point is a start pin map")

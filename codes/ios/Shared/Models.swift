@@ -35,9 +35,9 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     }
 
     /// Accent for the empty-route glass plate and other sport-tint UI.
-    /// List duration uses `RecordListChrome.durationHex`. The sport chip fill
-    /// and leading accent bar follow the primary metric via
-    /// `RecordListChrome.accentHex(for:)`, not this sport accent.
+    /// List duration uses `RecordListChrome.durationHex`. Sport title, distance,
+    /// and energy on the list card use `RecordListChrome.labelHex` (ink), not
+    /// this sport accent.
     var listAccentHex: UInt32 {
         switch self {
         case .outdoorRunning: return 0x22C55E

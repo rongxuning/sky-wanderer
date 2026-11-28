@@ -63,8 +63,8 @@ enum RecordListCardLayout {
     static let monthSectionLeading = mapLeading
     /// Trailing inset for the full-bleed month band.
     static let monthSectionTrailing = 16.0
-    /// Accent bar on the leading edge of each record card.
-    static let accentBarWidth = 2.0
+    /// Leading accent bar retired — cards no longer draw a colored stripe.
+    static let accentBarWidth = 0.0
     /// Thumbnail corner. Slightly tighter than `SkyTheme.Radius.chip`.
     static let mapCorner = 4.0
     /// Fallback / pending stroke width inside the square before the basemap lands.
@@ -106,25 +106,26 @@ enum RecordListCardLayout {
     }
 }
 
-/// List-card chrome. Duration uses light gray (`secondary`); the start-time
-/// text stays on ink. The sport-type chip and the leading accent bar follow the
-/// primary metric color (distance blue or energy red), not `SportKind.listAccentHex`.
+/// List-card chrome. Duration uses light gray (`secondary`). Sport title,
+/// start time, distance, and energy share `ink` (`labelHex`). Thumbnail tracks
+/// still use `distanceHex`. Legacy chip / energy hexes stay for older checks.
 enum RecordListChrome {
     static let labelHex: UInt32 = 0x1C1C1E
-    /// Legacy dark chip. Kept for older checks; list cards use `accentHex(for:)`.
+    /// Legacy dark chip fill. List cards no longer paint a chip background.
     static let chipFillHex: UInt32 = 0x3A3A3C
     /// Training duration on the list card. Same value as `SkyTheme.Color.secondary`.
     static let durationHex: UInt32 = 0x8E8E93
-    /// Distance figure, thumbnail track, and route-sport chip / accent bar.
-    /// Same value as `SkyTheme.Color.recordDistance`.
+    /// Thumbnail track stroke. Same value as `SkyTheme.Color.recordDistance`.
+    /// List distance text uses `labelHex`, not this blue.
     static let distanceHex: UInt32 = 0x1E7DD6
-    /// Energy figure and non-route sport chip / accent bar.
-    /// Same value as `SkyTheme.Color.Metric.energy`.
+    /// Legacy energy figure. List energy text uses `labelHex`.
+    /// Same value as `SkyTheme.Color.Metric.energy` for detail / older checks.
     static let energyHex: UInt32 = 0xC2183B
 
-    /// Chip fill and leading accent for a list card. Matches the big figure.
+    /// List sport title and primary figures — always ink, no colored chip.
     static func accentHex(for sport: SportKind) -> UInt32 {
-        sport.listShowsRouteMetrics ? distanceHex : energyHex
+        _ = sport
+        return labelHex
     }
 }
 

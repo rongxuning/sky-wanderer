@@ -23,10 +23,6 @@ struct RecordSummaryCard: View {
 
     private var mapSide: CGFloat { CGFloat(RecordListCardLayout.mapSide) }
 
-    private var accent: Color {
-        showsRouteMetrics ? SkyTheme.Color.recordDistance : SkyTheme.Color.Metric.energy
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: CGFloat(RecordListCardLayout.mapToContent)) {
             visual
@@ -45,12 +41,6 @@ struct RecordSummaryCard: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(minHeight: CGFloat(RecordListCardLayout.standardHeight), alignment: .top)
         .background(SkyTheme.Color.card)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(accent)
-                .frame(width: CGFloat(RecordListCardLayout.accentBarWidth))
-                .accessibilityHidden(true)
-        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityAddTraits(.isButton)
@@ -86,14 +76,14 @@ struct RecordSummaryCard: View {
                     primaryMetric(
                         distanceText,
                         distanceFont,
-                        SkyTheme.Color.recordDistance,
+                        SkyTheme.Color.ink,
                         alignment: .leading
                     )
                 } else {
                     primaryMetric(
                         energyText,
                         distanceFont,
-                        SkyTheme.Color.Metric.energy,
+                        SkyTheme.Color.ink,
                         alignment: .leading
                     )
                 }
@@ -130,14 +120,8 @@ struct RecordSummaryCard: View {
         HStack(alignment: .center, spacing: 10) {
             Text(workout.sport.title)
                 .font(sportFont)
-                .foregroundStyle(SkyTheme.Color.onPrimary)
+                .foregroundStyle(SkyTheme.Color.ink)
                 .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(
-                    accent,
-                    in: RoundedRectangle(cornerRadius: 3, style: .continuous)
-                )
                 .fixedSize(horizontal: true, vertical: true)
             Text(RecordListCardText.started(workout.start))
                 .font(dateFont)

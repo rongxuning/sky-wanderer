@@ -462,12 +462,23 @@ private struct SkyGlassTabBar: View {
                     .font(SkyTheme.Font.caption)
                     .fontWeight(.medium)
             }
-            .foregroundStyle(selected ? SkyTheme.Color.primary : SkyTheme.Color.onStarryGray)
+            // Selected: white circle + ink (matches reference capsule nav).
+            .foregroundStyle(selected ? SkyTheme.Color.ink : SkyTheme.Color.onStarryGray)
             .frame(
                 minWidth: SkyTheme.Spacing.touchMin,
                 maxWidth: .infinity,
                 minHeight: SkyTheme.Spacing.touchMin
             )
+            .background {
+                if selected {
+                    Circle()
+                        .fill(SkyTheme.Color.onPrimary)
+                        .frame(
+                            width: SkyTheme.Spacing.touchMin,
+                            height: SkyTheme.Spacing.touchMin
+                        )
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

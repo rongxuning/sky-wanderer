@@ -14,5 +14,7 @@ val OmniIdle = Color(0xFF94A3B8)
 
 /** Matches `docs/design/tokens.json` / iOS `SkyTheme`. */
 val SkyPrimary = Color(0xFF1E88FE)
+val SkyInk = Color(0xFF1C1C1E)
+val SkyOnPrimary = Color(0xFFFFFFFF)
 val SkyStarryGray = Color(0xFF2C2C2E)
 val SkyOnStarryGray = Color(0xFFC6C6C8)
