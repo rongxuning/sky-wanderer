@@ -17,9 +17,12 @@ struct RecordRouteThumbnail: View {
     @ObservedObject private var thumbs = RecordMapThumbnails.shared
     @State private var mapImage: UIImage?
 
-    /// Plates are written at the fixed list side. Lookup and draw use that size.
-    private var plateSide: CGFloat {
-        CGFloat(RecordListCardLayout.mapSide)
+    /// Plates are written at the fixed list size. Lookup and draw use that size.
+    private var plateSize: CGSize {
+        CGSize(
+            width: RecordListCardLayout.mapWidth,
+            height: RecordListCardLayout.mapHeight
+        )
     }
 
     /// Prefer the full-track count when the list only holds a summary polyline.
@@ -46,7 +49,7 @@ struct RecordRouteThumbnail: View {
             guard kind != .swatch else { return }
             let image = await RecordMapThumbnails.shared.cachedImage(
                 for: workoutID,
-                side: plateSide
+                size: plateSize
             )
             guard !Task.isCancelled else { return }
             if mapImage !== image {
@@ -106,10 +109,11 @@ struct RecordRouteThumbnail: View {
 
 /// Full-color Sky mark plate when the card has no start coordinate to map.
 /// Every sport uses this — including 力量 / 综合 without a gym pin. The asset
-/// is the blue-gradient square with the white mark as one unit, drawn
-/// edge-to-edge in the map square — no inset or letterbox.
+/// is the blue-gradient mark drawn edge-to-edge in the map plate — no inset
+/// or letterbox.
 struct RecordSportSwatch: View {
-    var side: CGFloat = CGFloat(RecordListCardLayout.mapSide)
+    var width: CGFloat = CGFloat(RecordListCardLayout.mapWidth)
+    var height: CGFloat = CGFloat(RecordListCardLayout.mapHeight)
 
     private var plate: RoundedRectangle {
         RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
@@ -119,7 +123,7 @@ struct RecordSportSwatch: View {
         Image("RecordEmptyMark")
             .resizable()
             .scaledToFill()
-            .frame(width: side, height: side)
+            .frame(width: width, height: height)
             .clipped()
             .clipShape(plate)
             .accessibilityHidden(true)
@@ -148,13 +152,13 @@ final class RecordMapThumbnails: ObservableObject {
     }
 
     /// Memory or disk only. Never opens MapKit.
-    func cachedImage(for id: UUID, side: CGFloat) async -> UIImage? {
+    func cachedImage(for id: UUID, size: CGSize) async -> UIImage? {
         let token = Self.basemapToken
-        let sideKey = Int(side.rounded())
-        let key = Self.key(id: id, basemapToken: token, side: sideKey)
+        let sizeToken = Self.sizeToken(size)
+        let key = Self.key(id: id, basemapToken: token, sizeToken: sizeToken)
         if let hit = cache.object(forKey: key) { return hit }
         let disk = await Task.detached(priority: .utility) {
-            RecordListThumbnailStore.load(id: id, basemapToken: token, side: sideKey)
+            RecordListThumbnailStore.load(id: id, basemapToken: token, sizeToken: sizeToken)
         }.value
         if let disk {
             cache.setObject(disk, forKey: key)
@@ -163,39 +167,39 @@ final class RecordMapThumbnails: ObservableObject {
     }
 
     /// Fire-and-forget warm after a workout is saved. Skips if already queued.
-    func enqueueWarm(for id: UUID, route: [GeoPoint], side: CGFloat) {
+    func enqueueWarm(for id: UUID, route: [GeoPoint], size: CGSize) {
         guard RecordListThumbnailKind.resolve(routeCount: route.count) != .swatch else { return }
-        let sideKey = Int(side.rounded())
+        let sizeToken = Self.sizeToken(size)
         let token = Self.basemapToken
-        let stamp = Self.warmStamp(id: id, basemapToken: token, side: sideKey)
+        let stamp = Self.warmStamp(id: id, basemapToken: token, sizeToken: sizeToken)
         guard !warming.contains(stamp) else { return }
         warming.insert(stamp)
         Task { @MainActor in
             defer { self.warming.remove(stamp) }
-            _ = await self.warm(for: id, route: route, side: side)
+            _ = await self.warm(for: id, route: route, size: size)
         }
     }
 
     /// One MapKit render, then disk + memory. Serialized across the process.
     @discardableResult
-    func warm(for id: UUID, route: [GeoPoint], side: CGFloat) async -> UIImage? {
+    func warm(for id: UUID, route: [GeoPoint], size: CGSize) async -> UIImage? {
         guard RecordListThumbnailKind.resolve(routeCount: route.count) != .swatch else { return nil }
-        if let hit = await cachedImage(for: id, side: side) { return hit }
+        if let hit = await cachedImage(for: id, size: size) { return hit }
         await acquire()
         defer { release() }
         guard !Task.isCancelled else { return nil }
         // Read after waiting: the mode may have changed while this render was queued.
-        let sideKey = Int(side.rounded())
+        let sizeToken = Self.sizeToken(size)
         let token = Self.basemapToken
-        let key = Self.key(id: id, basemapToken: token, side: sideKey)
+        let key = Self.key(id: id, basemapToken: token, sizeToken: sizeToken)
         if let hit = cache.object(forKey: key) { return hit }
-        if let disk = await RecordListThumbnailStore.loadAsync(id: id, basemapToken: token, side: sideKey) {
+        if let disk = await RecordListThumbnailStore.loadAsync(id: id, basemapToken: token, sizeToken: sizeToken) {
             cache.setObject(disk, forKey: key)
             return disk
         }
         var image = await TrackMapImage.render(
             route: route,
-            size: CGSize(width: side, height: side),
+            size: size,
             overlap: 0,
             thumbnail: true
         )
@@ -204,7 +208,7 @@ final class RecordMapThumbnails: ObservableObject {
             try? await Task.sleep(nanoseconds: 600_000_000)
             image = await TrackMapImage.render(
                 route: route,
-                size: CGSize(width: side, height: side),
+                size: size,
                 overlap: 0,
                 thumbnail: true
             )
@@ -215,7 +219,7 @@ final class RecordMapThumbnails: ObservableObject {
               RecordListThumbnailQuality.isUsable(image),
               Self.basemapToken == token else { return nil }
         cache.setObject(image, forKey: key)
-        RecordListThumbnailStore.save(image, id: id, basemapToken: token, side: sideKey)
+        RecordListThumbnailStore.save(image, id: id, basemapToken: token, sizeToken: sizeToken)
         revision &+= 1
         return image
     }
@@ -223,16 +227,16 @@ final class RecordMapThumbnails: ObservableObject {
     /// Fills missing plates slowly. The caller restarts this when the workout ids
     /// or the basemap mode change, so each pass uses one token. Sleeps between renders.
     /// `exists` already rejects solid-black files, so a bad plate is warmed again.
-    func backfill(workouts: [WorkoutRecord], side: CGFloat) async {
-        let sideKey = Int(side.rounded())
+    func backfill(workouts: [WorkoutRecord], size: CGSize) async {
+        let sizeToken = Self.sizeToken(size)
         let token = Self.basemapToken
         for workout in workouts {
             guard !Task.isCancelled else { return }
             guard RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount) != .swatch else { continue }
-            if await RecordListThumbnailStore.existsAsync(id: workout.id, basemapToken: token, side: sideKey) {
+            if await RecordListThumbnailStore.existsAsync(id: workout.id, basemapToken: token, sizeToken: sizeToken) {
                 continue
             }
-            _ = await warm(for: workout.id, route: workout.listThumbnailRoute, side: side)
+            _ = await warm(for: workout.id, route: workout.listThumbnailRoute, size: size)
             guard !Task.isCancelled else { return }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
@@ -249,12 +253,16 @@ final class RecordMapThumbnails: ObservableObject {
         SkyBasemapCenter.shared.mode == .tianditu ? "t" : "s"
     }
 
-    private static func key(id: UUID, basemapToken: String, side: Int) -> NSString {
-        RecordListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, side: side) as NSString
+    private static func sizeToken(_ size: CGSize) -> String {
+        "\(Int(size.width.rounded()))x\(Int(size.height.rounded()))"
     }
 
-    private static func warmStamp(id: UUID, basemapToken: String, side: Int) -> String {
-        "\(id.uuidString)-\(basemapToken)-\(side)"
+    private static func key(id: UUID, basemapToken: String, sizeToken: String) -> NSString {
+        RecordListThumbnailFile.relativePath(id: id, basemapToken: basemapToken, sizeToken: sizeToken) as NSString
+    }
+
+    private static func warmStamp(id: UUID, basemapToken: String, sizeToken: String) -> String {
+        "\(id.uuidString)-\(basemapToken)-\(sizeToken)"
     }
 
     private func acquire() async {

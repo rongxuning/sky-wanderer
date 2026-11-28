@@ -148,7 +148,10 @@ final class PhoneAppState: ObservableObject {
             RouteMapThumbnails.shared.enqueueWarm(
                 for: item.id,
                 points: item.points,
-                side: RouteCardLayout.track
+                size: CGSize(
+                    width: RouteCardLayout.trackWidth,
+                    height: RouteCardLayout.trackHeight
+                )
             )
         }
         return identifiers
@@ -616,7 +619,10 @@ final class PhoneAppState: ObservableObject {
             RecordMapThumbnails.shared.enqueueWarm(
                 for: stored.id,
                 route: stored.listThumbnailRoute,
-                side: CGFloat(RecordListCardLayout.mapSide)
+                size: CGSize(
+                    width: RecordListCardLayout.mapWidth,
+                    height: RecordListCardLayout.mapHeight
+                )
             )
         }
     }
@@ -720,7 +726,10 @@ final class PhoneAppState: ObservableObject {
                 RecordMapThumbnails.shared.enqueueWarm(
                     for: stored.id,
                     route: stored.listThumbnailRoute,
-                    side: CGFloat(RecordListCardLayout.mapSide)
+                    size: CGSize(
+                        width: RecordListCardLayout.mapWidth,
+                        height: RecordListCardLayout.mapHeight
+                    )
                 )
             }
             last = outcome

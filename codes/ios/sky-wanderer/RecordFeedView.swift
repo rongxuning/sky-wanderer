@@ -64,7 +64,10 @@ struct RecordFeedView: View {
             }
             await RecordMapThumbnails.shared.backfill(
                 workouts: mapped,
-                side: CGFloat(RecordListCardLayout.mapSide)
+                size: CGSize(
+                    width: RecordListCardLayout.mapWidth,
+                    height: RecordListCardLayout.mapHeight
+                )
             )
         }
         .alert(

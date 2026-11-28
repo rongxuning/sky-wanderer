@@ -9,9 +9,15 @@ enum RouteListThumbnailFile {
     /// Bumps when the plate camera or track ink changes so old JPEGs are not reused.
     static let plateVersion = "1"
 
-    /// Relative path: `route-thumbs/<id>-<basemap>-<side>-v<version>.jpg`.
+    /// Relative path: `route-thumbs/<id>-<basemap>-<sizeToken>-v<version>.jpg`.
+    /// `sizeToken` is `88x82` (or legacy integer side for older files).
+    static func relativePath(id: String, basemapToken: String, sizeToken: String) -> String {
+        "\(folder)/\(fileToken(id))-\(basemapToken)-\(sizeToken)-v\(plateVersion).jpg"
+    }
+
+    /// Legacy integer-side path used by older checks and call sites.
     static func relativePath(id: String, basemapToken: String, side: Int) -> String {
-        "\(folder)/\(fileToken(id))-\(basemapToken)-\(side)-v\(plateVersion).jpg"
+        relativePath(id: id, basemapToken: basemapToken, sizeToken: "\(side)")
     }
 
     /// Prefix used to delete every size/basemap variant for one route.

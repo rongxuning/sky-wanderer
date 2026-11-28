@@ -154,7 +154,10 @@ struct RoutesLibraryView: View {
         }
         await RouteMapThumbnails.shared.backfill(
             routes: app.importedRoutes,
-            side: RouteCardLayout.track
+            size: CGSize(
+                width: RouteCardLayout.trackWidth,
+                height: RouteCardLayout.trackHeight
+            )
         )
     }
 
@@ -345,7 +348,10 @@ private struct RouteSwipeCard: View {
 
 /// Same measurements as a record card. The track sits in that box and does not add height.
 enum RouteCardLayout {
-    static let track: CGFloat = 84
+    static let trackWidth: CGFloat = 88
+    static let trackHeight: CGFloat = 82
+    /// Card height: vertical insets plus the track height.
+    static var height: CGFloat { verticalInset * 2 + trackHeight }
     static let corner: CGFloat = 20
     /// Gap from the card to the left and right screen edges.
     static let listHorizontalInset: CGFloat = 10
@@ -381,7 +387,8 @@ struct RouteSummaryCard: View {
                 RouteTrackThumbnail(
                     routeID: route.id,
                     points: route.points,
-                    side: RouteCardLayout.track
+                    width: RouteCardLayout.trackWidth,
+                    height: RouteCardLayout.trackHeight
                 )
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -393,6 +400,7 @@ struct RouteSummaryCard: View {
                     .font(SkyTheme.Font.footnote)
                     .foregroundStyle(SkyTheme.Color.secondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     metric(RouteCardText.distance(route.points), SkyTheme.Color.Metric.distance)
                     metric(RouteCardText.climb(route.points), SkyTheme.Color.Metric.elevation)
@@ -402,12 +410,15 @@ struct RouteSummaryCard: View {
                         .font(SkyTheme.Font.footnote)
                         .foregroundStyle(SkyTheme.Color.secondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: RouteCardLayout.trackHeight, alignment: .leading)
         }
         .padding(.horizontal, RouteCardLayout.horizontalInset)
         .padding(.vertical, RouteCardLayout.verticalInset)
+        .frame(maxWidth: .infinity, minHeight: RouteCardLayout.height, maxHeight: RouteCardLayout.height, alignment: .leading)
+        .clipped()
         .background(SkyTheme.Color.recordCard, in: cardShape)
         .clipShape(cardShape)
         .overlay {
@@ -432,6 +443,7 @@ struct RouteSummaryCard: View {
                 .fontWeight(.bold)
                 .foregroundStyle(SkyTheme.Color.ink)
                 .lineLimit(1)
+                .truncationMode(.tail)
             if selected {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -448,6 +460,7 @@ struct RouteSummaryCard: View {
             .foregroundStyle(color)
             .monospacedDigit()
             .lineLimit(1)
+            .truncationMode(.tail)
     }
 
     private var accessibilitySummary: String {
@@ -483,6 +496,7 @@ struct FreeRunSummaryCard: View {
                     .fontWeight(.bold)
                     .foregroundStyle(SkyTheme.Color.ink)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -494,10 +508,12 @@ struct FreeRunSummaryCard: View {
                 .font(SkyTheme.Font.footnote)
                 .foregroundStyle(SkyTheme.Color.secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
         }
         .padding(.horizontal, RouteCardLayout.horizontalInset)
         .padding(.vertical, RouteCardLayout.verticalInset)
-        .frame(maxWidth: .infinity, minHeight: SkyTheme.Spacing.listRowMin, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: RouteCardLayout.height, maxHeight: RouteCardLayout.height, alignment: .leading)
+        .clipped()
         .background(SkyTheme.Color.recordCard, in: cardShape)
         .clipShape(cardShape)
         .overlay {

@@ -21,14 +21,14 @@ enum RecordListFilter {
 
 /// Approved list-card measurements, in points.
 ///
-/// The map is a fixed square on the left whose side equals the fixed metrics
-/// stack height (width = height = `standardTextBlock`). Distance is leading and
-/// duration is trailing in equal halves. Secondary metrics are the value row
-/// only: first leading, middle centered, last trailing so the last cell shares
+/// The map is a fixed rectangle on the left (`mapWidth` × `mapHeight`). The
+/// metrics stack height matches `mapHeight`. Distance is leading and duration
+/// is trailing in equal halves. Secondary metrics are the value row only:
+/// first leading, middle centered, last trailing so the last cell shares
 /// duration’s right edge. The map and the metrics together sit 10pt inside every
 /// card edge.
 enum RecordListCardLayout {
-    /// Card height: vertical insets plus the fixed text / map side.
+    /// Card height: vertical insets plus the fixed text / map height.
     static var standardHeight: Double {
         contentInsetVertical * 2 + standardTextBlock
     }
@@ -36,8 +36,8 @@ enum RecordListCardLayout {
     static let titleLine = 22.0
     /// Gap between the title row and the distance / duration row.
     static let titleToMiddle = 12.0
-    /// Fits the 25pt distance / energy figure beside the 84pt map.
-    static let upperLine = 33.0
+    /// Fits the 25pt distance / energy figure beside the 82pt-tall map.
+    static let upperLine = 31.0
     /// Gap between the distance row and the secondary metrics.
     static let middleToBottom = 3.0
     static let lowerValueLine = 14.0
@@ -68,13 +68,17 @@ enum RecordListCardLayout {
     static let accentBarWidth = 0.0
     /// Thumbnail corner. Slightly tighter than `SkyTheme.Radius.chip`.
     static let mapCorner = 4.0
-    /// Fallback / pending stroke width inside the square before the basemap lands.
+    /// Fallback / pending stroke width inside the plate before the basemap lands.
     static let mapTrackLineWidth = 3.5
     /// Matches `TrackPaint.recordListInnerPoints` on the baked basemap plate.
     static let mapTrackBasemapLineWidth = 5.0
     /// Gap between the track bounding box (long axis) and the thumbnail edge.
     /// 5pt clears the basemap stroke (half of 5) and the canvas end dot.
     static let mapTrackEdgePad = 5.0
+    /// Fixed map plate width.
+    static let mapWidth = 88.0
+    /// Fixed map plate height. Same as `standardTextBlock`.
+    static let mapHeight = 82.0
 
     static var lowerBlock: Double {
         lowerValueLine
@@ -88,21 +92,25 @@ enum RecordListCardLayout {
             + lowerBlock
     }
 
-    /// Fixed square side. Same as `standardTextBlock` so the plate’s bottom
-    /// meets the secondary row. Not resized from live layout.
-    static var mapSide: Double { standardTextBlock }
+    /// Shorter map axis. Used for stroke-pad math and legacy `mapSide` callers.
+    static var mapSide: Double { mapHeight }
 
-    /// `mapTrackEdgePad` as a fraction of `mapSide`. Long axis meets this inset;
+    /// Disk / cache token for the plate size, e.g. `88x82`.
+    static var mapSizeToken: String {
+        "\(Int(mapWidth))x\(Int(mapHeight))"
+    }
+
+    /// `mapTrackEdgePad` as a fraction of `mapHeight`. Long axis meets this inset;
     /// short axis stays centered with more margin.
-    static var mapTrackInsetFraction: Double { mapTrackEdgePad / mapSide }
+    static var mapTrackInsetFraction: Double { mapTrackEdgePad / mapHeight }
 
     static var standardMapBlock: Double {
-        mapSide
+        mapHeight
     }
 
     /// Width of the right data region inside the card.
     static func informationWidth(cardWidth: Double) -> Double {
-        let room = cardWidth - mapLeading - mapSide - mapToContent - contentTrailing
+        let room = cardWidth - mapLeading - mapWidth - mapToContent - contentTrailing
         return min(informationWidth, max(0, room))
     }
 }
