@@ -862,14 +862,14 @@ struct RouteDetailView: View {
         Group {
             if showsChart {
                 ElevationProfileChart(route: route)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 routeFactPager(route)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .frame(height: RouteDetailChrome.cardBodyHeight, alignment: .top)
-        .frame(maxWidth: .infinity)
+        .frame(height: RouteDetailChrome.cardBodyHeight, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .routeGlassCard()
         .padding(.horizontal, 12)
         .padding(.bottom, bottomInset + 8)
@@ -890,9 +890,9 @@ struct RouteDetailView: View {
     private func routeFactPager(_ route: SavedRoute) -> some View {
         let pages = factPages(route)
         let showsIndicator = pages.count > 1
-        return VStack(spacing: 6) {
+        return VStack(alignment: .leading, spacing: 6) {
             ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
+                LazyHStack(alignment: .top, spacing: 0) {
                     ForEach(pages) { page in
                         factCard(page, route: route)
                             .containerRelativeFrame(.horizontal)
@@ -907,7 +907,7 @@ struct RouteDetailView: View {
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .contentMargins(.horizontal, 0, for: .scrollContent)
             .scrollEdgeEffectHidden(true, for: .horizontal)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityHint(showsIndicator ? "左右滑动查看各点" : "")
             Group {
                 if showsIndicator {
@@ -919,9 +919,8 @@ struct RouteDetailView: View {
             // Fixed slot so single-page and multi-page cards share the same body height.
             .frame(height: 14)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 8)
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func factCard(_ page: RouteFactPage, route: SavedRoute) -> some View {
@@ -930,7 +929,7 @@ struct RouteDetailView: View {
             factStack(page, route: route, title: 13, label: 11, value: 13, spacing: 1)
         }
         .padding(.horizontal, 2)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { openEditor(page) })
         .accessibilityAddTraits(.isButton)
