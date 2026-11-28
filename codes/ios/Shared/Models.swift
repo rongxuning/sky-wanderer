@@ -63,8 +63,9 @@ enum SportKind: String, Codable, Hashable, CaseIterable, Identifiable {
     }
 
     /// Legacy sport-specific glass-plate assets. The list card no longer uses
-    /// these: no-track / no-location plates draw `RecordEmptyMark`, and
-    /// strength / mixed training keep the map chrome.
+    /// these: no-track / no-location plates draw the full-color
+    /// `RecordEmptyMark` (blue gradient + white mark), and strength / mixed
+    /// training keep the map chrome.
     var listThumbnailAsset: String? {
         switch self {
         case .functionalStrength: return "RecordSportStrength"

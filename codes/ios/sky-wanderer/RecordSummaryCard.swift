@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Full-width record card. Fixed map square on the left — track, start pin, or
-/// the Sky empty mark on a glass plate when there is no coordinate. 力量训练 /
+/// the full-color Sky empty mark when there is no coordinate. 力量训练 /
 /// 综合训练 never use that mark plate; without a fix they still show the map
 /// chrome. The metrics stack keeps the same fixed height as the map
 /// (`RecordListCardLayout.mapSide`). Date sits on the right of the title row.
@@ -55,7 +55,7 @@ struct RecordSummaryCard: View {
         let kind = RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount)
         // 力量 / 综合 always use the map plate — never the empty-route mark.
         if kind == .swatch && !workout.sport.listUsesStartLocationMap {
-            RecordSportSwatch(sport: workout.sport)
+            RecordSportSwatch()
         } else {
             RecordRouteThumbnail(
                 workoutID: workout.id,

@@ -104,36 +104,22 @@ struct RecordRouteThumbnail: View {
     }
 }
 
-/// Frosted glass plate when the card has no start coordinate to map.
+/// Full-color Sky mark plate when the card has no start coordinate to map.
 /// Used for sports that are not 力量 / 综合. Those two keep the map plate
-/// instead of a catalog icon. Other sports show the Sky empty-route mark.
-/// The tint stays a light wash of the sport accent.
+/// instead. The asset is the blue-gradient square with the white mark as one
+/// unit — not a tinted glyph on glass.
 struct RecordSportSwatch: View {
-    var sport: SportKind
-
     private var plate: RoundedRectangle {
         RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
     }
 
     var body: some View {
-        ZStack {
-            plate.fill(.ultraThinMaterial)
-            plate.fill(SkyTheme.Color.sport(sport).opacity(0.12))
-            plate.strokeBorder(SkyTheme.Color.sport(sport).opacity(0.18), lineWidth: 1)
-            glyph
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(plate)
-        .accessibilityHidden(true)
-    }
-
-    private var glyph: some View {
         Image("RecordEmptyMark")
             .resizable()
-            .renderingMode(.template)
-            .scaledToFit()
-            .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
-            .padding(CGFloat(RecordListCardLayout.mapSide) * 0.18)
+            .scaledToFill()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(plate)
+            .accessibilityHidden(true)
     }
 }
 
