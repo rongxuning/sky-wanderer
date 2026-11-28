@@ -25,7 +25,7 @@ enum SkyTheme {
         static let separator = SkyHex.color(0xC6C6C8)
         /// 星空灰. Home floating tab capsule, avatar plate, and training-map tool buttons.
         static let starryGray = SkyHex.color(0x2C2C2E)
-        /// Unselected capsule on `starryGray` (record sport filter chips).
+        /// Slightly lighter plate on `starryGray` (legacy chip fill; kept for token parity).
         static let starryChip = SkyHex.color(0x3A3A3C)
         /// Icon and label on `starryGray` when unselected. Selected tab uses white circle + `ink`.
         static let onStarryGray = SkyHex.color(0xC6C6C8)

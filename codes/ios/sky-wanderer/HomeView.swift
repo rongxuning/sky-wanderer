@@ -27,6 +27,8 @@ struct SkyHome: View {
     @State private var tabBarAnchor: SkyTabBarAnchor = .unmeasured
     /// Training map hides companions / 开始 / this bar together while the sport roulette is open.
     @State private var trainingPeripheralChromeVisible = true
+    /// Records filter roulette hides this bar while open (same handoff as training).
+    @State private var recordsPeripheralChromeVisible = true
 
     private var showsTabBar: Bool {
         switch tab {
@@ -35,6 +37,10 @@ struct SkyHome: View {
         case .training: trainingPath.isEmpty
         case .routes: routesPath.isEmpty
         }
+    }
+
+    private var peripheralChromeVisible: Bool {
+        trainingPeripheralChromeVisible && recordsPeripheralChromeVisible
     }
 
     /// Records and routes headers are dark gray under the status bar, so the clock and battery turn light.
@@ -53,7 +59,10 @@ struct SkyHome: View {
         ZStack {
             stack(path: $recordsPath) {
                 tabScreen {
-                    RecordFeedView()
+                    RecordFeedView(
+                        isActive: tab == .records,
+                        peripheralChromeVisible: $recordsPeripheralChromeVisible
+                    )
                 }
             }
             .opacity(tab == .records ? 1 : 0)
@@ -126,12 +135,12 @@ struct SkyHome: View {
                 }
                 .padding(.bottom, StartMapChrome.tabBarBottomPadding)
                 // Same fade as companion tools / 开始; keep layout so Start padding does not jump.
-                .opacity(trainingPeripheralChromeVisible ? 1 : 0)
-                .allowsHitTesting(trainingPeripheralChromeVisible)
-                .accessibilityHidden(!trainingPeripheralChromeVisible)
+                .opacity(peripheralChromeVisible ? 1 : 0)
+                .allowsHitTesting(peripheralChromeVisible)
+                .accessibilityHidden(!peripheralChromeVisible)
                 .animation(
                     .easeOut(duration: Double(StartMapChrome.rouletteOpenCompanionFade)),
-                    value: trainingPeripheralChromeVisible
+                    value: peripheralChromeVisible
                 )
             }
         }
@@ -407,6 +416,12 @@ private enum SkyTabBarMetrics {
     static let tabCount: CGFloat = 4
     /// Keeps half of the former gap above the touch-target floor.
     static let spacingScale: CGFloat = 0.5
+    /// Pulls the selected white circle in from the 44pt item so it reads smaller.
+    static let selectedCircleInset: CGFloat = 4
+    /// Left/right end radius of the glass pill — same as the selected circle’s radius.
+    static var pillCornerRadius: CGFloat {
+        (StartMapChrome.tabBarItemMinHeight - selectedCircleInset * 2) / 2
+    }
 
     static func width(in containerWidth: CGFloat) -> CGFloat {
         let avatar = SkyTheme.Spacing.touchMin + 4
@@ -445,7 +460,12 @@ private struct SkyGlassTabBar: View {
         }
         .padding(.horizontal, 2)
         .padding(.vertical, StartMapChrome.tabBarVerticalPadding)
-        .skyFloatingGlass(in: Capsule(style: .continuous))
+        .skyFloatingGlass(
+            in: RoundedRectangle(
+                cornerRadius: SkyTabBarMetrics.pillCornerRadius,
+                style: .continuous
+            )
+        )
         .accessibilityElement(children: .contain)
     }
 
@@ -470,9 +490,15 @@ private struct SkyGlassTabBar: View {
                 minHeight: SkyTheme.Spacing.touchMin
             )
             .background {
-                // Circle takes the shorter side of the item frame, so it grows with Dynamic Type height.
                 if selected {
-                    Circle().fill(SkyTheme.Color.onPrimary)
+                    GeometryReader { geo in
+                        let side = min(geo.size.width, geo.size.height)
+                            - SkyTabBarMetrics.selectedCircleInset * 2
+                        Circle()
+                            .fill(SkyTheme.Color.onPrimary)
+                            .frame(width: max(side, 1), height: max(side, 1))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
             .contentShape(Rectangle())
