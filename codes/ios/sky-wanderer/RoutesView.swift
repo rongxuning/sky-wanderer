@@ -352,6 +352,8 @@ enum RouteCardLayout {
     /// Padding inside every card edge. Matches the records list inset.
     static let horizontalInset: CGFloat = 10
     static let verticalInset: CGFloat = 10
+    /// Space between the left track thumbnail and the text stack.
+    static let trackToContent: CGFloat = 20
     static let rowSpacing: CGFloat = 4
 }
 
@@ -374,7 +376,17 @@ struct RouteSummaryCard: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: SkyTheme.Spacing.related) {
+        HStack(alignment: .center, spacing: RouteCardLayout.trackToContent) {
+            if route.points.count >= 2 {
+                RouteTrackThumbnail(
+                    routeID: route.id,
+                    points: route.points,
+                    side: RouteCardLayout.track
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
+
             VStack(alignment: .leading, spacing: RouteCardLayout.rowSpacing) {
                 nameRow
                 Text(RouteCardText.imported(route))
@@ -385,10 +397,6 @@ struct RouteSummaryCard: View {
                     metric(RouteCardText.distance(route.points), SkyTheme.Color.Metric.distance)
                     metric(RouteCardText.climb(route.points), SkyTheme.Color.Metric.elevation)
                 }
-                Text(RouteCardText.creator(route))
-                    .font(SkyTheme.Font.footnote)
-                    .foregroundStyle(SkyTheme.Color.secondary)
-                    .lineLimit(1)
                 if let startPlaceLabel {
                     Text(startPlaceLabel)
                         .font(SkyTheme.Font.footnote)
@@ -397,16 +405,6 @@ struct RouteSummaryCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            if route.points.count >= 2 {
-                RouteTrackThumbnail(
-                    routeID: route.id,
-                    points: route.points,
-                    side: RouteCardLayout.track
-                )
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
         }
         .padding(.horizontal, RouteCardLayout.horizontalInset)
         .padding(.vertical, RouteCardLayout.verticalInset)
@@ -457,8 +455,7 @@ struct RouteSummaryCard: View {
             route.name,
             RouteCardText.imported(route),
             "距离 \(RouteCardText.distance(route.points))",
-            "爬升 \(RouteCardText.climb(route.points))",
-            RouteCardText.creator(route)
+            "爬升 \(RouteCardText.climb(route.points))"
         ]
         if let startPlaceLabel {
             parts.append(startPlaceLabel)
@@ -545,10 +542,6 @@ private enum RouteCardText {
 
     static func climb(_ points: [GeoPoint]) -> String {
         "\(Int(RouteStats.ascent(points).rounded()))米"
-    }
-
-    static func creator(_ route: SavedRoute) -> String {
-        "创建人 \(route.creatorLabel)"
     }
 }
 
