@@ -154,21 +154,32 @@ enum Format {
         return "\(index) \(label)"
     }
 
-    /// Place name plus the start coordinate. No coordinate → 「—」.
-    static func startPoint(name: String?, latitude: Double?, longitude: Double?) -> String {
+    /// Place name for the detail sheet. Blank or missing → 「—」.
+    static func placeLabel(name: String?) -> String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "—" : trimmed
+    }
+
+    /// Start coordinate only. Nil when missing or out of range.
+    static func coordinates(latitude: Double?, longitude: Double?) -> String? {
         guard let latitude, let longitude,
               latitude.isFinite, longitude.isFinite,
               (-90...90).contains(latitude),
-              (-180...180).contains(longitude) else { return "—" }
-        let numbers = String(
+              (-180...180).contains(longitude) else { return nil }
+        return String(
             format: "%.6f, %.6f",
             locale: Locale(identifier: "en_US_POSIX"),
             latitude,
             longitude
         )
-        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if trimmed.isEmpty { return numbers }
-        return "\(trimmed) · \(numbers)"
+    }
+
+    /// Place name plus the start coordinate. No coordinate → 「—」.
+    static func startPoint(name: String?, latitude: Double?, longitude: Double?) -> String {
+        guard let numbers = coordinates(latitude: latitude, longitude: longitude) else { return "—" }
+        let label = placeLabel(name: name)
+        if label == "—" { return numbers }
+        return "\(label) · \(numbers)"
     }
 }
 
