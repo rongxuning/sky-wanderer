@@ -6,8 +6,8 @@ import UIKit
 ///
 /// The list never opens a live `MKMapView` per card. That stampeded on cold
 /// launch and jetsam-killed the app. Plates are written when a workout is saved
-/// or by a gentle backfill. Strength / mixed training always use this view —
-/// even with no fix they keep the map chrome instead of a catalog icon.
+/// or by a gentle backfill. Strength / mixed training use this view when a
+/// start fix exists; without a fix the card draws `RecordSportSwatch` instead.
 struct RecordRouteThumbnail: View {
     var workoutID: UUID
     var route: [GeoPoint]
@@ -98,16 +98,16 @@ struct RecordRouteThumbnail: View {
                 }
             }
         case .swatch:
-            // Map chrome only — used by 力量 / 综合 when no start fix exists.
+            // Cards route swatch through `RecordSportSwatch` before this view.
             EmptyView()
         }
     }
 }
 
 /// Full-color Sky mark plate when the card has no start coordinate to map.
-/// Used for sports that are not 力量 / 综合. Those two keep the map plate
-/// instead. The asset is the blue-gradient square with the white mark as one
-/// unit, drawn edge-to-edge in the map square — no inset or letterbox.
+/// Every sport uses this — including 力量 / 综合 without a gym pin. The asset
+/// is the blue-gradient square with the white mark as one unit, drawn
+/// edge-to-edge in the map square — no inset or letterbox.
 struct RecordSportSwatch: View {
     var side: CGFloat = CGFloat(RecordListCardLayout.mapSide)
 

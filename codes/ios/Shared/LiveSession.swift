@@ -1152,7 +1152,7 @@ final class LocationProxy: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // `requestLocation` can fail (denied / timeout). The session may retry
-        // once for an indoor start pin; otherwise the list keeps map chrome only.
+        // once for an indoor start pin; otherwise the list draws RecordEmptyMark.
         onFailure?(manager, error)
     }
 
