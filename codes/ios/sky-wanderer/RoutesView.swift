@@ -1392,7 +1392,7 @@ private struct ElevationProfileChart: View {
     var route: SavedRoute
     @State private var plotWidth: CGFloat = 0
 
-    private static let yAxisWidth: CGFloat = 44
+    private static let yAxisWidth: CGFloat = 36
     private static let axisSpacing: CGFloat = 4
     private static let axisTextRowHeight: CGFloat = 16
 
@@ -1411,32 +1411,15 @@ private struct ElevationProfileChart: View {
         ElevationScale.bounds(points)
     }
 
-    private var flat: Bool {
-        guard let bounds else { return true }
-        return bounds.high - bounds.low < ElevationScale.flatSpanMeters
-    }
-
     private var totalKilometers: Double {
         samples.last?.distanceKilometers ?? 0
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("海拔")
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.omniInk)
-                Spacer(minLength: 8)
-                if let bounds {
-                    Text("\(meterText(bounds.low))–\(meterText(bounds.high)) 米")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.omniMuted)
-                        .lineLimit(1)
-                }
-            }
-            Text(flat ? "海拔几乎没有变化" : "低处绿色，高处红色")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.omniMuted)
+            Text("海拔")
+                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.omniInk)
             if samples.count < 2 || bounds == nil {
                 Text("点数不够，画不出曲线")
                     .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -1444,15 +1427,14 @@ private struct ElevationProfileChart: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if let bounds {
                 scrollableProfile(low: bounds.low, high: bounds.high)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(accessibilityText)
             }
         }
-        .padding(.horizontal, SkyTheme.Spacing.screenInset)
-        .padding(.top, 12)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // Title, Y labels, and the plot all sit 10pt inside the glass card.
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// Y labels stay pinned on the leading edge. The curve and distance ticks scroll under long routes.
@@ -1461,7 +1443,7 @@ private struct ElevationProfileChart: View {
         GeometryReader { outer in
             let axisHeight = Self.axisSpacing + distanceAxisHeight
             let canvasHeight = max(64, outer.size.height - axisHeight)
-            HStack(alignment: .top, spacing: 6) {
+            HStack(alignment: .top, spacing: 4) {
                 yAxis(low: low, high: high)
                     .frame(width: Self.yAxisWidth, height: canvasHeight, alignment: .trailing)
                 GeometryReader { geo in
@@ -1499,47 +1481,46 @@ private struct ElevationProfileChart: View {
         .foregroundStyle(Color.omniMuted)
     }
 
-    /// Kilometer ticks sit under the curve, on the same distance scale, and leave 0 / total in place.
+    /// Ticks, checkpoint kilometers, and 0 / total share one text row so labels never wrap under each other.
     private var distanceAxis: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            if !axisMarks.isEmpty {
-                tickBand
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("0")
-                Spacer(minLength: 8)
-                Text("\(distanceLabel) 公里")
-                    .lineLimit(1)
-                    .multilineTextAlignment(.trailing)
-            }
-        }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
-        .foregroundStyle(Color.omniMuted)
-        .accessibilityHidden(true)
-    }
-
-    private var tickBand: some View {
         Canvas { context, size in
             let placed = placedLabels(plotWidth: size.width)
+            let font: Font = .system(size: 10, weight: .semibold, design: .rounded)
+            let textY: CGFloat = 7 + Self.axisTextRowHeight / 2
             for item in placed {
                 let tickX = axisX(item.tickFraction, width: size.width)
                 var tick = Path()
                 tick.move(to: CGPoint(x: tickX, y: 0))
                 tick.addLine(to: CGPoint(x: tickX, y: 5))
                 context.stroke(tick, with: .color(Color.omniMuted), style: StrokeStyle(lineWidth: 1))
+            }
+            let zero = Text("0").font(font).foregroundStyle(Color.omniMuted)
+            context.draw(context.resolve(zero), at: CGPoint(x: 0, y: textY), anchor: .leading)
+            let total = Text("\(distanceLabel) 公里")
+                .font(font)
+                .foregroundStyle(Color.omniMuted)
+                .lineLimit(1)
+            context.draw(
+                context.resolve(total),
+                at: CGPoint(x: size.width, y: textY),
+                anchor: .trailing
+            )
+            for item in placed {
                 let label = Text(item.name)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(font)
                     .foregroundStyle(Color.omniMuted)
-                let resolved = context.resolve(label)
+                    .lineLimit(1)
                 let center = axisX(item.labelFraction, width: size.width)
+                // Always the same baseline as 0 / total, even when the placer used another lane.
                 context.draw(
-                    resolved,
-                    at: CGPoint(x: center, y: 7 + CGFloat(item.lane) * 14 + 6),
+                    context.resolve(label),
+                    at: CGPoint(x: center, y: textY),
                     anchor: .center
                 )
             }
         }
-        .frame(height: tickBandHeight)
+        .frame(height: distanceAxisHeight)
+        .accessibilityHidden(true)
     }
 
     private func plotContentWidth(viewport: CGFloat) -> CGFloat {
@@ -1549,26 +1530,9 @@ private struct ElevationProfileChart: View {
         ))
     }
 
-    /// Tick band plus one 10pt text row. The row is taller than its font size, so reserve the full line.
+    /// Tick stubs plus one text row. Checkpoint kilometers share that row with 0 / total.
     private var distanceAxisHeight: CGFloat {
-        let ticks = axisMarks.isEmpty ? 0 : tickBandHeight + 1
-        return ticks + Self.axisTextRowHeight
-    }
-
-    private var tickBandHeight: CGFloat {
-        guard !axisMarks.isEmpty else { return 0 }
-        return 7 + CGFloat(laneCount) * 14
-    }
-
-    private var laneCount: Int {
-        guard !axisMarks.isEmpty else { return 0 }
-        let width = max(
-            plotWidth,
-            CGFloat(ElevationProfileLayout.contentWidth(totalKilometers: totalKilometers, viewport: 1)),
-            1
-        )
-        let placed = placedLabels(plotWidth: width)
-        return (placed.map(\.lane).max() ?? 0) + 1
+        (axisMarks.isEmpty ? 0 : 7) + Self.axisTextRowHeight
     }
 
     private func placedLabels(plotWidth: CGFloat) -> [ElevationAxisLabel] {
