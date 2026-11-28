@@ -43,13 +43,10 @@ struct SkyHome: View {
         trainingPeripheralChromeVisible && recordsPeripheralChromeVisible
     }
 
-    /// Records month bar is dark gray under the status bar, so the clock and battery turn light.
-    /// Routes keeps a clear top row, so it stays on the light scheme.
+    /// Records and routes headers are light under the status bar, so the clock and battery stay dark.
     private var darkHeaderShowing: Bool {
         switch tab {
-        case .records:
-            return recordsPath.isEmpty && !app.workouts.isEmpty
-        case .routes, .analysis, .training:
+        case .records, .routes, .analysis, .training:
             return false
         }
     }
