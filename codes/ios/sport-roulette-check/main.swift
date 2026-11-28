@@ -44,7 +44,7 @@ near(
     "center distance = diameter + half-diameter gap"
 )
 let semicircleRadius = SportRouletteGeometry.neighborCenterDistance
-    / (2 * ChromeLength(sin(Double(.pi / 4) / 2)))
+    / (2 * ChromeLength(sin(Double.pi / 8)))
 near(
     SportRouletteGeometry.radius,
     semicircleRadius * 1.2,
