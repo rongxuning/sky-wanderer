@@ -497,7 +497,7 @@ check(
     "mixed training uses the checklist list thumbnail"
 )
 check(SportKind.outdoorRunning.listThumbnailAsset == nil, "running has no glass-plate asset")
-check(SportKind.other.listThumbnailAsset == nil, "other falls back to the SF Symbol")
+check(SportKind.other.listThumbnailAsset == nil, "other uses RecordEmptyMark on the glass plate")
 check(SportKind.outdoorWalking.listShowsRouteMetrics, "outdoor walking shows route metrics")
 check(SportKind.outdoorWalking.usesOutdoorLocation, "outdoor walking records GPS")
 check(SportKind.outdoorWalking.symbol == "figure.walk", "outdoor walking uses the walk symbol")

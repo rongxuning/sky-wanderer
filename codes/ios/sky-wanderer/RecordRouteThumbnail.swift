@@ -104,43 +104,25 @@ struct RecordRouteThumbnail: View {
     }
 }
 
-/// Frosted glass plate when the card has no start coordinate to map.
+/// Full-color Sky mark plate when the card has no start coordinate to map.
 /// Used for sports that are not 力量 / 综合. Those two keep the map plate
-/// instead of a catalog icon. Other sports fall back to the SF Symbol.
-/// The tint stays a light wash of the sport accent.
+/// instead. The asset is the blue-gradient square with the white mark as one
+/// unit, drawn edge-to-edge in the map square — no inset or letterbox.
 struct RecordSportSwatch: View {
-    var sport: SportKind
+    var side: CGFloat = CGFloat(RecordListCardLayout.mapSide)
 
     private var plate: RoundedRectangle {
         RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
     }
 
     var body: some View {
-        ZStack {
-            plate.fill(.ultraThinMaterial)
-            plate.fill(SkyTheme.Color.sport(sport).opacity(0.12))
-            plate.strokeBorder(SkyTheme.Color.sport(sport).opacity(0.18), lineWidth: 1)
-            glyph
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(plate)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var glyph: some View {
-        if let asset = sport.listThumbnailAsset {
-            Image(asset)
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
-                .padding(CGFloat(RecordListCardLayout.mapSide) * 0.2)
-        } else {
-            Image(systemName: sport.symbol)
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(SkyTheme.Color.sport(sport).opacity(0.72))
-        }
+        Image("RecordEmptyMark")
+            .resizable()
+            .scaledToFill()
+            .frame(width: side, height: side)
+            .clipped()
+            .clipShape(plate)
+            .accessibilityHidden(true)
     }
 }
 

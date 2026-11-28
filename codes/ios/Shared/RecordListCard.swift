@@ -136,8 +136,9 @@ enum RecordListThumbnailKind: Equatable {
     case track
     /// One start coordinate — neighborhood map with a round pin.
     case startPoint
-    /// No usable coordinate. Most sports use the glass plate; 力量 / 综合 keep
-    /// the map chrome via `listUsesStartLocationMap` instead of an icon image.
+    /// No usable coordinate. Most sports use the full-color
+    /// `RecordEmptyMark` plate; 力量 / 综合 keep the map chrome via
+    /// `listUsesStartLocationMap` instead of an icon image.
     case swatch
 
     static func resolve(routeCount: Int) -> RecordListThumbnailKind {
