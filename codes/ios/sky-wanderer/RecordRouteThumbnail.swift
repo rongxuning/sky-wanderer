@@ -107,8 +107,10 @@ struct RecordRouteThumbnail: View {
 /// Full-color Sky mark plate when the card has no start coordinate to map.
 /// Used for sports that are not 力量 / 综合. Those two keep the map plate
 /// instead. The asset is the blue-gradient square with the white mark as one
-/// unit — not a tinted glyph on glass.
+/// unit, drawn edge-to-edge in the map square — no inset or letterbox.
 struct RecordSportSwatch: View {
+    var side: CGFloat = CGFloat(RecordListCardLayout.mapSide)
+
     private var plate: RoundedRectangle {
         RoundedRectangle(cornerRadius: CGFloat(RecordListCardLayout.mapCorner), style: .continuous)
     }
@@ -117,7 +119,8 @@ struct RecordSportSwatch: View {
         Image("RecordEmptyMark")
             .resizable()
             .scaledToFill()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: side, height: side)
+            .clipped()
             .clipShape(plate)
             .accessibilityHidden(true)
     }

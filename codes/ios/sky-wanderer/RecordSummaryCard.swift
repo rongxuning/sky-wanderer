@@ -55,7 +55,7 @@ struct RecordSummaryCard: View {
         let kind = RecordListThumbnailKind.resolve(routeCount: workout.listThumbnailPointCount)
         // 力量 / 综合 always use the map plate — never the empty-route mark.
         if kind == .swatch && !workout.sport.listUsesStartLocationMap {
-            RecordSportSwatch()
+            RecordSportSwatch(side: mapSide)
         } else {
             RecordRouteThumbnail(
                 workoutID: workout.id,
